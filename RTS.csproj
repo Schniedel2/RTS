@@ -4,7 +4,8 @@
     <TargetFramework>net9.0</TargetFramework>
     <RollForward>Major</RollForward>
     <PublishReadyToRun>false</PublishReadyToRun>
-    <TieredCompilation>false</TieredCompilation>
+    <TieredCompilation>true</TieredCompilation>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
   <PropertyGroup>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -28,5 +29,11 @@
   </ItemGroup>
   <ItemGroup>
       <MonoGameContentReference Include="Content\Content.mgcb" />
+      <None Update="Content\Console\Batches\*.batch">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
+      <None Update="Content\Heightmaps\terrain-height.png">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
   </ItemGroup>    
 </Project>

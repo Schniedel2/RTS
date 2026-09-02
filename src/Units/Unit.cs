@@ -29,6 +29,8 @@ public class Unit : WorldObject
         3, 0, 4, 3, 4, 7,
     ];
 
+    public int _pathRequestId;
+    public Guid UnitId { get; }
     protected override VertexPositionColorNormal[] Vertices => MeshVertices;
     protected override int[] Indices => MeshIndices;
 
@@ -50,6 +52,10 @@ public class Unit : WorldObject
     public GotoCommand? CurrentCommand { get; private set; }
     public IMovementProfile MovementProfile { get; }
     public IReadOnlyList<Point> PlannedPath => _plannedPath;
+    public virtual IReadOnlyList<UnitAction> Actions =>
+    [
+        new(UnitActionType.Goto, "Goto", 0, 0)
+    ];
 
     private readonly List<Point> _plannedPath = [];
 
@@ -59,8 +65,10 @@ public class Unit : WorldObject
         int length,
         int width,
         float height,
-        IMovementProfile movementProfile = null) : base(graphicsDevice, position)
+        IMovementProfile? movementProfile = null,
+        Guid? unitId = null) : base(graphicsDevice, position)
     {
+        UnitId = unitId ?? Guid.NewGuid();
         Length = length;
         Width = width;
         Height = height;
@@ -75,20 +83,25 @@ public class Unit : WorldObject
     public void ReceiveCommand(GotoCommand command)
     {
         CurrentCommand = command;
+        _pathRequestId++;
     }
 
-        public virtual bool TryReceiveGotoCommand(GameWorld map, GotoCommand command)
-        {
-            CurrentCommand = command;
+    public virtual bool TryReceiveGotoCommand(
+        GameWorld map,
+        GotoCommand command)
+    {
+        CurrentCommand = command;
 
-            if (!TryReplanPath(map))
-            {
-                ClearCommand();
-                return false;
-            }
+        _plannedPath.Clear();
 
-            return true;
-        }
+        map.PathfindingManager.RequestPath(
+            this,
+            MovementProfile,
+            command.Target, 
+            _pathRequestId);
+
+        return true;
+    }
 
     public void SetPlannedPath(IReadOnlyList<Point> path)
     {
@@ -261,22 +274,6 @@ public class Unit : WorldObject
 
             return Vector3.Normalize(direction);
         }
-
-    protected bool TryReplanPath(GameWorld map)
-    {
-        if (!CurrentCommand.HasValue)
-            return false;
-
-        if (!map.Pathfinder.TryFindPath(
-            this,
-            MovementProfile,
-            CurrentCommand.Value.Target,
-            out List<Point> path))
-            return false;
-
-        SetPlannedPath(path);
-        return true;
-    }
 
         protected bool TryMoveTo(GameWorld map, Vector3 position)
         {

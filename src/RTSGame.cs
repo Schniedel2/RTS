@@ -1,6 +1,7 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using RTS.Network;
 
 namespace RTS;
 
@@ -15,42 +16,56 @@ public class RTSGame
     private GameConsole _console = null!;
     public GameConsole Console => _console;
     private ShadowMap _shadowMap = null!;
-    public Effect TerrainEffect = null!;
-    public Effect UnitEffect = null!;
-
-    public Effect ShadowEffect = null!;
     public ShadowMap ShadowMap => _shadowMap;
+    public NetworkHandler Network { get; }
+    public NetworkInput NetworkInput { get; }
+    public NetworkHost NetworkHost { get; }
+    public NetworkClient NetworkClient { get; }
+    public ActionPanel? ActionPanel { get; }
 
     public RTSGame(
         GraphicsDevice graphicsDevice,
-        Effect terrainEffect,
         int terrainWidth,
         int terrainHeight,
-        float terrainCellSize)
+        float terrainCellSize,
+        Texture2D? heightMapTexture = null,
+        Texture2D? actionIcons = null)
     {
         World = new GameWorld(
             graphicsDevice,
-            terrainEffect,
-                terrainWidth,
-                terrainHeight,
-                terrainCellSize);
-          RenderHelper = new RenderHelper(graphicsDevice);
-                LocalPlayer = new PlayerHandler(
-                    World,
-                        World.Markers,
-                        RenderHelper);
+            Globals._terrainEffect,
+            terrainWidth,
+            terrainHeight,
+            terrainCellSize,
+            heightMapTexture);
+        RenderHelper = new RenderHelper(graphicsDevice);
+            LocalPlayer = new PlayerHandler(
+                World,
+                    World.Markers,
+                    RenderHelper);
         _shadowMap = new ShadowMap(graphicsDevice);
         _console = new GameConsole(graphicsDevice);
+        ActionPanel = actionIcons is null
+            ? null
+            : new ActionPanel(graphicsDevice, actionIcons);
+        if (ActionPanel is not null)
+            ActionPanel.ActionSelected += LocalPlayer.SelectAction;
+        Network = new NetworkHandler();
+        NetworkInput = new NetworkInput(Network);
+        NetworkHost = new NetworkHost(Network, NetworkInput);
+        NetworkClient = new NetworkClient(Network);
         _consoleCommands = new ConsoleCommands(_console, this);
+
+        _ = _consoleCommands.CallBatch(new[] { "autorun.batch" });
     }
 
     private void UpdateConsole(GameTime gameTime)
     {
         KeyboardState keyboard = Keyboard.GetState();
 
-        // F1 öffnet/schließt die Console
-        if (keyboard.IsKeyDown(Keys.F1) &&
-            !_previousKeyboardState.IsKeyDown(Keys.F1))
+        // check if the circumflex (^) key is pressed   
+        if (keyboard.IsKeyDown(Keys.F12) &&
+            !_previousKeyboardState.IsKeyDown(Keys.F12))
         {
             _console.Toggle();
         }
@@ -87,20 +102,27 @@ public class RTSGame
 
     public void Update(GameTime gameTime, Camera camera, Viewport viewport)
     {
+        Globals.Telemetry.FramesProcessed++;
+
         float deltaTime =
             (float)gameTime.ElapsedGameTime.TotalSeconds;
-        _sunAngle += deltaTime * 0.1f;
+        //_sunAngle += deltaTime * 0.1f;
 
         camera.UpdateMouse(gameTime);
         if (!_console.IsOpen)
             camera.UpdateKeyboard(gameTime);
-        LocalPlayer.Update(camera, viewport);
+        bool actionPanelConsumed =
+            ActionPanel?.Update(LocalPlayer.SelectedUnits, viewport) == true;
+        if (!actionPanelConsumed)
+            LocalPlayer.Update(camera, viewport);
         World.Update(gameTime);
+        Network.Update();
+        _ = NetworkHost.UpdateAsync();
         UpdateConsole(gameTime);
 
         ShadowMap.Update(
-            Vector3.Zero,
-            180.0f,
+            World.Center,
+            World.Terrain.Width * World.Terrain.CellSize * 1.25f,
             _sunAngle);
 
     }
@@ -110,7 +132,7 @@ public class RTSGame
         ShadowMap.Begin();
 
         World.DrawShadow(
-            ShadowEffect,
+            Globals._shadowEffect,
             Matrix.Identity,
             ShadowMap.View,
             ShadowMap.Projection);
@@ -120,10 +142,13 @@ public class RTSGame
   
     public void Draw2D(SpriteBatch spriteBatch)
     {
-        spriteBatch.Draw(
-            ShadowMap.Texture,
-            new Rectangle(10, 10, 300, 300),
-            Color.White);
+        if (Globals.Debug_ShadowMap_ShowPreview)
+        {
+            spriteBatch.Draw(
+                ShadowMap.Texture,
+                new Rectangle(10, 10, 300, 300),
+                Color.White);
+        }
 
         _console.Draw(spriteBatch);
     }
@@ -140,9 +165,9 @@ public class RTSGame
             camera.View,
             camera.Projection,
             ShadowMap,
-            UnitEffect);
+            Globals._unitEffect);
 
-        //_debugRenderer.DrawGameGrid(_rtsGame.World, _camera.View, _camera.Projection);
+        //Globals._debugRenderer.DrawGameGrid(World, camera.View, camera.Projection);
         
     }
 

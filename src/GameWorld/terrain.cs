@@ -18,10 +18,10 @@ public class Terrain
     private int[] _indices = [];
     private int[] _gridIndices = [];
     private float[] HeightMap = [];
-    private TerrainTile[,] _tiles;
+    private TerrainTile[,] _tiles = null!;
     
     private Effect _effect = null!;
-    private Texture2D _tileMapTexture;
+    private Texture2D _tileMapTexture = null!;
 
     public Terrain(
         GraphicsDevice graphicsDevice,
@@ -29,7 +29,8 @@ public class Terrain
         int width = 80,
         int height = 80,
         float cellSize = 2.0f,
-        float heightScale = 12.0f)
+        float heightScale = 12.0f,
+        Texture2D? heightMapTexture = null)
     {
         _graphicsDevice = graphicsDevice;
         _effect = effect;
@@ -40,7 +41,16 @@ public class Terrain
 
         HeightScale = heightScale;
 
-        BuildHeightMap();
+        if (heightMapTexture is not null &&
+            heightMapTexture.Width == Width &&
+            heightMapTexture.Height == Height)
+        {
+            BuildHeightMap(heightMapTexture);
+        }
+        else
+        {
+            BuildProceduralHeightMap();
+        }
         CreateTileMap();
         CreateTileMapTexture(graphicsDevice);
 
@@ -225,7 +235,17 @@ public class Terrain
         }
     }
 
-    private void BuildHeightMap()
+    private void BuildHeightMap(Texture2D heightMapTexture)
+    {
+        Color[] pixels = new Color[Width * Height];
+        heightMapTexture.GetData(pixels);
+        HeightMap = new float[Width * Height];
+
+        for (int index = 0; index < pixels.Length; index++)
+            HeightMap[index] = pixels[index].R / 255.0f * HeightScale;
+    }
+
+    private void BuildProceduralHeightMap()
     {
         HeightMap = new float[Width * Height];
         for (int z = 0; z < Height; z++)

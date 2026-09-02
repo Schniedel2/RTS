@@ -1,8 +1,9 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
-using System;
 using System.Collections.Generic;
+using System;
+using System.Linq;
 
 namespace RTS;
 
@@ -14,11 +15,23 @@ public class PlayerHandler
     private readonly List<Unit> _selectedUnits = [];
     private MouseState _previousMouseState;
     private Point _selectionStart;
+    private UnitAction? _activeAction;
 
     public IReadOnlyList<Unit> SelectedUnits => _selectedUnits;
+    public UnitAction? ActiveAction => _activeAction;
+    public event Action<IReadOnlyList<Unit>, Vector3>? GotoRequested;
     private Rectangle _currentSelectionRect;
     private bool _isSelectingUnits;
     public Vector2 MouseWorldPosition { get; private set; }
+
+    public void SelectAction(UnitAction action)
+    {
+        if (_selectedUnits.Any(unit => unit.Actions.All(
+                unitAction => unitAction.Type != action.Type)))
+            return;
+
+        _activeAction = action;
+    }
 
     public PlayerHandler(
         GameWorld map,
@@ -59,7 +72,7 @@ public class PlayerHandler
             if (_isSelectingUnits)
                 SelectUnits(camera, viewport, _currentSelectionRect, 99);
             else
-                IssueGotoCommand(camera, viewport, mouse.Position);
+                    IssueAction(camera, viewport, mouse.Position);
 
             _isSelectingUnits = false;
         }
@@ -75,6 +88,7 @@ public class PlayerHandler
         foreach (Unit unit in _selectedUnits)
             unit.Select(false);
         _selectedUnits.Clear();
+        _activeAction = null;
     }
 
     private void SelectUnits(Camera camera, Viewport viewport, Rectangle selection, int maxUnits) 
@@ -97,6 +111,13 @@ public class PlayerHandler
                 unit.Select();
             }
         }
+
+        _activeAction = _selectedUnits
+            .SelectMany(unit => unit.Actions)
+            .GroupBy(action => action.Type)
+            .Where(group => group.Count() == _selectedUnits.Count)
+            .Select(group => group.First())
+            .FirstOrDefault();
     }
 
     private bool IsLeftButtonPressed(MouseState mouse)
@@ -123,7 +144,7 @@ public class PlayerHandler
                 _previousMouseState.RightButton == ButtonState.Pressed;
         }
 
-        private void IssueGotoCommand(
+        private void IssueAction(
             Camera camera,
             Viewport viewport,
             Point screenPosition)
@@ -136,12 +157,8 @@ public class PlayerHandler
             if (!_map.Terrain.TryGetIntersection(ray, out Vector3 target))
                 return;
 
-            GotoCommand command = new(new Vector2(target.X, target.Z));
-
-            foreach (Unit unit in _selectedUnits)
-                unit.TryReceiveGotoCommand(_map, command);
-
-            _markerHandler.ShowGotoMarker(target);
+            if (_activeAction?.Type == UnitActionType.Goto)
+                GotoRequested?.Invoke(_selectedUnits, target);
         }
 
         private static Ray CreatePickRay(

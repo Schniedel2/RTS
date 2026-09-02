@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
@@ -9,6 +10,8 @@ namespace RTS;
 public class GameConsole
 {
     private readonly Dictionary<string, Action<string[]>> _commands =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Func<string[], Task>> _asyncCommands =
         new(StringComparer.OrdinalIgnoreCase);
 
     private readonly List<string> _history = new();
@@ -22,7 +25,9 @@ public class GameConsole
     public string Input => _input;
     private GraphicsDevice _graphicsDevice;
     private Texture2D _consolePixel;
-    public SpriteFont Font { get; set; }
+    public SpriteFont Font { get; } = Globals._debugFont;
+    int _autoCompleteIndex = 0;
+    string _autoCompleteText = "";
 
     public GameConsole(GraphicsDevice graphicsDevice)
     {
@@ -39,6 +44,13 @@ public class GameConsole
         Action<string[]> action)
     {
         _commands[name] = action;
+    }
+
+    public void RegisterAsyncCommand(
+        string name,
+        Func<string[], Task> action)
+    {
+        _asyncCommands[name] = action;
     }
 
     public void Toggle()
@@ -80,10 +92,26 @@ public class GameConsole
 
         AddHistory("> " + command);
 
-        ParseAndExecute(command);
+        _ = ExecuteCommandAsync(command);
 
         _input = "";
         _historyIndex = -1;
+    }
+
+    public void ExecuteCommand(string commandLine)
+    {
+        _ = ExecuteCommandAsync(commandLine);
+    }
+
+    public async Task ExecuteCommandAsync(string commandLine)
+    {
+        string command = commandLine.Trim();
+
+        if (command.Length == 0)
+            return;
+
+        AddHistory("> " + command);
+        await ParseAndExecuteAsync(command);
     }
 
     public void HistoryUp()
@@ -124,7 +152,7 @@ public class GameConsole
         _input = line;
     }
 
-    private void ParseAndExecute(string commandLine)
+    private async Task ParseAndExecuteAsync(string commandLine)
     {
         string[] tokens = Tokenize(commandLine);
 
@@ -136,9 +164,21 @@ public class GameConsole
         string[] arguments =
             tokens.Skip(1).ToArray();
 
-        if (!_commands.TryGetValue(
-                commandName,
-                out var command))
+        if (_asyncCommands.TryGetValue(commandName, out Func<string[], Task>? asyncCommand))
+        {
+            try
+            {
+                await asyncCommand(arguments);
+            }
+            catch (Exception ex)
+            {
+                AddHistory($"Error: {ex.Message}");
+            }
+
+            return;
+        }
+
+        if (!_commands.TryGetValue(commandName, out Action<string[]>? command))
         {
             AddHistory(
                 $"Unknown command: {commandName}");
@@ -197,10 +237,45 @@ public class GameConsole
     {
         if (!IsOpen)
             return;
-
+        
         if (!char.IsControl(character))
+        {
             AddCharacter(character);
+            _autoCompleteText = Input;
+            _autoCompleteIndex = 0;
+        }
+
+        if (char.IsControl(character))
+            HandleControlCharacter(character);
     }    
+
+    void HandleControlCharacter(char character)
+    {
+        //  handle ESC to close
+        if (character == '\u001b') // ESC to clear input
+        {
+            _input = "";
+            return;
+        }
+
+        //  handle TAB for auto-completion
+        if (character == '\t')
+        {
+            int stop = _autoCompleteIndex;
+            do
+            {            
+                _autoCompleteIndex++;
+                _autoCompleteIndex %= _commands.Count;
+
+                if (_commands.Keys.ElementAt(_autoCompleteIndex).StartsWith(_autoCompleteText, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    _input = _commands.Keys.ElementAt(_autoCompleteIndex);
+                    return;
+                }
+            }
+            while (_autoCompleteIndex != stop);
+        }
+    }
 
     public void Draw(SpriteBatch spriteBatch)
     {
@@ -223,8 +298,9 @@ public class GameConsole
         int y = padding;
 
         // History
-        foreach (string line in History)
+        for (int i = Math.Max(0, History.Count - 9); i < History.Count; i++)
         {
+            string line = History[i];
             spriteBatch.DrawString(
                 Font,
                 line,

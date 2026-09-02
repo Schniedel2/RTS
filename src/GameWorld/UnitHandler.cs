@@ -2,6 +2,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace RTS;
 
@@ -44,7 +45,12 @@ public class UnitHandler
 
     public Soldier SpawnSoldier(Vector3 position)
     {
-        Soldier soldier = new(_graphicsDevice, position);
+        return SpawnSoldier(position, null);
+    }
+
+    public Soldier SpawnSoldier(Vector3 position, Guid? unitId)
+    {
+        Soldier soldier = new(_graphicsDevice, position, unitId: unitId);
             AddUnit(soldier);
 
         return soldier;
@@ -52,7 +58,12 @@ public class UnitHandler
 
     public Car SpawnCar(Vector3 position)
     {
-        Car car = new(_graphicsDevice, position);
+        return SpawnCar(position, null);
+    }
+
+    public Car SpawnCar(Vector3 position, Guid? unitId)
+    {
+        Car car = new(_graphicsDevice, position, unitId: unitId);
             AddUnit(car);
 
         return car;
@@ -60,10 +71,20 @@ public class UnitHandler
 
     public Tank SpawnTank(Vector3 position)
     {
-        Tank tank = new(_graphicsDevice, position);
+        return SpawnTank(position, null);
+    }
+
+    public Tank SpawnTank(Vector3 position, Guid? unitId)
+    {
+        Tank tank = new(_graphicsDevice, position, unitId: unitId);
             AddUnit(tank);
 
         return tank;
+    }
+
+    public Unit? FindById(Guid unitId)
+    {
+        return _units.FirstOrDefault(unit => unit.UnitId == unitId);
     }
 
     public void Update(GameTime gameTime)

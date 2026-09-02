@@ -9,15 +9,17 @@ public class GameWorld
     public Terrain Terrain => _terrain;
     public UnitHandler Units { get; }
     public MarkerHandler Markers { get; }
-    public Pathfinder Pathfinder { get; }
     public GameGrid Grid { get; }
-    
+    public PathfindingManager PathfindingManager { get; }
+    public Vector3 Center => new Vector3(_terrain.Width * _terrain.CellSize * 0.5f, 0.0f, _terrain.Height * _terrain.CellSize * 0.5f);
+
     public GameWorld(
         GraphicsDevice graphicsDevice,
         Effect effect,
         int terrainWidth,
         int terrainHeight,
-        float terrainCellSize)
+        float terrainCellSize,
+        Texture2D? heightMapTexture = null)
     {
         _terrain =
             new Terrain(
@@ -26,12 +28,13 @@ public class GameWorld
                 width: terrainWidth,
                 height: terrainHeight,
                 cellSize: terrainCellSize,
-                heightScale: 2.0f);
+                heightScale: 32.0f,
+                heightMapTexture: heightMapTexture);
 
         Grid = new GameGrid(terrainWidth, terrainHeight, terrainCellSize);
         Units = new UnitHandler(graphicsDevice, _terrain, this);
         Markers = new MarkerHandler(graphicsDevice);
-        Pathfinder = new Pathfinder(this);
+        PathfindingManager = new PathfindingManager(this);
     }
 
         public Unit SpawnUnit(
@@ -122,6 +125,7 @@ public class GameWorld
 
     public void Update(GameTime gameTime)
     {
+        PathfindingManager.Update();
         _terrain.Update(gameTime);
         Units.Update(gameTime);
         Markers.Update(gameTime);

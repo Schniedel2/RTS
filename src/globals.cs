@@ -1,0 +1,46 @@
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using System;
+
+namespace RTS;
+
+public struct Telemetry
+{
+    public Telemetry() {}
+
+    public int FramesProcessed = 0;
+    public int TryFindPath_Calls = 0;
+    public double Pathfinding_Total = 0.0;
+    public double Pathfinding_Last = 0.0;        
+    public double Pathfinding_Avg = 0.0;
+
+    public void Reset()
+    {
+        FramesProcessed = 0;
+        TryFindPath_Calls = 0;
+        Pathfinding_Total = 0.0;
+        Pathfinding_Last = 0.0;
+        Pathfinding_Avg = 0.0;
+    }
+}
+
+public static class Globals
+{
+    public static Effect _shadowEffect = null!;
+    public static Effect _terrainEffect = null!;
+    public static Effect _unitEffect = null!;
+
+    public static Camera _camera = null!;
+    public static Texture2D _whiteTexture = null!;
+    public static Texture2D _terrainTileSheet = null!;    
+    public static DebugRenderer _debugRenderer = null!;
+    public static SpriteFont _debugFont = null!;
+
+    public static Telemetry Telemetry;
+    public static bool DebugFX_DisableShadowMap = false;
+    public static bool DebugFX_DisableLighting = false;
+    public static bool Debug_ShadowMap_ShowPreview = false;
+    public static bool Debug_ShowGameGrid = false;
+    public static bool Debug_ShowUnitBounds = false;
+    public static bool Debug_ShowMarkers = false;
+}

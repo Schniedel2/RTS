@@ -31,11 +31,19 @@ public class Pathfinder
         Vector2 target,
         out List<Point> path)
     {
-        return TryFindPath_AStar(
+        DateTime t0 = DateTime.Now;
+        
+        bool result = TryFindPath_AStar(
             unit,
             movementProfile,
             target,
             out path);
+
+        Globals.Telemetry.Pathfinding_Last = (DateTime.Now - t0).TotalMilliseconds;
+        Globals.Telemetry.Pathfinding_Total += Globals.Telemetry.Pathfinding_Last;
+        Globals.Telemetry.TryFindPath_Calls++;
+        Globals.Telemetry.Pathfinding_Avg = Globals.Telemetry.TryFindPath_Calls == 0 ? 0.0 : Globals.Telemetry.Pathfinding_Total / Globals.Telemetry.TryFindPath_Calls;
+        return result;
     }
 
     public bool TryFindPath_AStar(

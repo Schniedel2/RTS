@@ -14,13 +14,15 @@ public class Car : Unit
     public Car(
         GraphicsDevice graphicsDevice,
         Vector3 position,
-        IMovementProfile movementProfile = null) : base(
+        IMovementProfile? movementProfile = null,
+        Guid? unitId = null) : base(
             graphicsDevice,
             position,
             length: 4,
             width: 2,
             height: 1.5f,
-            movementProfile)
+            movementProfile,
+            unitId)
     {
         MoveSpeed = 7.0f;
         RotationSpeed = 4.0f;
@@ -74,8 +76,8 @@ public class Car : Unit
             {
                 _isManeuvering = false;
 
-                if (!TryReplanPath(map))
-                    ClearCommand();
+                //if (!TryReplanPath(map))
+                //    ClearCommand();
 
                 return;
             }

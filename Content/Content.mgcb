@@ -32,6 +32,11 @@
 /processor:TextureProcessor
 /build:terrainTileSheet.png
 
+#begin actionIcons.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/build:actionIcons.png
+
 # ---- fonts ----
 
 #begin DebugFont.spritefont

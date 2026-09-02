@@ -1,0 +1,58 @@
+using System;
+
+namespace RTS.Network;
+
+public sealed record SessionInfo(
+    string SessionName,
+    string HostName,
+    string Address,
+    int Port);
+
+public enum DiscoveryMessageType
+{
+    Discover,
+    Advertise
+}
+
+public sealed record DiscoveryMessage(
+    DiscoveryMessageType Type,
+    string? SessionName = null,
+    string? HostName = null,
+    int Port = 0);
+
+public enum NetworkMessageType
+{
+    JoinSession,
+    JoinAccepted,
+    JoinRejected,
+    MemberJoined,
+    MemberLeft,
+    CommandToHost,
+    CommandToMember,
+    CommandToAll,
+    SpawnRequest,
+    SpawnCommand,
+    GotoRequest,
+    GotoCommand,
+    TextRequest,
+    TextMessage,
+    Error
+}
+
+public sealed record NetworkMessage(
+    NetworkMessageType Type,
+    Guid SenderId,
+    Guid? TargetId = null,
+    string? Command = null,
+    string[]? Arguments = null,
+    string? DisplayName = null,
+    Guid? SessionId = null,
+    string? Error = null,
+    string? Text = null,
+    Guid? PlayerId = null,
+    Guid? UnitId = null,
+    Guid[]? UnitIds = null,
+    string? UnitTypeId = null,
+    float X = 0.0f,
+    float Y = 0.0f,
+    float Z = 0.0f);
