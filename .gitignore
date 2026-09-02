@@ -1,0 +1,19 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+
+# Visual Studio and VS Code workspace state
+.vs/
+.vscode/
+*.user
+*.suo
+
+# MonoGame pipeline output
+Content/bin/
+Content/obj/
+
+# Local and backup files
+*.userprefs
+*.bak
+*.tmp
+*~

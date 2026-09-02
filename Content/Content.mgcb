@@ -1,0 +1,46 @@
+
+#----------------------------- Global Properties ----------------------------#
+
+/outputDir:bin/$(Platform)
+/intermediateDir:obj/$(Platform)
+/platform:DesktopGL
+/config:
+/profile:Reach
+/compress:False
+
+# ---- shader ----
+
+#begin Terrain.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/build:Terrain.fx
+
+#begin ShadowMap.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/build:ShadowMap.fx
+
+#begin Unit.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/build:Unit.fx
+
+# ---- textures ----
+
+#begin terrainTileSheet.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/build:terrainTileSheet.png
+
+# ---- fonts ----
+
+#begin DebugFont.spritefont
+/importer:FontDescriptionImporter
+/processor:FontDescriptionProcessor
+/build:DebugFont.spritefont
+
+#-------------------------------- References --------------------------------#
+
+
+#---------------------------------- Content ---------------------------------#
+
