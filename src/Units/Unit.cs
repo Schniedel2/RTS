@@ -60,15 +60,15 @@ public class Unit : WorldObject
     private readonly List<Point> _plannedPath = [];
 
     public Unit(
-        GraphicsDevice graphicsDevice,
         Vector3 position,
         int length,
         int width,
         float height,
-        IMovementProfile? movementProfile = null,
-        Guid? unitId = null) : base(graphicsDevice, position)
+        Guid unitId,
+        IMovementProfile? movementProfile = null
+        ) : base(position)
     {
-        UnitId = unitId ?? Guid.NewGuid();
+        UnitId = unitId;
         Length = length;
         Width = width;
         Height = height;

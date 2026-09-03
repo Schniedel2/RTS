@@ -36,7 +36,9 @@ public enum NetworkMessageType
     GotoCommand,
     TextRequest,
     TextMessage,
-    Error
+    Error,
+    ToolActionRequest,
+    ToolActionCommand
 }
 
 public sealed record NetworkMessage(
@@ -55,4 +57,7 @@ public sealed record NetworkMessage(
     string? UnitTypeId = null,
     float X = 0.0f,
     float Y = 0.0f,
-    float Z = 0.0f);
+    float Z = 0.0f,
+    ToolShape? ToolShape = null,
+    int ToolSize = 0,
+    UnitActionType? Action = null);

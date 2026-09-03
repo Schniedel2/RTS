@@ -58,4 +58,24 @@ public class RenderHelper
                 rectangle.Height),
                 borderColor);
     }
+
+    public static void DrawTooltip(SpriteBatch spriteBatch, string text, int x, int y)
+    {
+        for (int offsetX = -1; offsetX <= 1; offsetX++)
+        {
+            for (int offsetY = -1; offsetY <= 1; offsetY++)
+            {
+                spriteBatch.DrawString(
+                    Globals.TooltipFont,
+                    text,
+                    new Vector2(x + offsetX, y + offsetY),
+                    Color.Black);
+            }
+        }
+        spriteBatch.DrawString(
+            Globals.TooltipFont,
+            text,
+            new Vector2(x, y),
+            Color.White);
+    }
 }

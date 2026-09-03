@@ -8,7 +8,6 @@ namespace RTS;
 
 public class UnitHandler
 {
-    private readonly GraphicsDevice _graphicsDevice;
     private readonly Terrain _terrain;
     private readonly GameWorld _map;
     private readonly List<Unit> _units = [];
@@ -16,72 +15,37 @@ public class UnitHandler
     public IReadOnlyList<Unit> Units => _units;
 
     public UnitHandler(
-        GraphicsDevice graphicsDevice,
         Terrain terrain,
         GameWorld map)
     {
-        _graphicsDevice = graphicsDevice;
         _terrain = terrain;
         _map = map;
     }
 
-    public Unit SpawnUnit(
-        Vector3 position,
-        int length,
-        int width,
-        float height)
+    public Unit SpawnUnit(string unitTypeName, Vector3 position, Guid unitId)
     {
-        Unit unit = new(
-            _graphicsDevice,
-            position,
-            length,
-            width,
-            height);
-
+        Unit unit;            
+        switch (unitTypeName.ToLower())
+        {
+            case "soldier":
+                unit = new Soldier(position, unitId);
+                break;
+            case "car":
+                unit = new Car(position, unitId);
+                break;
+            case "tank":
+                unit = new Tank(position, unitId);
+                break;
+            case "editor":
+                unit = new TerrainEditorTool(position, unitId);
+                break;
+            default:
+                throw new ArgumentException($"Unknown unit type: {unitTypeName}");
+        }
         AddUnit(unit);
-
         return unit;
     }
-
-    public Soldier SpawnSoldier(Vector3 position)
-    {
-        return SpawnSoldier(position, null);
-    }
-
-    public Soldier SpawnSoldier(Vector3 position, Guid? unitId)
-    {
-        Soldier soldier = new(_graphicsDevice, position, unitId: unitId);
-            AddUnit(soldier);
-
-        return soldier;
-    }
-
-    public Car SpawnCar(Vector3 position)
-    {
-        return SpawnCar(position, null);
-    }
-
-    public Car SpawnCar(Vector3 position, Guid? unitId)
-    {
-        Car car = new(_graphicsDevice, position, unitId: unitId);
-            AddUnit(car);
-
-        return car;
-    }
-
-    public Tank SpawnTank(Vector3 position)
-    {
-        return SpawnTank(position, null);
-    }
-
-    public Tank SpawnTank(Vector3 position, Guid? unitId)
-    {
-        Tank tank = new(_graphicsDevice, position, unitId: unitId);
-            AddUnit(tank);
-
-        return tank;
-    }
-
+    
     public Unit? FindById(Guid unitId)
     {
         return _units.FirstOrDefault(unit => unit.UnitId == unitId);
@@ -93,16 +57,16 @@ public class UnitHandler
                 unit.Update(gameTime, _terrain, _map);
     }
 
-    public void DrawShadow(Effect effect)
+    public void DrawShadow(GraphicsDevice graphicsDevice, Effect effect)
     {
         foreach (Unit unit in _units)
-            unit.DrawShadow(effect);
+            unit.DrawShadow(graphicsDevice, effect);
     }
 
-    public void Draw(Effect effect)
+    public void Draw(GraphicsDevice graphicsDevice, Effect effect)
     {
         foreach (Unit unit in _units)
-            unit.Draw(effect);
+            unit.Draw(graphicsDevice, effect);
     }
 
         private void AddUnit(Unit unit)

@@ -6,17 +6,15 @@ namespace RTS;
 
 public class MarkerHandler
 {
-    private readonly GraphicsDevice _graphicsDevice;
     private readonly List<Marker> _markers = [];
 
-    public MarkerHandler(GraphicsDevice graphicsDevice)
+    public MarkerHandler()
     {
-        _graphicsDevice = graphicsDevice;
     }
 
     public void ShowGotoMarker(Vector3 position)
     {
-        _markers.Add(new Marker(_graphicsDevice, position, lifetime: 1.0f));
+        _markers.Add(new Marker(position, lifetime: 1.0f));
     }
 
     public void Update(GameTime gameTime)
@@ -31,9 +29,9 @@ public class MarkerHandler
         }
     }
 
-    public void Draw(Effect effect)
+    public void Draw(GraphicsDevice graphicsDevice, Effect effect)
     {
         foreach (Marker marker in _markers)
-            marker.Draw(effect);
+            marker.Draw(graphicsDevice, effect);
     }
 }

@@ -5,7 +5,6 @@ namespace RTS;
 
 public abstract class WorldObject
 {
-    private readonly GraphicsDevice _graphicsDevice;
 
     protected abstract VertexPositionColorNormal[] Vertices { get; }
     protected abstract int[] Indices { get; }
@@ -13,9 +12,8 @@ public abstract class WorldObject
     public Matrix Transform { get; protected set; }
     public Vector3 Position => Transform.Translation;
 
-    protected WorldObject(GraphicsDevice graphicsDevice, Vector3 position)
+    protected WorldObject(Vector3 position)
     {
-        _graphicsDevice = graphicsDevice;
         Transform = Matrix.CreateTranslation(position);
     }
 
@@ -31,16 +29,16 @@ public abstract class WorldObject
         Transform = transform;
     }
 
-    public void Draw(Effect effect)
+    public void Draw(GraphicsDevice graphicsDevice, Effect effect)
     {
         effect.Parameters["World"]?.SetValue(GetWorldMatrix());
-        DrawMesh(effect);
+        DrawMesh(graphicsDevice, effect);
     }
 
-    public void DrawShadow(Effect effect)
+    public void DrawShadow(GraphicsDevice graphicsDevice,Effect effect)
     {
         effect.Parameters["World"]?.SetValue(GetWorldMatrix());
-        DrawMesh(effect);
+        DrawMesh(graphicsDevice, effect);
     }
 
     protected virtual Matrix GetWorldMatrix()
@@ -48,13 +46,13 @@ public abstract class WorldObject
         return Transform;
     }
 
-    private void DrawMesh(Effect effect)
+    private void DrawMesh(GraphicsDevice graphicsDevice, Effect effect)
     {
         foreach (EffectPass pass in effect.CurrentTechnique.Passes)
         {
             pass.Apply();
 
-            _graphicsDevice.DrawUserIndexedPrimitives(
+            graphicsDevice.DrawUserIndexedPrimitives(
                 PrimitiveType.TriangleList,
                 Vertices,
                 0,

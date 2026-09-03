@@ -12,17 +12,16 @@ public class Car : Unit
     public float ReplanAngle { get; set; } = MathHelper.ToRadians(45.0f);
 
     public Car(
-        GraphicsDevice graphicsDevice,
         Vector3 position,
-        IMovementProfile? movementProfile = null,
-        Guid? unitId = null) : base(
-            graphicsDevice,
+        Guid unitId,        
+        IMovementProfile? movementProfile = null
+        ) : base(
             position,
             length: 4,
             width: 2,
             height: 1.5f,
-            movementProfile,
-            unitId)
+            unitId,
+            movementProfile)
     {
         MoveSpeed = 7.0f;
         RotationSpeed = 4.0f;

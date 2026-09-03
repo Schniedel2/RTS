@@ -34,7 +34,7 @@ public class Game1 : Game
 
     private void OnTextInput(object? sender, TextInputEventArgs e)
     {
-        _rtsGame.Console.HandleTextInput(e.Character);
+        Globals.Console.HandleTextInput(e.Character);
     }
 
     protected override void Initialize()
@@ -57,7 +57,8 @@ public class Game1 : Game
         Globals._unitEffect = Content.Load<Effect>("Unit");
         Globals._terrainTileSheet = Content.Load<Texture2D>("terrainTileSheet");
         Globals._debugFont = Content.Load<SpriteFont>("DebugFont");
-        Texture2D actionIcons = Content.Load<Texture2D>("actionIcons");
+        Globals.TooltipFont = Content.Load<SpriteFont>("TooltipFont");
+        Globals.ActionIcons = Content.Load<Texture2D>("actionIcons");
 
         Texture2D? heightMapTexture = LoadHeightMapTexture();
 
@@ -83,9 +84,8 @@ public class Game1 : Game
               terrainWidth: 512,
               terrainHeight: 512,
               terrainCellSize: 1.0f,
-              heightMapTexture: heightMapTexture,
-              actionIcons: actionIcons);
-
+              heightMapTexture: heightMapTexture);
+        
         Globals._shadowEffect.Parameters["DebugMode"]?.SetValue(0);
     }
 
@@ -166,7 +166,7 @@ public class Game1 : Game
 
         _spriteBatch.Begin();
 
-        _rtsGame.LocalPlayer.Draw(
+        _rtsGame.LocalPlayer.Draw2D(
             _spriteBatch,
             Globals._camera,
             GraphicsDevice.Viewport);

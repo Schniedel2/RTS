@@ -22,6 +22,7 @@ public class Terrain
     
     private Effect _effect = null!;
     private Texture2D _tileMapTexture = null!;
+    private readonly BasicEffect _cellHighlightEffect;
 
     public Terrain(
         GraphicsDevice graphicsDevice,
@@ -34,6 +35,10 @@ public class Terrain
     {
         _graphicsDevice = graphicsDevice;
         _effect = effect;
+        _cellHighlightEffect = new BasicEffect(graphicsDevice)
+        {
+            VertexColorEnabled = true
+        };
 
         Width = width;
         Height = height;
@@ -147,7 +152,7 @@ public class Terrain
         }
     }
 
-    private void BuildMesh()
+    public void BuildMesh()
     {
         _vertices = new VertexPositionColorNormal[
             Width * Height];
@@ -303,6 +308,20 @@ public class Terrain
         return HeightMap[index];
     }
 
+    public void SetHeight(int x, int z, float height)
+    {
+        if (x < 0) return;
+        if (x >= Width) return;
+        if (z < 0) return;
+        if (z >= Height) return;
+        
+        if (height < 0) height = 0;
+        if (height > HeightScale) height = HeightScale;
+
+        int index = z * Width + x;
+         HeightMap[index] = height;
+    }
+
     public bool TryGetIntersection(Ray ray, out Vector3 intersection)
     {
         float stepSize = CellSize * 0.25f;
@@ -373,5 +392,53 @@ public class Terrain
 
     public void Update(GameTime gameTime)
     {        
+    }
+
+    VertexPosition GetVertex(int x, int z)
+    {
+        float height = GetHeight(x, z);
+
+        Vector3 position = new Vector3(x * CellSize, height, z * CellSize);
+        return new VertexPosition(position);
+    }
+
+    public void HighlightCell(Camera camera, int x, int z)
+    {
+        const float surfaceOffset = 0.1f;
+        Color highlightColor = new Color(255, 255, 255, 96);
+        VertexPositionColor[] vertices =
+        [
+            new(new Vector3(x * CellSize, GetHeight(x, z) + surfaceOffset, z * CellSize), highlightColor),
+            new(new Vector3((x + 1) * CellSize, GetHeight(x + 1, z) + surfaceOffset, z * CellSize), highlightColor),
+            new(new Vector3((x + 1) * CellSize, GetHeight(x + 1, z + 1) + surfaceOffset, (z + 1) * CellSize), highlightColor),
+            new(new Vector3(x * CellSize, GetHeight(x, z) + surfaceOffset, z * CellSize), highlightColor),
+            new(new Vector3((x + 1) * CellSize, GetHeight(x + 1, z + 1) + surfaceOffset, (z + 1) * CellSize), highlightColor),
+            new(new Vector3(x * CellSize, GetHeight(x, z + 1) + surfaceOffset, (z + 1) * CellSize), highlightColor)
+        ];
+
+        _cellHighlightEffect.World = Matrix.Identity;
+        _cellHighlightEffect.View = camera.View;
+        _cellHighlightEffect.Projection = camera.Projection;
+
+        _graphicsDevice.BlendState = new BlendState
+        {
+            ColorSourceBlend = Blend.SourceAlpha,
+            ColorDestinationBlend = Blend.InverseSourceAlpha,
+            AlphaSourceBlend = Blend.One,
+            AlphaDestinationBlend = Blend.InverseSourceAlpha
+        };
+
+        foreach (EffectPass pass in _cellHighlightEffect.CurrentTechnique.Passes)
+        {
+            pass.Apply();
+
+            _graphicsDevice.DrawUserPrimitives(
+                PrimitiveType.TriangleList,
+                vertices,
+                0,
+                vertices.Length / 3);
+        }
+
+        _graphicsDevice.BlendState = BlendState.Opaque;
     }
 }

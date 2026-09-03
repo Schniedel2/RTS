@@ -26,8 +26,6 @@ public class ConsoleCommands
         _world = rtsGame.World;
         _localPlayer = rtsGame.LocalPlayer;
 
-        _rtsGame.NetworkInput.MessageReceived += HandleNetworkMessage;
-        _localPlayer.GotoRequested += RequestGoto;
         RegisterCommands();
     }
 
@@ -387,57 +385,6 @@ public class ConsoleCommands
         }
     }
 
-    private void HandleNetworkMessage(NetworkMessage message)
-    {
-        if (message.Type == NetworkMessageType.JoinRejected)
-        {
-            _console.Print($"Session join rejected: {message.Error ?? "Unknown reason"}");
-            return;
-        }
-
-        if (message.Type == NetworkMessageType.JoinAccepted)
-        {
-            _console.Print($"Joined session as {_rtsGame.Network.DisplayName}.");
-            return;
-        }
-
-        if (message.Type == NetworkMessageType.TextMessage)
-        {
-            if (message.TargetId is not null &&
-                message.TargetId != _rtsGame.Network.LocalPeerId)
-                return;
-
-            if (!string.IsNullOrWhiteSpace(message.Text))
-                _console.Print(message.Text);
-
-            return;
-        }
-
-        if (message.Type == NetworkMessageType.SpawnCommand)
-        {
-            if (message.PlayerId is Guid playerId && message.UnitTypeId is not null)
-                SpawnLocally(message.UnitTypeId, playerId, message.UnitId, message.X, message.Y, message.Z);
-
-            return;
-        }
-
-        if (message.Type == NetworkMessageType.GotoCommand)
-        {
-            ExecuteGoto(message);
-            return;
-        }
-
-    }
-
-    private void RequestGoto(IReadOnlyList<Unit> units, Vector3 target)
-    {
-        if (!_rtsGame.Network.IsConnected)
-            return;
-
-        Guid[] unitIds = units.Select(unit => unit.UnitId).ToArray();
-        _ = RequestGotoAsync(unitIds, target);
-    }
-
     private void Say(string[] args)
     {
         SendTextMessage(args, null);
@@ -468,19 +415,7 @@ public class ConsoleCommands
             return;
         }
 
-        _ = SendTextMessageAsync(string.Join(' ', args), targetId);
-    }
-
-    private async System.Threading.Tasks.Task SendTextMessageAsync(string text, Guid? targetId)
-    {
-        try
-        {
-            await _rtsGame.NetworkClient.RequestSayAsync(text, targetId);
-        }
-        catch (Exception ex)
-        {
-            _console.Print($"Network error: {ex.Message}");
-        }
+        _ = _rtsGame.NetworkClient.RequestSayAsync(string.Join(' ', args), targetId);
     }
 
     private async System.Threading.Tasks.Task RequestGotoAsync(Guid[] unitIds, Vector3 target)
@@ -533,16 +468,10 @@ public class ConsoleCommands
         }
 
         string unitTypeId = args[0].ToLowerInvariant();
-        if (unitTypeId is not ("tank" or "soldier" or "car"))
-        {
-            _console.Print($"Unknown unit: {args[0]}");
-            return;
-        }
-
-        Vector2 target = _localPlayer.MouseWorldPosition;
+        Vector3 target = _localPlayer.MouseWorldPosition;
         float x = target.X;
         float y = target.Y;
-        float z = 0.0f;
+        float z = target.Z;
 
         if (args.Length > 1)
             float.TryParse(args[1], out x);
@@ -572,42 +501,6 @@ public class ConsoleCommands
         }
     }
 
-    private void SpawnLocally(string unitTypeId, Guid playerId, Guid? unitId, float x, float y, float z)
-    {
-        Vector3 target = new(x, z, y);
-        _world.Markers.ShowGotoMarker(target);
-
-        switch (unitTypeId)
-        {
-            case "tank":
-                _world.Units.SpawnTank(target, unitId);
-                break;
-
-            case "soldier":
-                _world.Units.SpawnSoldier(target, unitId);
-                break;
-
-            case "car":
-                _world.Units.SpawnCar(target, unitId);
-                break;
-        }
-
-        string playerName = _rtsGame.Network.GetPeerDisplayName(playerId);
-        _console.Print($"Spawned {unitTypeId} for player {playerName}.");
-    }
-
-    private void ExecuteGoto(NetworkMessage message)
-    {
-        GotoCommand command = new(new Vector2(message.X, message.Z));
-
-        foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
-        {
-            Unit? unit = _world.Units.FindById(unitId);
-            unit?.TryReceiveGotoCommand(_world, command);
-        }
-
-        _world.Markers.ShowGotoMarker(new Vector3(message.X, message.Y, message.Z));
-    }
 
     private void Telemetry(string[] args)
     {   

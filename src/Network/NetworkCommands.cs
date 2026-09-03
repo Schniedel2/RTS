@@ -138,4 +138,41 @@ public static class NetworkCommands
             Y: request.Y,
             Z: request.Z);
     }
+
+    public static NetworkMessage CreateToolActionRequest(
+        Guid senderId,
+        UnitActionType action,
+        ToolShape toolShape,
+        int toolSize,
+        float x,
+        float y,
+        float z)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.ToolActionRequest,
+            senderId,
+            PlayerId: senderId,
+            Action: action,
+            ToolShape: toolShape,
+            ToolSize: toolSize,
+            X: x,
+            Y: y,
+            Z: z);
+    }
+
+    public static NetworkMessage CreateToolActionCommand(
+        Guid hostId,
+        NetworkMessage request)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.ToolActionCommand,
+            hostId,
+            PlayerId: request.PlayerId ?? request.SenderId,
+            Action: request.Action,
+            ToolShape: request.ToolShape,
+            ToolSize: request.ToolSize,
+            X: request.X,
+            Y: request.Y,
+            Z: request.Z);
+    }
 }

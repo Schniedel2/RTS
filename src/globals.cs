@@ -26,6 +26,10 @@ public struct Telemetry
 
 public static class Globals
 {
+    public static Texture2D ActionIcons = null!;
+    public static RTSGame Game = null!;
+    public static GameWorld World = null!;
+    public static RenderHelper RenderHelper = null!;
     public static Effect _shadowEffect = null!;
     public static Effect _terrainEffect = null!;
     public static Effect _unitEffect = null!;
@@ -35,6 +39,9 @@ public static class Globals
     public static Texture2D _terrainTileSheet = null!;    
     public static DebugRenderer _debugRenderer = null!;
     public static SpriteFont _debugFont = null!;
+    public static SpriteFont PanelFont = null!;
+    public static SpriteFont TooltipFont = null!;
+    public static GameConsole Console = null!;
 
     public static Telemetry Telemetry;
     public static bool DebugFX_DisableShadowMap = false;

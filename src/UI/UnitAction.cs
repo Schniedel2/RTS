@@ -2,7 +2,21 @@ namespace RTS;
 
 public enum UnitActionType
 {
-    Goto
+    Goto,
+    RaiseTerrain,
+    LowerTerrain,
+    FlattenTerrain,
+    SmoothTerrain,
+    IncToolSize,
+    DecToolSize,
+    SetTerrainTile,
+    GetTerrainTile,
+    NextTerrainTile,
+    PrevTerrainTile,
+    SelectToolCircle,
+    SelectToolRectangle,
+    SelectToolFill
+
 }
 
 public sealed record UnitAction(

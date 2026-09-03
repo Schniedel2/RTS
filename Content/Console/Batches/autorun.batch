@@ -4,4 +4,4 @@ session-open test
 say test-session gestartet.
 spawn tank 100 100 60
 spawn car 60 60 60
-spawn soldier 60 80
+spawn Editor 60 80

@@ -34,9 +34,8 @@ public class Marker : WorldObject
     public float HoverHeight { get; set; } = 1.0f;
 
     public Marker(
-        GraphicsDevice graphicsDevice,
         Vector3 position,
-        float lifetime) : base(graphicsDevice, position + Vector3.Up * 0.05f)
+        float lifetime) : base(position + Vector3.Up * 0.05f)
     {
         _groundPosition = position + Vector3.Up * 0.05f;
         _lifetime = lifetime;

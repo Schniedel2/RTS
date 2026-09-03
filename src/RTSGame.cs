@@ -10,11 +10,8 @@ public class RTSGame
     private float _sunAngle = 0.0f;
     public GameWorld World { get; }
     public PlayerHandler LocalPlayer { get; }
-    public RenderHelper RenderHelper { get; }
     private KeyboardState _previousKeyboardState;
     private ConsoleCommands _consoleCommands = null!;
-    private GameConsole _console = null!;
-    public GameConsole Console => _console;
     private ShadowMap _shadowMap = null!;
     public ShadowMap ShadowMap => _shadowMap;
     public NetworkHandler Network { get; }
@@ -22,39 +19,33 @@ public class RTSGame
     public NetworkHost NetworkHost { get; }
     public NetworkClient NetworkClient { get; }
     public ActionPanel? ActionPanel { get; }
+    private GraphicsDevice _graphicsDevice;
 
     public RTSGame(
         GraphicsDevice graphicsDevice,
         int terrainWidth,
         int terrainHeight,
         float terrainCellSize,
-        Texture2D? heightMapTexture = null,
-        Texture2D? actionIcons = null)
+        Texture2D? heightMapTexture = null)
     {
-        World = new GameWorld(
-            graphicsDevice,
-            Globals._terrainEffect,
-            terrainWidth,
-            terrainHeight,
-            terrainCellSize,
-            heightMapTexture);
-        RenderHelper = new RenderHelper(graphicsDevice);
-            LocalPlayer = new PlayerHandler(
-                World,
-                    World.Markers,
-                    RenderHelper);
+        Globals.Game = this;
+        _graphicsDevice = graphicsDevice;
+        Globals.RenderHelper = new RenderHelper(graphicsDevice);
+
+        World = new GameWorld(graphicsDevice, Globals._terrainEffect, terrainWidth, terrainHeight, terrainCellSize, heightMapTexture);
+        Globals.World = World;
+        LocalPlayer = new PlayerHandler(World, World.Markers);
         _shadowMap = new ShadowMap(graphicsDevice);
-        _console = new GameConsole(graphicsDevice);
-        ActionPanel = actionIcons is null
-            ? null
-            : new ActionPanel(graphicsDevice, actionIcons);
-        if (ActionPanel is not null)
-            ActionPanel.ActionSelected += LocalPlayer.SelectAction;
+        Globals.Console = new GameConsole(graphicsDevice);
+
+        ActionPanel = new ActionPanel(graphicsDevice, Globals.ActionIcons);
+        ActionPanel.ActionSelected += LocalPlayer.SelectAction;
+
         Network = new NetworkHandler();
         NetworkInput = new NetworkInput(Network);
         NetworkHost = new NetworkHost(Network, NetworkInput);
         NetworkClient = new NetworkClient(Network);
-        _consoleCommands = new ConsoleCommands(_console, this);
+        _consoleCommands = new ConsoleCommands(Globals.Console, this);
 
         _ = _consoleCommands.CallBatch(new[] { "autorun.batch" });
     }
@@ -67,33 +58,33 @@ public class RTSGame
         if (keyboard.IsKeyDown(Keys.F12) &&
             !_previousKeyboardState.IsKeyDown(Keys.F12))
         {
-            _console.Toggle();
+            Globals.Console.Toggle();
         }
 
-        if (_console.IsOpen)
+        if (Globals.Console.IsOpen)
         {
             if (keyboard.IsKeyDown(Keys.Back) &&
                 !_previousKeyboardState.IsKeyDown(Keys.Back))
             {
-                _console.Backspace();
+                Globals.Console.Backspace();
             }
 
             if (keyboard.IsKeyDown(Keys.Enter) &&
                 !_previousKeyboardState.IsKeyDown(Keys.Enter))
             {
-                _console.Execute();
+                Globals.Console.Execute();
             }
 
             if (keyboard.IsKeyDown(Keys.Up) &&
                 !_previousKeyboardState.IsKeyDown(Keys.Up))
             {
-                _console.HistoryUp();
+                Globals.Console.HistoryUp();
             }
 
             if (keyboard.IsKeyDown(Keys.Down) &&
                 !_previousKeyboardState.IsKeyDown(Keys.Down))
             {
-                _console.HistoryDown();
+                Globals.Console.HistoryDown();
             }
         }
 
@@ -109,12 +100,12 @@ public class RTSGame
         //_sunAngle += deltaTime * 0.1f;
 
         camera.UpdateMouse(gameTime);
-        if (!_console.IsOpen)
+        if (!Globals.Console.IsOpen)
             camera.UpdateKeyboard(gameTime);
         bool actionPanelConsumed =
             ActionPanel?.Update(LocalPlayer.SelectedUnits, viewport) == true;
         if (!actionPanelConsumed)
-            LocalPlayer.Update(camera, viewport);
+            LocalPlayer.Update(gameTime, camera, viewport);
         World.Update(gameTime);
         Network.Update();
         _ = NetworkHost.UpdateAsync();
@@ -150,7 +141,7 @@ public class RTSGame
                 Color.White);
         }
 
-        _console.Draw(spriteBatch);
+        Globals.Console.Draw(spriteBatch);
     }
 
     public void Draw3D(Camera camera)
@@ -161,12 +152,14 @@ public class RTSGame
             camera.Projection,
             ShadowMap);
 
+
         World.DrawUnits(
             camera.View,
             camera.Projection,
             ShadowMap,
             Globals._unitEffect);
 
+        LocalPlayer.Draw3D(_graphicsDevice, camera);
         //Globals._debugRenderer.DrawGameGrid(World, camera.View, camera.Projection);
         
     }

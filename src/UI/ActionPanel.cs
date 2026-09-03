@@ -9,16 +9,17 @@ namespace RTS;
 
 public sealed class ActionPanel
 {
-    private const int IconSize = 48;
+    private const int IconSize = 64;
     private const int ButtonSize = 64;
     private const int Padding = 12;
-    private const int ButtonsPerRow = 4;
+    private const int ButtonsPerRow = 8;
 
     private readonly Texture2D _iconSheet;
     private readonly Texture2D _pixel;
     private readonly List<(Rectangle Bounds, UnitAction Action)> _buttons = [];
     private MouseState _previousMouseState;
     private UnitActionType? _activeActionType;
+    private UnitAction? _hoverAction;
 
     public ActionPanel(GraphicsDevice graphicsDevice, Texture2D iconSheet)
     {
@@ -65,7 +66,6 @@ public sealed class ActionPanel
 
         MouseState mouse = Mouse.GetState();
 
-
         int panelHeight = Padding * 2 + ((_buttons.Count + ButtonsPerRow - 1) / ButtonsPerRow) * ButtonSize;
         Rectangle panel = new(0, viewport.Height - panelHeight, Padding * 2 + ButtonsPerRow * ButtonSize, panelHeight);
         if ((mouse.Position.X < panel.Left) || (mouse.Position.X > panel.Right) ||
@@ -76,20 +76,23 @@ public sealed class ActionPanel
         }
 
         Point panelPosition = new(0, viewport.Height - panelHeight);
-        if (mouse.LeftButton == ButtonState.Pressed &&
-            _previousMouseState.LeftButton == ButtonState.Released)
+        
+        _hoverAction = null;
+        foreach ((Rectangle bounds, UnitAction action) in _buttons)
         {
-            foreach ((Rectangle bounds, UnitAction action) in _buttons)
+            Rectangle screenBounds = bounds;
+            screenBounds.Offset(panelPosition);
+            if (screenBounds.Contains(mouse.Position))
+                _hoverAction = action;
+        }
+
+        if (_hoverAction is not null)
+        {
+            if (mouse.LeftButton == ButtonState.Pressed &&
+                _previousMouseState.LeftButton == ButtonState.Released)
             {
-                Rectangle screenBounds = bounds;
-                screenBounds.Offset(panelPosition);
-                if (screenBounds.Contains(mouse.Position))
-                {
-                    _activeActionType = action.Type;
-                    ActionSelected?.Invoke(action);
-                    _previousMouseState = mouse;
-                    return true;
-                }
+                    _activeActionType = _hoverAction?.Type;
+                    ActionSelected?.Invoke(_hoverAction!);
             }
         }
 
@@ -124,11 +127,23 @@ public sealed class ActionPanel
                 IconSize,
                 IconSize);
 
-            Color buttonColor = action.Type == _activeActionType
-                ? Color.DarkGoldenrod
-                : Color.DimGray;
-            spriteBatch.Draw(_pixel, bounds, buttonColor);
+            // TODO: if action is disabled: spriteBatch.Draw(_pixel, bounds, Color.DimGray);
             spriteBatch.Draw(_iconSheet, iconBounds, source, Color.White);
+
+            if (action.Type == _activeActionType)
+            {
+                //  render "selected"-Border
+                Rectangle source2 = new(
+                    action.IconColumn * 1,
+                    action.IconRow * 0,
+                    IconSize,
+                    IconSize);
+                spriteBatch.Draw(_iconSheet, iconBounds, source2, Color.White);
+            }
+            
         }
+
+        if (_hoverAction is not null)
+            RenderHelper.DrawTooltip(spriteBatch, _hoverAction!.Name, _previousMouseState.Position.X + 24, _previousMouseState.Position.Y + 16);
     }
 }

@@ -44,6 +44,11 @@
 /processor:FontDescriptionProcessor
 /build:DebugFont.spritefont
 
+#begin TooltipFont.spritefont
+/importer:FontDescriptionImporter
+/processor:FontDescriptionProcessor
+/build:TooltipFont.spritefont
+
 #-------------------------------- References --------------------------------#
 
 

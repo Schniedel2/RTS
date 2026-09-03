@@ -26,6 +26,7 @@ public sealed class NetworkHost
 
         if (message.Type != NetworkMessageType.SpawnRequest &&
             message.Type != NetworkMessageType.GotoRequest &&
+            message.Type != NetworkMessageType.ToolActionRequest&&
             message.Type != NetworkMessageType.TextRequest)
             return;
 
@@ -58,6 +59,7 @@ public sealed class NetworkHost
                     NetworkMessageType.SpawnRequest => NetworkCommands.CreateSpawnCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.GotoRequest => NetworkCommands.CreateGotoCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.TextRequest => NetworkCommands.CreateTextCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.ToolActionRequest => NetworkCommands.CreateToolActionCommand(_networkHandler.LocalPeerId, request),
                     _ => throw new InvalidOperationException($"Unsupported request type: {request.Type}")
                 };
 

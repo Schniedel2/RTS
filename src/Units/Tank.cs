@@ -7,17 +7,16 @@ namespace RTS;
 public class Tank : Unit
 {
     public Tank(
-        GraphicsDevice graphicsDevice,
         Vector3 position,
-        IMovementProfile? movementProfile = null,
-        Guid? unitId = null) : base(
-            graphicsDevice,
+        Guid unitId,
+        IMovementProfile? movementProfile = null
+        ) : base(
             position,
             length: 5,
             width: 3,
             height: 2.2f,
-            movementProfile,
-            unitId)
+            unitId,
+            movementProfile)
     {
         MoveSpeed = 3.0f;
         RotationSpeed = 1.5f;

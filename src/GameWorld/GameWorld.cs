@@ -5,6 +5,7 @@ namespace RTS;
 
 public class GameWorld
 {
+    private GraphicsDevice _graphicsDevice;
     private Terrain _terrain;
     public Terrain Terrain => _terrain;
     public UnitHandler Units { get; }
@@ -21,6 +22,7 @@ public class GameWorld
         float terrainCellSize,
         Texture2D? heightMapTexture = null)
     {
+        _graphicsDevice = graphicsDevice;
         _terrain =
             new Terrain(
                 graphicsDevice,
@@ -32,34 +34,10 @@ public class GameWorld
                 heightMapTexture: heightMapTexture);
 
         Grid = new GameGrid(terrainWidth, terrainHeight, terrainCellSize);
-        Units = new UnitHandler(graphicsDevice, _terrain, this);
-        Markers = new MarkerHandler(graphicsDevice);
+        Units = new UnitHandler(_terrain, this);
+        Markers = new MarkerHandler();
         PathfindingManager = new PathfindingManager(this);
     }
-
-        public Unit SpawnUnit(
-            Vector3 position,
-            int length,
-            int width,
-            float height)
-        {
-            return Units.SpawnUnit(position, length, width, height);
-        }
-
-        public Soldier SpawnSoldier(Vector3 position)
-        {
-            return Units.SpawnSoldier(position);
-        }
-
-        public Car SpawnCar(Vector3 position)
-        {
-            return Units.SpawnCar(position);
-        }
-
-        public Tank SpawnTank(Vector3 position)
-        {
-            return Units.SpawnTank(position);
-        }
 
     public void DrawShadow(
         Effect effect,
@@ -77,7 +55,7 @@ public class GameWorld
 
         effect.Parameters["View"]?.SetValue(view);
         effect.Parameters["Projection"]?.SetValue(projection);
-        Units.DrawShadow(effect);
+        Units.DrawShadow(_graphicsDevice, effect);
     }
 
     public void DrawTerrain(
@@ -119,8 +97,8 @@ public class GameWorld
         unitEffect.Parameters["ShadowTexture"]?.SetValue(shadowTexture);
         unitEffect.Parameters["LightDirection"]?.SetValue(lightDirection);
 
-        Units.Draw(unitEffect);
-        Markers.Draw(unitEffect);
+        Units.Draw(_graphicsDevice, unitEffect);
+        Markers.Draw(_graphicsDevice, unitEffect);
     }
 
     public void Update(GameTime gameTime)
