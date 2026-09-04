@@ -7,7 +7,6 @@ float3 LightDirection;
 texture ShadowTexture;
 texture TerrainTilesTexture;
 texture TileMapTexture;
-float TerrainCellSize;
 float MapWidth;
 float MapHeight;
 int DebugMode;
@@ -77,15 +76,19 @@ struct VertexShaderOutput
 float4 SampleMaterial(float tileId, float2 uv)
 {
     float tileWidth = 1.0 / 4.0;
+    float tileHeight = 1.0 / 4.0;
+    int tileX = int(tileId) % 4;
+    int tileY = int(tileId) / 4;
 
     float2 terrainUV;
 
     terrainUV.x =
-        tileId * tileWidth +
+        tileX * tileWidth +
         uv.x * tileWidth;
 
     terrainUV.y =
-        uv.y;
+        tileY * tileHeight +
+        uv.y * tileHeight;
 
     return tex2D(
         TerrainTilesSampler,
@@ -150,14 +153,13 @@ float4 PixelShaderFunction(
     // ============================================================
 
     float2 tilePosition =
-        input.WorldPosition.xz / TerrainCellSize;
+        input.WorldPosition.xz;
 
     float2 tileCoordinate =
         floor(tilePosition);
 
     float2 localUV =
         frac(tilePosition);
-
 
     float2 tileMapSize =
         float2(MapWidth, MapHeight);
@@ -222,7 +224,7 @@ float4 PixelShaderFunction(
     // ============================================================
 
     float2 textureUV =
-        input.WorldPosition.xz / 8.0;
+        input.WorldPosition.xz / 32.0; // wrap aound fter 32 terrain-tiles
 
     textureUV =
         frac(textureUV);
@@ -257,8 +259,7 @@ float4 PixelShaderFunction(
     // Übergangsbreite
     // ============================================================
 
-    float transitionWidth = 0.25;
-
+    float transitionWidth = 1.0;
 
     // ============================================================
     // Übergang nach RECHTS

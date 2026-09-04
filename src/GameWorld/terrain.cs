@@ -9,7 +9,6 @@ public class Terrain
 {
     public int Width { get; }
     public int Height { get; }
-    public float CellSize { get; }
     public float HeightScale { get; }
 
     private readonly GraphicsDevice _graphicsDevice;
@@ -29,7 +28,6 @@ public class Terrain
         Effect effect,
         int width = 80,
         int height = 80,
-        float cellSize = 2.0f,
         float heightScale = 12.0f,
         Texture2D? heightMapTexture = null)
     {
@@ -42,7 +40,6 @@ public class Terrain
 
         Width = width;
         Height = height;
-        CellSize = cellSize;
 
         HeightScale = heightScale;
 
@@ -57,11 +54,16 @@ public class Terrain
             BuildProceduralHeightMap();
         }
         CreateTileMap();
-        CreateTileMapTexture(graphicsDevice);
+        UpdateTilemap();
 
         BuildMesh();
     }
 
+    public void UpdateTilemap()
+    {
+        CreateTileMapTexture(_graphicsDevice);
+    }
+    
     private void CreateTileMapTexture(GraphicsDevice graphicsDevice)
     {
         _tileMapTexture = new Texture2D(
@@ -80,7 +82,6 @@ public class Terrain
             for (int x = 0; x < Width; x++)
             {
                 byte tileId = (byte)_tiles[x, y];
-                tileId = (byte)r.Next(0, 3);
                 data[y * Width + x] = new Color((byte)tileId, (byte)0, (byte)0, (byte)255);
             }
         }
@@ -132,7 +133,6 @@ public class Terrain
         _effect.Parameters["ShadowTexture"]?.SetValue(shadowMap);
         _effect.Parameters["LightDirection"]?.SetValue(lightDirection);
         _effect.Parameters["TileMapTexture"]?.SetValue(_tileMapTexture);
-            _effect.Parameters["TerrainCellSize"]?.SetValue(CellSize);
         _effect.Parameters["MapWidth"]?.SetValue(Width);
         _effect.Parameters["MapHeight"]?.SetValue(Height);
 
@@ -172,10 +172,10 @@ public class Terrain
             for (int x = 0; x < Width; x++)
             {
                 float worldX =
-                    x * CellSize;
+                    x;
 
                 float worldZ =
-                    z * CellSize;
+                    z;
 
                 float y = GetHeight(x, z);
 
@@ -185,9 +185,9 @@ public class Terrain
                 int index =
                     z * Width + x;
 
-                Vector3 upperLeft = new Vector3(worldX - CellSize * 0.5f, GetHeight(x-1, z-1), worldZ - CellSize * 0.5f);
-                Vector3 upperRight = new Vector3(worldX + CellSize * 0.5f, GetHeight(x+1, z-1), worldZ - CellSize * 0.5f);
-                Vector3 lowerLeft = new Vector3(worldX - CellSize * 0.5f, GetHeight(x-1, z+1), worldZ + CellSize * 0.5f);
+                Vector3 upperLeft = new Vector3(worldX - 0.5f, GetHeight(x-1, z-1), worldZ - 0.5f);
+                Vector3 upperRight = new Vector3(worldX + 0.5f, GetHeight(x+1, z-1), worldZ - 0.5f);
+                Vector3 lowerLeft = new Vector3(worldX - 0.5f, GetHeight(x-1, z+1), worldZ + 0.5f);
 
                 Vector3 normal = -Vector3.Cross(upperRight - upperLeft, lowerLeft - upperLeft);
 
@@ -324,7 +324,7 @@ public class Terrain
 
     public bool TryGetIntersection(Ray ray, out Vector3 intersection)
     {
-        float stepSize = CellSize * 0.25f;
+        float stepSize = 0.25f;
         float previousDistance = 0.0f;
         float previousHeightDifference = GetHeightDifference(ray, previousDistance);
 
@@ -358,12 +358,12 @@ public class Terrain
         Vector3 point = ray.Position + ray.Direction * distance;
 
         if (point.X < 0.0f || point.Z < 0.0f ||
-            point.X > (Width - 1) * CellSize ||
-            point.Z > (Height - 1) * CellSize)
+            point.X > (Width - 1) ||
+            point.Z > (Height - 1))
             return float.PositiveInfinity;
 
-        int terrainX = (int)(point.X / CellSize);
-        int terrainZ = (int)(point.Z / CellSize);
+        int terrainX = (int)(point.X);
+        int terrainZ = (int)(point.Z);
 
         return point.Y - GetHeight(terrainX, terrainZ);
     }
@@ -398,7 +398,7 @@ public class Terrain
     {
         float height = GetHeight(x, z);
 
-        Vector3 position = new Vector3(x * CellSize, height, z * CellSize);
+        Vector3 position = new Vector3(x, height, z);
         return new VertexPosition(position);
     }
 
@@ -408,12 +408,12 @@ public class Terrain
         Color highlightColor = new Color(255, 255, 255, 96);
         VertexPositionColor[] vertices =
         [
-            new(new Vector3(x * CellSize, GetHeight(x, z) + surfaceOffset, z * CellSize), highlightColor),
-            new(new Vector3((x + 1) * CellSize, GetHeight(x + 1, z) + surfaceOffset, z * CellSize), highlightColor),
-            new(new Vector3((x + 1) * CellSize, GetHeight(x + 1, z + 1) + surfaceOffset, (z + 1) * CellSize), highlightColor),
-            new(new Vector3(x * CellSize, GetHeight(x, z) + surfaceOffset, z * CellSize), highlightColor),
-            new(new Vector3((x + 1) * CellSize, GetHeight(x + 1, z + 1) + surfaceOffset, (z + 1) * CellSize), highlightColor),
-            new(new Vector3(x * CellSize, GetHeight(x, z + 1) + surfaceOffset, (z + 1) * CellSize), highlightColor)
+            new(new Vector3(x, GetHeight(x, z) + surfaceOffset, z), highlightColor),
+            new(new Vector3(x + 1, GetHeight(x + 1, z) + surfaceOffset, z), highlightColor),
+            new(new Vector3(x + 1, GetHeight(x + 1, z + 1) + surfaceOffset, z + 1), highlightColor),
+            new(new Vector3(x, GetHeight(x, z) + surfaceOffset, z), highlightColor),
+            new(new Vector3(x + 1, GetHeight(x + 1, z + 1) + surfaceOffset, z + 1), highlightColor),
+            new(new Vector3(x, GetHeight(x, z + 1) + surfaceOffset, z + 1), highlightColor)
         ];
 
         _cellHighlightEffect.World = Matrix.Identity;

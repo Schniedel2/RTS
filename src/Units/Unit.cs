@@ -165,7 +165,7 @@ public class Unit : WorldObject
                 return;
 
             Point nextCell = _plannedPath[0];
-            Point currentCell = map.Grid.ToCell(Position);
+            Point currentCell = map.GameGrid.ToCell(Position);
 
             if (HeadingSnapAngle > 0.0f && currentCell == nextCell)
             {
@@ -173,10 +173,7 @@ public class Unit : WorldObject
                 return;
             }
 
-            Vector3 target = new(
-                (nextCell.X + 0.5f) * terrain.CellSize,
-                Position.Y,
-                (nextCell.Y + 0.5f) * terrain.CellSize);
+            Vector3 target = new(nextCell.X + 0.5f, Position.Y, (nextCell.Y + 0.5f));
             Vector3 toTarget = target - Position;
             toTarget.Y = 0.0f;
 
@@ -277,9 +274,9 @@ public class Unit : WorldObject
 
         protected bool TryMoveTo(GameWorld map, Vector3 position)
         {
-            Point targetCell = map.Grid.ToCell(position);
+            Point targetCell = map.GameGrid.ToCell(position);
 
-            if (!map.Grid.TryMove(this, targetCell))
+            if (!map.GameGrid.TryMove(this, targetCell))
                 return false;
 
             SetPosition(position);
@@ -370,8 +367,8 @@ public class Unit : WorldObject
         Terrain terrain,
             Vector3 worldPosition)
     {
-            int terrainX = (int)MathF.Floor(worldPosition.X / terrain.CellSize);
-            int terrainZ = (int)MathF.Floor(worldPosition.Z / terrain.CellSize);
+            int terrainX = (int)MathF.Floor(worldPosition.X);
+            int terrainZ = (int)MathF.Floor(worldPosition.Z);
 
         return new Vector3(
             worldPosition.X,

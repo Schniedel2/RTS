@@ -2,6 +2,7 @@ namespace RTS;
 
 public enum UnitActionType
 {
+    Filler,
     Goto,
     RaiseTerrain,
     LowerTerrain,
@@ -11,11 +12,16 @@ public enum UnitActionType
     DecToolSize,
     SetTerrainTile,
     GetTerrainTile,
-    NextTerrainTile,
-    PrevTerrainTile,
+    FillTile,
     SelectToolCircle,
     SelectToolRectangle,
-    SelectToolFill
+    SelectToolDither,
+    Save,
+    //  action with alternate behavior
+    TilePreview,
+    AdjustToolSize,
+    AdjustTerrainSize,
+    max
 
 }
 

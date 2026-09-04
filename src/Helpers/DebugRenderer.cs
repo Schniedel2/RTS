@@ -175,10 +175,10 @@ public class DebugRenderer
         {
             for (int x = 0; x < terrain.Width - 1; x++)
             {
-                float x1 = x * terrain.CellSize;
-                float x2 = (x + 1) * terrain.CellSize;
+                float x1 = x;
+                float x2 = (x + 1);
 
-                float zWorld = z * terrain.CellSize;
+                float zWorld = z;
 
                 float y1 =
                     terrain.GetHeight(x, z) +
@@ -206,14 +206,9 @@ public class DebugRenderer
         {
             for (int z = 0; z < terrain.Height - 1; z++)
             {
-                float xWorld =
-                    x * terrain.CellSize;
-
-                float z1 =
-                    z * terrain.CellSize;
-
-                float z2 =
-                    (z + 1) * terrain.CellSize;
+                float xWorld = x;
+                float z1 = z;
+                float z2 = (z + 1);
 
                 float y1 =
                     terrain.GetHeight(x, z) +
@@ -251,7 +246,7 @@ public class DebugRenderer
         Matrix projection)
     {
         var vertices = new List<VertexPositionColor>();
-        GameGrid grid = gameMap.Grid;
+        GameGrid grid = gameMap.GameGrid;
         Terrain terrain = gameMap.Terrain;
 
         const float heightOffset = 0.06f;

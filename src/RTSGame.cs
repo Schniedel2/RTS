@@ -9,7 +9,7 @@ public class RTSGame
 {
     private float _sunAngle = 0.0f;
     public GameWorld World { get; }
-    public PlayerHandler LocalPlayer { get; }
+    public PlayerHandler LocalPlayer => Globals.LocalPlayer;
     private KeyboardState _previousKeyboardState;
     private ConsoleCommands _consoleCommands = null!;
     private ShadowMap _shadowMap = null!;
@@ -25,21 +25,19 @@ public class RTSGame
         GraphicsDevice graphicsDevice,
         int terrainWidth,
         int terrainHeight,
-        float terrainCellSize,
         Texture2D? heightMapTexture = null)
     {
         Globals.Game = this;
         _graphicsDevice = graphicsDevice;
         Globals.RenderHelper = new RenderHelper(graphicsDevice);
 
-        World = new GameWorld(graphicsDevice, Globals._terrainEffect, terrainWidth, terrainHeight, terrainCellSize, heightMapTexture);
+        World = new GameWorld(graphicsDevice, Globals._terrainEffect, terrainWidth, terrainHeight, 1, heightMapTexture);
         Globals.World = World;
-        LocalPlayer = new PlayerHandler(World, World.Markers);
+        Globals.LocalPlayer = new PlayerHandler(World, World.Markers);
         _shadowMap = new ShadowMap(graphicsDevice);
         Globals.Console = new GameConsole(graphicsDevice);
 
         ActionPanel = new ActionPanel(graphicsDevice, Globals.ActionIcons);
-        ActionPanel.ActionSelected += LocalPlayer.SelectAction;
 
         Network = new NetworkHandler();
         NetworkInput = new NetworkInput(Network);
@@ -113,7 +111,7 @@ public class RTSGame
 
         ShadowMap.Update(
             World.Center,
-            World.Terrain.Width * World.Terrain.CellSize * 1.25f,
+            World.Terrain.Width * 1.42f,
             _sunAngle);
 
     }

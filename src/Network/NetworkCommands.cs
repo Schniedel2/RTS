@@ -146,7 +146,8 @@ public static class NetworkCommands
         int toolSize,
         float x,
         float y,
-        float z)
+        float z,
+        TerrainTile? terrainTile)
     {
         return new NetworkMessage(
             NetworkMessageType.ToolActionRequest,
@@ -157,7 +158,8 @@ public static class NetworkCommands
             ToolSize: toolSize,
             X: x,
             Y: y,
-            Z: z);
+            Z: z,
+            TerrainTile: terrainTile);
     }
 
     public static NetworkMessage CreateToolActionCommand(
@@ -173,6 +175,7 @@ public static class NetworkCommands
             ToolSize: request.ToolSize,
             X: request.X,
             Y: request.Y,
-            Z: request.Z);
+            Z: request.Z,
+            TerrainTile: request.TerrainTile);
     }
 }

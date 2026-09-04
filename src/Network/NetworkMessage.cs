@@ -60,4 +60,5 @@ public sealed record NetworkMessage(
     float Z = 0.0f,
     ToolShape? ToolShape = null,
     int ToolSize = 0,
-    UnitActionType? Action = null);
+    UnitActionType? Action = null,
+    TerrainTile? TerrainTile = null);

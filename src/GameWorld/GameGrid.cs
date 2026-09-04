@@ -9,10 +9,10 @@ public class GameGrid
 
     public int Width { get; }
     public int Height { get; }
-    public float CellSize { get; }
+    public int CellSize { get; }
     private readonly Dictionary<Unit, Point> _positions = [];
 
-    public GameGrid(int width, int height, float cellSize)
+    public GameGrid(int width, int height, int cellSize)
     {
         Width = width;
         Height = height;

@@ -83,7 +83,6 @@ public class Game1 : Game
             graphicsDevice: GraphicsDevice,
               terrainWidth: 512,
               terrainHeight: 512,
-              terrainCellSize: 1.0f,
               heightMapTexture: heightMapTexture);
         
         Globals._shadowEffect.Parameters["DebugMode"]?.SetValue(0);

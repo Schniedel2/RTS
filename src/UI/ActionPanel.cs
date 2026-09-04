@@ -20,6 +20,8 @@ public sealed class ActionPanel
     private MouseState _previousMouseState;
     private UnitActionType? _activeActionType;
     private UnitAction? _hoverAction;
+    private bool _isMouseOnPanel = false;
+    private string _tooltipText = "";
 
     public ActionPanel(GraphicsDevice graphicsDevice, Texture2D iconSheet)
     {
@@ -28,10 +30,9 @@ public sealed class ActionPanel
         _pixel.SetData([Color.White]);
     }
 
-    public event Action<UnitAction>? ActionSelected;
-
     public bool Update(IReadOnlyList<Unit> selectedUnits, Viewport viewport)
     {
+        _isMouseOnPanel = false;
         _buttons.Clear();
         if (selectedUnits.Count == 0)
         {
@@ -71,10 +72,12 @@ public sealed class ActionPanel
         if ((mouse.Position.X < panel.Left) || (mouse.Position.X > panel.Right) ||
             (mouse.Position.Y < panel.Top) || (mouse.Position.Y > panel.Bottom))
         {
+            _isMouseOnPanel = false;
             _previousMouseState = mouse;
             return false;
         }
 
+        _isMouseOnPanel = true;
         Point panelPosition = new(0, viewport.Height - panelHeight);
         
         _hoverAction = null;
@@ -83,16 +86,28 @@ public sealed class ActionPanel
             Rectangle screenBounds = bounds;
             screenBounds.Offset(panelPosition);
             if (screenBounds.Contains(mouse.Position))
+            {
                 _hoverAction = action;
+                _tooltipText = _hoverAction!.Name;
+                if (_hoverAction.Type == UnitActionType.TilePreview)
+                    _tooltipText = $"{_hoverAction!.Name} ({Globals.LocalPlayer._currentTerrainTile})";
+            }
         }
 
         if (_hoverAction is not null)
         {
+            UnitActionType actionType = _hoverAction!.Type;
             if (mouse.LeftButton == ButtonState.Pressed &&
                 _previousMouseState.LeftButton == ButtonState.Released)
-            {
-                    _activeActionType = _hoverAction?.Type;
-                    ActionSelected?.Invoke(_hoverAction!);
+            {       
+                if (Globals.LocalPlayer.SelectAction(actionType, false))
+                    _activeActionType = actionType;
+            }
+            if (mouse.RightButton == ButtonState.Pressed &&
+                _previousMouseState.RightButton == ButtonState.Released)
+            {       
+                if (Globals.LocalPlayer.SelectAction(actionType, true))
+                    _activeActionType = actionType;
             }
         }
 
@@ -121,9 +136,36 @@ public sealed class ActionPanel
                 bounds.Y + (ButtonSize - IconSize) / 2,
                 IconSize,
                 IconSize);
+
+            int iconColumn = action.IconColumn;
+            int iconRow = action.IconRow;
+
+            if (action.Type == UnitActionType.TilePreview)
+            {
+                switch (Globals.LocalPlayer._currentTerrainTile)
+                {
+                    case TerrainTile.Grass:
+                        iconColumn = 8;
+                        iconRow = 8;
+                        break;
+                    case TerrainTile.Sand:
+                        iconColumn = 5;
+                        iconRow = 8;
+                        break;
+                    case TerrainTile.Dirt:
+                        iconColumn = 5;
+                        iconRow = 8;
+                        break;
+                    case TerrainTile.Rock:
+                        iconColumn = 9;
+                        iconRow = 8;
+                        break;
+                }
+            }
+                
             Rectangle source = new(
-                action.IconColumn * IconSize,
-                action.IconRow * IconSize,
+                iconColumn * IconSize,
+                iconRow * IconSize,
                 IconSize,
                 IconSize);
 
@@ -134,8 +176,8 @@ public sealed class ActionPanel
             {
                 //  render "selected"-Border
                 Rectangle source2 = new(
-                    action.IconColumn * 1,
-                    action.IconRow * 0,
+                    IconSize * 1,
+                    IconSize * 0,
                     IconSize,
                     IconSize);
                 spriteBatch.Draw(_iconSheet, iconBounds, source2, Color.White);
@@ -143,7 +185,7 @@ public sealed class ActionPanel
             
         }
 
-        if (_hoverAction is not null)
-            RenderHelper.DrawTooltip(spriteBatch, _hoverAction!.Name, _previousMouseState.Position.X + 24, _previousMouseState.Position.Y + 16);
+        if (_isMouseOnPanel)
+            RenderHelper.DrawTooltip(spriteBatch, _tooltipText, _previousMouseState.Position.X + 24, _previousMouseState.Position.Y + 16);
     }
 }

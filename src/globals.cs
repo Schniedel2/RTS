@@ -26,6 +26,7 @@ public struct Telemetry
 
 public static class Globals
 {
+    public static PlayerHandler LocalPlayer = null!;
     public static Texture2D ActionIcons = null!;
     public static RTSGame Game = null!;
     public static GameWorld World = null!;

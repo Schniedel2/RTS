@@ -47,12 +47,17 @@ public sealed class NetworkClient
 
     public Task RequestToolActionAsync(UnitActionType action, ToolShape toolShape, int toolSize, Vector3 target)
     {
-        return RequestToolActionAsync(action, toolShape, toolSize, target.X, target.Y, target.Z);
+        return RequestToolActionAsync(action, toolShape, toolSize, target.X, target.Y, target.Z, null);
     }
-    public Task RequestToolActionAsync(UnitActionType action, ToolShape toolShape, int toolSize, float x, float y, float z)
+
+    public Task RequestToolActionAsync(UnitActionType action, ToolShape toolShape, int toolSize, Vector3 target, TerrainTile terrainTile)
     {
-        NetworkMessage request = NetworkCommands.CreateToolActionRequest(_networkHandler.LocalPeerId, action, toolShape, toolSize, x, y, z);
-        return _networkHandler.SendToHostAsync(request);
+        return RequestToolActionAsync(action, toolShape, toolSize, target.X, target.Y, target.Z, terrainTile);
+    }
+    public Task RequestToolActionAsync(UnitActionType action, ToolShape toolShape, int toolSize, float x, float y, float z, TerrainTile? terrainTile)
+    {
+        NetworkMessage request = NetworkCommands.CreateToolActionRequest(_networkHandler.LocalPeerId, action, toolShape, toolSize, x, y, z, terrainTile);
+        return _networkHandler.SendToHostAsync(request, CancellationToken.None);
     }
 
     public Task RequestSayAsync(

@@ -108,7 +108,11 @@ public sealed class NetworkInput
                 break;
             case UnitActionType.LowerTerrain:
                 TerrainHelper.RaiseTerrain(Globals.World.Terrain, message.X, message.Z, message.ToolShape ?? ToolShape.Circle, message.ToolSize, -0.5f);
-                // Handle LowerTerrain action
+                break;
+            case UnitActionType.SetTerrainTile:
+                if (message.TerrainTile is not { } tile)
+                    break;
+                TerrainHelper.SetTile(Globals.World.Terrain, message.X, message.Z, message.ToolShape ?? ToolShape.Circle, message.ToolSize, tile);
                 break;
             default:
                 // Handle other actions or do nothing

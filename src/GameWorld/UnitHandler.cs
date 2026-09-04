@@ -71,9 +71,9 @@ public class UnitHandler
 
         private void AddUnit(Unit unit)
         {
-            Point cell = _map.Grid.ToCell(unit.Position);
+            Point cell = _map.GameGrid.ToCell(unit.Position);
 
-            if (!_map.Grid.TryMove(unit, cell))
+            if (!_map.GameGrid.TryMove(unit, cell))
                 throw new InvalidOperationException("Unit footprint overlaps another unit or leaves the game grid.");
 
             _units.Add(unit);

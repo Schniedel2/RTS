@@ -10,16 +10,16 @@ public class GameWorld
     public Terrain Terrain => _terrain;
     public UnitHandler Units { get; }
     public MarkerHandler Markers { get; }
-    public GameGrid Grid { get; }
+    public GameGrid GameGrid { get; }
     public PathfindingManager PathfindingManager { get; }
-    public Vector3 Center => new Vector3(_terrain.Width * _terrain.CellSize * 0.5f, 0.0f, _terrain.Height * _terrain.CellSize * 0.5f);
+    public Vector3 Center => new Vector3(_terrain.Width * 0.5f, 0.0f, _terrain.Height * 0.5f);
 
     public GameWorld(
         GraphicsDevice graphicsDevice,
         Effect effect,
         int terrainWidth,
         int terrainHeight,
-        float terrainCellSize,
+        int gameGridCellSize,
         Texture2D? heightMapTexture = null)
     {
         _graphicsDevice = graphicsDevice;
@@ -29,11 +29,10 @@ public class GameWorld
                 effect,
                 width: terrainWidth,
                 height: terrainHeight,
-                cellSize: terrainCellSize,
                 heightScale: 32.0f,
                 heightMapTexture: heightMapTexture);
 
-        Grid = new GameGrid(terrainWidth, terrainHeight, terrainCellSize);
+        GameGrid = new GameGrid(terrainWidth, terrainHeight, gameGridCellSize);
         Units = new UnitHandler(_terrain, this);
         Markers = new MarkerHandler();
         PathfindingManager = new PathfindingManager(this);
@@ -111,6 +110,6 @@ public class GameWorld
 
     public bool CanMove(int x, int y, Unit unit)
     {
-           return Grid.CanPlace(unit, new Point(x, y));
+           return GameGrid.CanPlace(unit, new Point(x, y));
     }
 }

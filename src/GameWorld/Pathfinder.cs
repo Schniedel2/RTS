@@ -210,7 +210,7 @@ public class Pathfinder
 
     private Point ToCell(Vector3 position)
     {
-        float cellSize = _map.Terrain.CellSize;
+        float cellSize = Globals.World.GameGrid.CellSize;
 
         return new Point(
             (int)(position.X / cellSize),
