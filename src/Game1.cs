@@ -7,8 +7,6 @@ namespace RTS;
 
 public class Game1 : Game
 {
-    private readonly GraphicsDeviceManager _graphics;
-
     private SpriteBatch _spriteBatch = null!;
 
         private RTSGame _rtsGame = null!;
@@ -19,17 +17,16 @@ public class Game1 : Game
 
     public Game1()
     {
-        _graphics =
-            new GraphicsDeviceManager(this);
+        Globals.Graphics = new GraphicsDeviceManager(this);
 
         Content.RootDirectory = "Content";
 
         IsMouseVisible = true;
 
-        _graphics.PreferredBackBufferWidth = 1920;
-        _graphics.PreferredBackBufferHeight = 1080;
+        Globals.Graphics.PreferredBackBufferWidth = 1920;
+        Globals.Graphics.PreferredBackBufferHeight = 1080;
 
-        _graphics.SynchronizeWithVerticalRetrace = true;
+        Globals.Graphics.SynchronizeWithVerticalRetrace = true;
     }
 
     private void OnTextInput(object? sender, TextInputEventArgs e)
@@ -39,9 +36,7 @@ public class Game1 : Game
 
     protected override void Initialize()
     {
-        Globals._debugRenderer = new DebugRenderer(GraphicsDevice);
-
-        Globals._camera = new Camera(_graphics);
+        Globals.GraphicsDevice = GraphicsDevice;
 
         Window.TextInput += OnTextInput;
 
@@ -80,7 +75,6 @@ public class Game1 : Game
         // -------------------------------------------------
 
         _rtsGame = new RTSGame(
-            graphicsDevice: GraphicsDevice,
               terrainWidth: 512,
               terrainHeight: 512,
               heightMapTexture: heightMapTexture);

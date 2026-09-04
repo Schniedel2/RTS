@@ -19,31 +19,36 @@ public class RTSGame
     public NetworkHost NetworkHost { get; }
     public NetworkClient NetworkClient { get; }
     public ActionPanel? ActionPanel { get; }
-    private GraphicsDevice _graphicsDevice;
 
     public RTSGame(
-        GraphicsDevice graphicsDevice,
         int terrainWidth,
         int terrainHeight,
         Texture2D? heightMapTexture = null)
     {
         Globals.Game = this;
-        _graphicsDevice = graphicsDevice;
-        Globals.RenderHelper = new RenderHelper(graphicsDevice);
-
-        World = new GameWorld(graphicsDevice, Globals._terrainEffect, terrainWidth, terrainHeight, 1, heightMapTexture);
+        Globals.RenderHelper = new RenderHelper(Globals.GraphicsDevice);
+        Globals._debugRenderer = new DebugRenderer();
+        Globals._camera = new Camera();
+    
+        World = new GameWorld(terrainWidth, terrainHeight, 1, heightMapTexture);
         Globals.World = World;
         Globals.LocalPlayer = new PlayerHandler(World, World.Markers);
-        _shadowMap = new ShadowMap(graphicsDevice);
-        Globals.Console = new GameConsole(graphicsDevice);
+        _shadowMap = new ShadowMap();
+        Globals.Console = new GameConsole();
 
-        ActionPanel = new ActionPanel(graphicsDevice, Globals.ActionIcons);
+        ActionPanel = new ActionPanel(Globals.ActionIcons);
 
         Network = new NetworkHandler();
         NetworkInput = new NetworkInput(Network);
         NetworkHost = new NetworkHost(Network, NetworkInput);
         NetworkClient = new NetworkClient(Network);
         _consoleCommands = new ConsoleCommands(Globals.Console, this);
+
+        Globals.CellHighlightEffect = new BasicEffect(Globals.GraphicsDevice)
+        {
+            VertexColorEnabled = true
+        };
+
 
         _ = _consoleCommands.CallBatch(new[] { "autorun.batch" });
     }
@@ -157,7 +162,7 @@ public class RTSGame
             ShadowMap,
             Globals._unitEffect);
 
-        LocalPlayer.Draw3D(_graphicsDevice, camera);
+        LocalPlayer.Draw3D(camera);
         //Globals._debugRenderer.DrawGameGrid(World, camera.View, camera.Projection);
         
     }

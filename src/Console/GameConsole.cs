@@ -23,16 +23,14 @@ public class GameConsole
 
     public IReadOnlyList<string> History => _history;
     public string Input => _input;
-    private GraphicsDevice _graphicsDevice;
     private Texture2D _consolePixel;
     public SpriteFont Font { get; } = Globals._debugFont;
     int _autoCompleteIndex = 0;
     string _autoCompleteText = "";
 
-    public GameConsole(GraphicsDevice graphicsDevice)
+    public GameConsole()
     {
-        _graphicsDevice = graphicsDevice;
-        _consolePixel = new Texture2D(_graphicsDevice, 1, 1);
+        _consolePixel = new Texture2D(Globals.GraphicsDevice, 1, 1);
         _consolePixel.SetData(new[] { Color.White });
             
         RegisterCommand("help", _ => PrintHelp());
@@ -291,7 +289,7 @@ public class GameConsole
             new Rectangle(
                 0,
                 0,
-                _graphicsDevice.Viewport.Width,
+                Globals.GraphicsDevice.Viewport.Width,
                 consoleHeight),
             Color.Black * 0.80f);
 

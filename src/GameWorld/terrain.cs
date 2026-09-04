@@ -2,6 +2,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
+using System.IO;
 
 namespace RTS;
 
@@ -11,7 +12,6 @@ public class Terrain
     public int Height { get; }
     public float HeightScale { get; }
 
-    private readonly GraphicsDevice _graphicsDevice;
 
     private VertexPositionColorNormal[] _vertices = [];
     private int[] _indices = [];
@@ -19,25 +19,28 @@ public class Terrain
     private float[] HeightMap = [];
     private TerrainTile[,] _tiles = null!;
     
-    private Effect _effect = null!;
     private Texture2D _tileMapTexture = null!;
-    private readonly BasicEffect _cellHighlightEffect;
+
+    public Terrain(string mapDirectory)
+    {
+        HeightScale = 12.0f;
+
+        Texture2D heightmapTexture = Texture2D.FromFile(Globals.GraphicsDevice, Path.Combine(mapDirectory, "terrain-heightmap.png"));
+        Texture2D tilemapTexture = Texture2D.FromFile(Globals.GraphicsDevice, Path.Combine(mapDirectory, "terrain-tilemap.png"));
+        Width = heightmapTexture.Width;
+        Height = heightmapTexture.Height;
+        BuildHeightMap(heightmapTexture, HeightScale);
+
+        CreateTilemap(tilemapTexture);
+        BuildMesh();
+    }
 
     public Terrain(
-        GraphicsDevice graphicsDevice,
-        Effect effect,
         int width = 80,
         int height = 80,
         float heightScale = 12.0f,
         Texture2D? heightMapTexture = null)
     {
-        _graphicsDevice = graphicsDevice;
-        _effect = effect;
-        _cellHighlightEffect = new BasicEffect(graphicsDevice)
-        {
-            VertexColorEnabled = true
-        };
-
         Width = width;
         Height = height;
 
@@ -47,13 +50,13 @@ public class Terrain
             heightMapTexture.Width == Width &&
             heightMapTexture.Height == Height)
         {
-            BuildHeightMap(heightMapTexture);
+            BuildHeightMap(heightMapTexture, HeightScale);
         }
         else
         {
             BuildProceduralHeightMap();
         }
-        CreateTileMap();
+        CreateDummyTileMap();
         UpdateTilemap();
 
         BuildMesh();
@@ -61,13 +64,31 @@ public class Terrain
 
     public void UpdateTilemap()
     {
-        CreateTileMapTexture(_graphicsDevice);
+        CreateTileMapTexture();
     }
-    
-    private void CreateTileMapTexture(GraphicsDevice graphicsDevice)
+
+    public void CreateTilemap(Texture2D _tilemap)
+    {
+        _tiles = new TerrainTile[Width, Height];
+        Color[] data = new Color[Width * Height];
+        _tilemap.GetData(data);
+
+        for (int y = 0; y < Height; y++)
+        {
+            for (int x = 0; x < Width; x++)
+            {
+                Color c = data[y * Width + x];
+                byte tileId = c.R;
+                _tiles[x, y] = (TerrainTile)tileId;
+            }
+        }
+        CreateTileMapTexture();
+    }
+
+    private void CreateTileMapTexture()
     {
         _tileMapTexture = new Texture2D(
-            graphicsDevice,
+            Globals.GraphicsDevice,
             Width,
             Height,
             false,
@@ -88,6 +109,31 @@ public class Terrain
         _tileMapTexture.SetData(data);
     }    
 
+    private Texture2D CreateHeightMapTexture()
+    {
+        Texture2D heightmapTexture = new Texture2D(
+            Globals.GraphicsDevice,
+            Width,
+            Height,
+            false,
+            SurfaceFormat.Color);
+
+        Color[] data = new Color[Width * Height];
+
+        Random r = new Random();
+
+        for (int y = 0; y < Height; y++)
+        {
+            for (int x = 0; x < Width; x++)
+            {
+                byte height = (byte)(GetHeight(x, y) * 255.0f);
+                data[y * Width + x] = new Color((byte)height, (byte)0, (byte)0, (byte)255);
+            }
+        }
+        heightmapTexture.SetData(data);
+        return heightmapTexture;
+    }    
+
     public void DrawShadow(
         Effect effect,
         Matrix world,
@@ -103,7 +149,7 @@ public class Terrain
         {
             pass.Apply();
 
-            _graphicsDevice.DrawUserIndexedPrimitives(
+            Globals.GraphicsDevice.DrawUserIndexedPrimitives(
                 PrimitiveType.TriangleList,
                 _vertices,
                 0,
@@ -123,25 +169,26 @@ public class Terrain
         Texture2D shadowMap,
         Vector3 lightDirection)
     {
-        _effect.Parameters["World"]?.SetValue(world);
-        _effect.Parameters["View"]?.SetValue(view);
-        _effect.Parameters["Projection"]?.SetValue(projection);
+        
+        Globals._terrainEffect.Parameters["World"]?.SetValue(world);
+        Globals._terrainEffect.Parameters["View"]?.SetValue(view);
+        Globals._terrainEffect.Parameters["Projection"]?.SetValue(projection);
 
-        _effect.Parameters["LightView"]?.SetValue(lightView);
-        _effect.Parameters["LightProjection"]?.SetValue(lightProjection);
+        Globals._terrainEffect.Parameters["LightView"]?.SetValue(lightView);
+        Globals._terrainEffect.Parameters["LightProjection"]?.SetValue(lightProjection);
 
-        _effect.Parameters["ShadowTexture"]?.SetValue(shadowMap);
-        _effect.Parameters["LightDirection"]?.SetValue(lightDirection);
-        _effect.Parameters["TileMapTexture"]?.SetValue(_tileMapTexture);
-        _effect.Parameters["MapWidth"]?.SetValue(Width);
-        _effect.Parameters["MapHeight"]?.SetValue(Height);
+        Globals._terrainEffect.Parameters["ShadowTexture"]?.SetValue(shadowMap);
+        Globals._terrainEffect.Parameters["LightDirection"]?.SetValue(lightDirection);
+        Globals._terrainEffect.Parameters["TileMapTexture"]?.SetValue(_tileMapTexture);
+        Globals._terrainEffect.Parameters["MapWidth"]?.SetValue(Width);
+        Globals._terrainEffect.Parameters["MapHeight"]?.SetValue(Height);
 
         foreach (EffectPass pass in
-            _effect.CurrentTechnique.Passes)
+            Globals._terrainEffect.CurrentTechnique.Passes)
         {
             pass.Apply();
 
-            _graphicsDevice.DrawUserIndexedPrimitives(
+            Globals.GraphicsDevice.DrawUserIndexedPrimitives(
                 PrimitiveType.TriangleList,
                 _vertices,
                 0,
@@ -240,14 +287,14 @@ public class Terrain
         }
     }
 
-    private void BuildHeightMap(Texture2D heightMapTexture)
+    private void BuildHeightMap(Texture2D heightMapTexture, float heightScale)
     {
         Color[] pixels = new Color[Width * Height];
         heightMapTexture.GetData(pixels);
         HeightMap = new float[Width * Height];
 
         for (int index = 0; index < pixels.Length; index++)
-            HeightMap[index] = pixels[index].R / 255.0f * HeightScale;
+            HeightMap[index] = pixels[index].R / 255.0f * heightScale;
     }
 
     private void BuildProceduralHeightMap()
@@ -378,7 +425,7 @@ public class Terrain
         _tiles[x, y] = tile;
     }
 
-    public void CreateTileMap()
+    public void CreateDummyTileMap()
     {        
         _tiles = new TerrainTile[Width, Height];
         for (int x = 0; x < Width; x++)
@@ -416,11 +463,11 @@ public class Terrain
             new(new Vector3(x, GetHeight(x, z + 1) + surfaceOffset, z + 1), highlightColor)
         ];
 
-        _cellHighlightEffect.World = Matrix.Identity;
-        _cellHighlightEffect.View = camera.View;
-        _cellHighlightEffect.Projection = camera.Projection;
+        Globals.CellHighlightEffect.World = Matrix.Identity;
+        Globals.CellHighlightEffect.View = camera.View;
+        Globals.CellHighlightEffect.Projection = camera.Projection;
 
-        _graphicsDevice.BlendState = new BlendState
+        Globals.GraphicsDevice.BlendState = new BlendState
         {
             ColorSourceBlend = Blend.SourceAlpha,
             ColorDestinationBlend = Blend.InverseSourceAlpha,
@@ -428,17 +475,35 @@ public class Terrain
             AlphaDestinationBlend = Blend.InverseSourceAlpha
         };
 
-        foreach (EffectPass pass in _cellHighlightEffect.CurrentTechnique.Passes)
+        foreach (EffectPass pass in Globals.CellHighlightEffect.CurrentTechnique.Passes)
         {
             pass.Apply();
 
-            _graphicsDevice.DrawUserPrimitives(
+            Globals.GraphicsDevice.DrawUserPrimitives(
                 PrimitiveType.TriangleList,
                 vertices,
                 0,
                 vertices.Length / 3);
         }
 
-        _graphicsDevice.BlendState = BlendState.Opaque;
+        Globals.GraphicsDevice.BlendState = BlendState.Opaque;
     }
+
+    public void Save(string mapDirectory)
+    {
+        string filename = Path.Combine(mapDirectory, "terrain-tilemap.png");
+        using (FileStream stream = new FileStream(filename, FileMode.CreateNew))
+        {
+            _tileMapTexture.SaveAsPng(stream, width: Width, height: Height);
+        }
+
+        using(Texture2D heightMapTexture = CreateHeightMapTexture())
+        {
+            filename = Path.Combine(mapDirectory, "terrain-heightmap.png");
+            using (FileStream stream = new FileStream(filename, FileMode.CreateNew))
+            {
+                heightMapTexture.SaveAsPng(stream, width: Width, height: Height);
+            }
+        }
+   }
 }

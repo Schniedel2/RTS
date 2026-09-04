@@ -304,7 +304,7 @@ public class PlayerHandler
             );
     }
 
-    public void Draw3D(GraphicsDevice graphicsDevice, Camera camera)
+    public void Draw3D(Camera camera)
     {
        //  render editor-tool
         if (MouseIsOnTerrain)

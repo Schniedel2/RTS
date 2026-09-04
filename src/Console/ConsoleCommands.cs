@@ -73,6 +73,12 @@ public class ConsoleCommands
         _console.RegisterAsyncCommand(
             "call",
             CallBatch);
+        _console.RegisterCommand(
+            "map-save",
+            SaveMap);
+        _console.RegisterCommand(
+            "map-load",
+            LoadMap);
     }
 
     public async System.Threading.Tasks.Task CallBatch(string[] args)
@@ -601,5 +607,23 @@ public class ConsoleCommands
 
         if (varName == "displayname")
             _rtsGame.Network.DisplayName = args[1];
+    }
+
+    private void SaveMap(string[] args)
+    {
+        string mapName = args[0];
+        Globals.World.Save(mapName);
+    }
+
+    private void LoadMap(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            _console.Print("Usage: load <mapname>");
+            return;
+        }
+
+        string mapName = args[0];
+        Globals.World.Load(mapName);
     }
 }

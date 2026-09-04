@@ -6,7 +6,6 @@ namespace RTS;
 
 public class ShadowMap
 {
-    private readonly GraphicsDevice _graphicsDevice;
 
     private readonly int _size;
 
@@ -20,16 +19,13 @@ public class ShadowMap
 
     public RenderTarget2D Texture => _renderTarget;
 
-    public ShadowMap(
-        GraphicsDevice graphicsDevice,
-        int size = 2048)
+    public ShadowMap(int size = 2048)
     {
-        _graphicsDevice = graphicsDevice;
         _size = size;
 
         _renderTarget =
             new RenderTarget2D(
-                _graphicsDevice,
+                Globals.GraphicsDevice,
                 size,
                 size,
                 false,
@@ -108,9 +104,9 @@ public class ShadowMap
 */
     public void Begin()
     {
-        _graphicsDevice.SetRenderTarget(_renderTarget);
+        Globals.GraphicsDevice.SetRenderTarget(_renderTarget);
 
-        _graphicsDevice.Clear(
+        Globals.GraphicsDevice.Clear(
             ClearOptions.Target | ClearOptions.DepthBuffer,
             Color.White,
             1.0f,
@@ -119,6 +115,6 @@ public class ShadowMap
 
     public void End()
     {
-        _graphicsDevice.SetRenderTarget(null);
+        Globals.GraphicsDevice.SetRenderTarget(null);
     }
 }

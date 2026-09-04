@@ -7,14 +7,11 @@ namespace RTS;
 
 public class DebugRenderer
 {
-    private readonly GraphicsDevice _graphicsDevice;
     private readonly BasicEffect _effect;
 
-    public DebugRenderer(GraphicsDevice graphicsDevice)
+    public DebugRenderer()
     {
-        _graphicsDevice = graphicsDevice;
-
-        _effect = new BasicEffect(graphicsDevice)
+        _effect = new BasicEffect(Globals.GraphicsDevice)
         {
             VertexColorEnabled = true,
             LightingEnabled = false
@@ -34,7 +31,7 @@ public class DebugRenderer
         {
             pass.Apply();
 
-            _graphicsDevice.DrawUserPrimitives(
+            Globals.GraphicsDevice.DrawUserPrimitives(
                 PrimitiveType.LineList,
                 vertices,
                 0,
@@ -288,7 +285,7 @@ public class DebugRenderer
         {
             pass.Apply();
 
-            _graphicsDevice.DrawUserPrimitives(
+            Globals.GraphicsDevice.DrawUserPrimitives(
                 PrimitiveType.TriangleList,
                 vertices.ToArray(),
                 0,

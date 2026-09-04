@@ -23,10 +23,10 @@ public sealed class ActionPanel
     private bool _isMouseOnPanel = false;
     private string _tooltipText = "";
 
-    public ActionPanel(GraphicsDevice graphicsDevice, Texture2D iconSheet)
+    public ActionPanel(Texture2D iconSheet)
     {
         _iconSheet = iconSheet;
-        _pixel = new Texture2D(graphicsDevice, 1, 1);
+        _pixel = new Texture2D(Globals.GraphicsDevice, 1, 1);
         _pixel.SetData([Color.White]);
     }
 

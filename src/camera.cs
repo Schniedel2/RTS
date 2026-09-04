@@ -17,8 +17,6 @@ public class Camera
     public float MoveSpeed { get; set; } = 30.0f;
     public float RotationSpeed { get; set; } = 11.25f / 4.0f;
 
-    private readonly GraphicsDeviceManager _graphics;
-
     public Matrix View
     {
         get
@@ -36,7 +34,7 @@ public class Camera
         get
         {
             float aspectRatio =
-                _graphics.GraphicsDevice.Viewport.AspectRatio;
+                Globals.GraphicsDevice.Viewport.AspectRatio;
 
             return Matrix.CreatePerspectiveFieldOfView(
                 MathHelper.ToRadians(60),
@@ -46,10 +44,8 @@ public class Camera
         }
     }
 
-    public Camera(GraphicsDeviceManager graphics)
+    public Camera()
     {
-        _graphics = graphics;
-
         Position = new Vector3(128, 60, 128);
 
         // Blick schräg nach unten

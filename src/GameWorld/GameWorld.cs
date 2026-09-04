@@ -1,11 +1,13 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using System;
+using System.IO;
+using System.Collections.Generic;
 
 namespace RTS;
 
 public class GameWorld
 {
-    private GraphicsDevice _graphicsDevice;
     private Terrain _terrain;
     public Terrain Terrain => _terrain;
     public UnitHandler Units { get; }
@@ -15,18 +17,13 @@ public class GameWorld
     public Vector3 Center => new Vector3(_terrain.Width * 0.5f, 0.0f, _terrain.Height * 0.5f);
 
     public GameWorld(
-        GraphicsDevice graphicsDevice,
-        Effect effect,
         int terrainWidth,
         int terrainHeight,
         int gameGridCellSize,
         Texture2D? heightMapTexture = null)
     {
-        _graphicsDevice = graphicsDevice;
         _terrain =
             new Terrain(
-                graphicsDevice,
-                effect,
                 width: terrainWidth,
                 height: terrainHeight,
                 heightScale: 32.0f,
@@ -54,7 +51,7 @@ public class GameWorld
 
         effect.Parameters["View"]?.SetValue(view);
         effect.Parameters["Projection"]?.SetValue(projection);
-        Units.DrawShadow(_graphicsDevice, effect);
+        Units.DrawShadow(Globals.GraphicsDevice, effect);
     }
 
     public void DrawTerrain(
@@ -96,8 +93,8 @@ public class GameWorld
         unitEffect.Parameters["ShadowTexture"]?.SetValue(shadowTexture);
         unitEffect.Parameters["LightDirection"]?.SetValue(lightDirection);
 
-        Units.Draw(_graphicsDevice, unitEffect);
-        Markers.Draw(_graphicsDevice, unitEffect);
+        Units.Draw(Globals.GraphicsDevice, unitEffect);
+        Markers.Draw(Globals.GraphicsDevice, unitEffect);
     }
 
     public void Update(GameTime gameTime)
@@ -111,5 +108,19 @@ public class GameWorld
     public bool CanMove(int x, int y, Unit unit)
     {
            return GameGrid.CanPlace(unit, new Point(x, y));
+    }
+
+    public void Load(string mapName)
+    {
+        string mapDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Maps", mapName);
+        _terrain = new Terrain(mapDirectory);
+    }
+
+    public void Save(string mapName)
+    {
+        string mapDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Maps", mapName);
+        if (!Directory.Exists(mapDirectory))
+            Directory.CreateDirectory(mapDirectory);
+        _terrain.Save(mapDirectory);
     }
 }

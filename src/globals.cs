@@ -26,6 +26,8 @@ public struct Telemetry
 
 public static class Globals
 {
+    public static GraphicsDeviceManager Graphics = null!;
+    public static GraphicsDevice GraphicsDevice = null!;
     public static PlayerHandler LocalPlayer = null!;
     public static Texture2D ActionIcons = null!;
     public static RTSGame Game = null!;
@@ -33,6 +35,7 @@ public static class Globals
     public static RenderHelper RenderHelper = null!;
     public static Effect _shadowEffect = null!;
     public static Effect _terrainEffect = null!;
+    public static BasicEffect CellHighlightEffect = null!;
     public static Effect _unitEffect = null!;
 
     public static Camera _camera = null!;
