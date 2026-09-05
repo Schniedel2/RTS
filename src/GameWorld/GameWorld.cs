@@ -22,11 +22,13 @@ public class GameWorld
         int gameGridCellSize,
         Texture2D? heightMapTexture = null)
     {
+        Globals.MapsDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Maps");
+        Globals.MapsDirectory = "c:\\temp\\Maps";
+
         _terrain =
             new Terrain(
                 width: terrainWidth,
                 height: terrainHeight,
-                heightScale: 32.0f,
                 heightMapTexture: heightMapTexture);
 
         GameGrid = new GameGrid(terrainWidth, terrainHeight, gameGridCellSize);
@@ -112,13 +114,13 @@ public class GameWorld
 
     public void Load(string mapName)
     {
-        string mapDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Maps", mapName);
+        string mapDirectory = Path.Combine(Globals.MapsDirectory, mapName);
         _terrain = new Terrain(mapDirectory);
     }
 
     public void Save(string mapName)
     {
-        string mapDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Maps", mapName);
+        string mapDirectory = Path.Combine(Globals.MapsDirectory, mapName);
         if (!Directory.Exists(mapDirectory))
             Directory.CreateDirectory(mapDirectory);
         _terrain.Save(mapDirectory);

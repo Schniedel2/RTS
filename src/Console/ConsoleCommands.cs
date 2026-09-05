@@ -79,6 +79,9 @@ public class ConsoleCommands
         _console.RegisterCommand(
             "map-load",
             LoadMap);
+        _console.RegisterCommand(
+            "map-list",
+            ListMap);
     }
 
     public async System.Threading.Tasks.Task CallBatch(string[] args)
@@ -170,26 +173,8 @@ public class ConsoleCommands
 
     private void ListBatchFiles(string batchDirectory)
     {
-        if (!Directory.Exists(batchDirectory))
-        {
-            _console.Print("No batch files available.");
-            return;
-        }
-
-        string[] batchFiles = Directory
-            .GetFiles(batchDirectory, "*.batch")
-            .Select(Path.GetFileName)
-            .Where(fileName => fileName is not null)
-            .OrderBy(fileName => fileName, StringComparer.OrdinalIgnoreCase)
-            .ToArray()!;
-
-        if (batchFiles.Length == 0)
-        {
-            _console.Print("No batch files available.");
-            return;
-        }
-
-        _console.Print("Batch files:");
+        string[] batchFiles = IOHelper.GetFiles(batchDirectory, "*.batch");
+        _console.Print($"Batch files in {batchDirectory}:");
         foreach (string fileName in batchFiles)
             _console.Print($"  {fileName}");
     }
@@ -626,4 +611,12 @@ public class ConsoleCommands
         string mapName = args[0];
         Globals.World.Load(mapName);
     }
+
+    private void ListMap(string[] args)
+    {
+        string[] mapDirectories = IOHelper.GetDirectories(Globals.MapsDirectory);
+        _console.Print($"Maps available in {Globals.MapsDirectory}:");
+        foreach (string fileName in mapDirectories)
+            _console.Print($"  {fileName}");
+   }
 }

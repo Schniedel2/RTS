@@ -26,6 +26,7 @@ public struct Telemetry
 
 public static class Globals
 {
+    public static string MapsDirectory = "c:\\temp\\Maps";
     public static GraphicsDeviceManager Graphics = null!;
     public static GraphicsDevice GraphicsDevice = null!;
     public static PlayerHandler LocalPlayer = null!;

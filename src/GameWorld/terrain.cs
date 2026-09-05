@@ -1,56 +1,42 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
-using System.Collections.Generic;
 using System.IO;
 
 namespace RTS;
 
 public class Terrain
 {
-    public int Width { get; }
-    public int Height { get; }
-    public float HeightScale { get; }
-
-
-    private VertexPositionColorNormal[] _vertices = [];
-    private int[] _indices = [];
-    private int[] _gridIndices = [];
-    private float[] HeightMap = [];
+    public int Width { get; private set;}
+    public int Height { get; private set;}
+    private const float HeightScale = 32.0f;
+    private VertexPositionColorNormal[] _vertices = null!;
+    private int[] _indices = null!;
+    private int[] _gridIndices = null!;
+    private float[] HeightMap = null!;
     private TerrainTile[,] _tiles = null!;
     
     private Texture2D _tileMapTexture = null!;
 
     public Terrain(string mapDirectory)
     {
-        HeightScale = 12.0f;
-
-        Texture2D heightmapTexture = Texture2D.FromFile(Globals.GraphicsDevice, Path.Combine(mapDirectory, "terrain-heightmap.png"));
-        Texture2D tilemapTexture = Texture2D.FromFile(Globals.GraphicsDevice, Path.Combine(mapDirectory, "terrain-tilemap.png"));
-        Width = heightmapTexture.Width;
-        Height = heightmapTexture.Height;
-        BuildHeightMap(heightmapTexture, HeightScale);
-
-        CreateTilemap(tilemapTexture);
-        BuildMesh();
+        LoadTilemap(mapDirectory);
+        LoadHeightmap(mapDirectory);
     }
 
     public Terrain(
-        int width = 80,
-        int height = 80,
-        float heightScale = 12.0f,
+        int width,
+        int height,
         Texture2D? heightMapTexture = null)
     {
         Width = width;
         Height = height;
 
-        HeightScale = heightScale;
-
         if (heightMapTexture is not null &&
             heightMapTexture.Width == Width &&
             heightMapTexture.Height == Height)
         {
-            BuildHeightMap(heightMapTexture, HeightScale);
+            BuildHeightMap(heightMapTexture);
         }
         else
         {
@@ -287,14 +273,14 @@ public class Terrain
         }
     }
 
-    private void BuildHeightMap(Texture2D heightMapTexture, float heightScale)
+    private void BuildHeightMap(Texture2D heightMapTexture)
     {
         Color[] pixels = new Color[Width * Height];
         heightMapTexture.GetData(pixels);
         HeightMap = new float[Width * Height];
 
         for (int index = 0; index < pixels.Length; index++)
-            HeightMap[index] = pixels[index].R / 255.0f * heightScale;
+            HeightMap[index] = pixels[index].R / 255.0f * HeightScale;
     }
 
     private void BuildProceduralHeightMap()
@@ -489,21 +475,77 @@ public class Terrain
         Globals.GraphicsDevice.BlendState = BlendState.Opaque;
     }
 
+    public void SaveTilemap(string mapDirectory)
+    {
+        byte[,] tileMap = new byte[Width, Height];
+        for (int x = 0; x < Width; x++)
+            for (int y = 0; y < Height; y++)
+                tileMap[x, y] = (byte)_tiles[x, y];
+
+        string filename = Path.Combine(mapDirectory, "terrain-tilemap.png");
+        using (FileStream stream = new FileStream(filename, FileMode.Create))
+        {
+            IOHelper.SaveTileMapPng(
+                stream,
+                tileMap);
+        }
+    }
+
+    public void SaveHeightmap(string mapDirectory)
+    {
+        byte[,] heightMap = new byte[Width, Height];
+        for (int x = 0; x < Width; x++)
+            for (int y = 0; y < Height; y++)
+            {
+                float h = GetHeight(x, y) / HeightScale;
+                byte h8 = (byte)(h * 255.0f);
+                heightMap[x, y] = h8;
+            }
+
+        string filename = Path.Combine(mapDirectory, "terrain-heightmap.png");
+        using (FileStream stream = new FileStream(filename, FileMode.Create))
+        {
+            IOHelper.SaveHeightMap(
+                stream,
+                heightMap);
+        }
+    }
+
     public void Save(string mapDirectory)
     {
-        string filename = Path.Combine(mapDirectory, "terrain-tilemap.png");
-        using (FileStream stream = new FileStream(filename, FileMode.CreateNew))
-        {
-            _tileMapTexture.SaveAsPng(stream, width: Width, height: Height);
-        }
+        SaveTilemap(mapDirectory);
+        SaveHeightmap(mapDirectory);
+    }
 
-        using(Texture2D heightMapTexture = CreateHeightMapTexture())
-        {
-            filename = Path.Combine(mapDirectory, "terrain-heightmap.png");
-            using (FileStream stream = new FileStream(filename, FileMode.CreateNew))
+    public void LoadTilemap(string mapDirectory)
+    {
+        string filename = Path.Combine(mapDirectory, "terrain-tilemap.png");
+        Texture2D tilemapTexture = Texture2D.FromFile(Globals.GraphicsDevice, filename);
+
+        Width = tilemapTexture.Width;
+        Height = tilemapTexture.Height;
+ 
+        Color[] data = new Color[Width * Height];
+        tilemapTexture.GetData(data);
+
+         _tiles = new TerrainTile[Width, Height];
+        for (int x = 0; x < Width; x++)
+            for (int y = 0; y < Height; y++)
             {
-                heightMapTexture.SaveAsPng(stream, width: Width, height: Height);
+                Color pixelColor = data[y * tilemapTexture.Width + x];
+                _tiles[x, y] = IOHelper.RGBtoTile(pixelColor);
             }
-        }
+
+        UpdateTilemap();
+   }
+
+    public void LoadHeightmap(string mapDirectory)
+    {
+        string filename = Path.Combine(mapDirectory, "terrain-heightmap.png");
+        Texture2D heightmapTexture = Texture2D.FromFile(Globals.GraphicsDevice, filename);
+        Width = heightmapTexture.Width;
+        Height = heightmapTexture.Height;
+        BuildHeightMap(heightmapTexture);
+        BuildMesh();
    }
 }
