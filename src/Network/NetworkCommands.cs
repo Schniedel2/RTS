@@ -1,4 +1,5 @@
 using System;
+using Microsoft.Xna.Framework;
 
 namespace RTS.Network;
 
@@ -211,6 +212,34 @@ public static class NetworkCommands
             X: request.X,
             Y: request.Y,
             Z: request.Z);
+    }
+
+    public static NetworkMessage CreateUnitHitCommand(
+        Guid hostId,
+        Guid targetUnitId,
+        Guid? sourceUnitId,
+        Vector3 position,
+        float damage,
+        float hitPoints)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.UnitHitCommand,
+            hostId,
+            UnitId: targetUnitId,
+            TargetId: sourceUnitId,
+            X: position.X,
+            Y: position.Y,
+            Z: position.Z,
+            Damage: damage,
+            HitPoints: hitPoints);
+    }
+
+    public static NetworkMessage CreateDestroyUnitCommand(Guid hostId, Guid unitId)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.DestroyUnitCommand,
+            hostId,
+            UnitId: unitId);
     }
 
     public static NetworkMessage CreateToolActionRequest(

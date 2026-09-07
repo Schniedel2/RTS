@@ -98,6 +98,18 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type == NetworkMessageType.UnitHitCommand)
+        {
+            ApplyHit(message);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.DestroyUnitCommand)
+        {
+            DestroyUnit(message);
+            return;
+        }
+
         if (message.Type == NetworkMessageType.BuildConstructionCommand)
         {
             ExecuteBuildConstruction(message);
@@ -159,6 +171,25 @@ public sealed class NetworkInput
             Vector3 start = tank.Position + Vector3.Up * (tank.Height * 0.75f);
             Globals.World.Projectiles.Fire(start, target);
         }
+    }
+
+    private void ApplyHit(NetworkMessage message)
+    {
+        if (message.UnitId is not Guid unitId ||
+            Globals.World.Units.FindById(unitId) is not MobileUnit unit)
+            return;
+
+        unit.ApplyHitPoints(message.HitPoints);
+    }
+
+    private void DestroyUnit(NetworkMessage message)
+    {
+        if (message.UnitId is not Guid unitId ||
+            Globals.World.Units.FindById(unitId) is not MobileUnit unit)
+            return;
+
+        Globals.World.Particles.EmitExplosion(unit.Position + Vector3.Up);
+        Globals.World.Units.Destroy(unitId);
     }
 
     private void ExecuteBuildConstruction(NetworkMessage message)

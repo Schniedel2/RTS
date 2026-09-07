@@ -88,6 +88,11 @@ public class GameGrid
         return _occupants[x, y] != null;
     }
 
+    public void Remove(MobileUnit unit)
+    {
+        Clear(unit);
+    }
+
     public Point ToCell(Vector3 position)
     {
         return new Point(

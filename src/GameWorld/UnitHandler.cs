@@ -62,6 +62,17 @@ public class UnitHandler
             unit.Draw(effect);
     }
 
+    public bool Destroy(Guid unitId)
+    {
+        MobileUnit? unit = FindById(unitId);
+        if (unit is null)
+            return false;
+
+        Globals.World.GameGrid.Remove(unit);
+        _units.Remove(unit);
+        return true;
+    }
+
     public void Draw2D(SpriteBatch spriteBatch, Camera camera, Viewport viewport)
     {
         foreach (ConstructionSite constructionSite in _units.OfType<ConstructionSite>())

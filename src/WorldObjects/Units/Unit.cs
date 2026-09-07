@@ -30,8 +30,8 @@ public abstract class Unit : WorldObject
     ];
 
     public Guid UnitId { get; }
-    private float HitPoints { get; set; }
-    private float MaxHitPoints { get; set; }
+    public float HitPoints { get; private set; }
+    public float MaxHitPoints { get; }
     public Guid CreatorPlayerId { get; private set; }
     protected override VertexPositionColorNormal[] Vertices => MeshVertices;
     protected override int[] Indices => MeshIndices;
@@ -57,7 +57,6 @@ public abstract class Unit : WorldObject
     {
         IsNetworkObject = true;
         HitPoints = MaxHitPoints = 100.0f;
-        MaxHitPoints = MaxHitPoints;
         UnitId = unitId;
         Length = length;
         Width = width;
@@ -87,6 +86,23 @@ public abstract class Unit : WorldObject
     public virtual void ApplyState(UnitState state)
     {
         // Units without specialized state intentionally have no payload to apply.
+    }
+
+    // Gameplay mutation: only the host invokes this method.
+    public virtual bool OnHit(HitInfo hit)
+    {
+        HitPoints = Math.Max(0.0f, HitPoints - hit.Damage);
+        return HitPoints <= 0.0f;
+    }
+
+    // Clients use the host-provided value for display only.
+    public void ApplyHitPoints(float hitPoints)
+    {
+        HitPoints = Math.Clamp(hitPoints, 0.0f, MaxHitPoints);
+    }
+
+    public virtual void PlayHitEffects(HitInfo hit)
+    {
     }
 
     public Rectangle GetScreenBounds(
