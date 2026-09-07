@@ -45,6 +45,7 @@ public abstract class Unit : WorldObject
     [
         new(UnitActionType.Goto, "Goto", 0, 0)
     ];
+    public override string StateTypeId => "unit";
 
     public Unit(
         Vector3 position,
@@ -54,6 +55,7 @@ public abstract class Unit : WorldObject
         Guid unitId
         ) : base(position)
     {
+        IsNetworkObject = true;
         HitPoints = MaxHitPoints = 100.0f;
         MaxHitPoints = MaxHitPoints;
         UnitId = unitId;
@@ -70,6 +72,21 @@ public abstract class Unit : WorldObject
     public virtual void ClearCommand()
     {
         CurrentCommand = null;
+    }
+
+    public virtual UnitState GetState()
+    {
+        return new UnitState(
+            UnitId,
+            Revision: 0,
+            StateTypeId,
+            StateVersion,
+            Array.Empty<byte>());
+    }
+
+    public virtual void ApplyState(UnitState state)
+    {
+        // Units without specialized state intentionally have no payload to apply.
     }
 
     public Rectangle GetScreenBounds(

@@ -255,6 +255,10 @@ public class PlayerHandler
             {
                 Globals.Game.NetworkClient.RequestGotoAsync(_selectedUnits, target);
             }
+            if (action.Type == UnitActionType.Attack)
+            {
+                _ = Globals.Game.NetworkClient.RequestAttackAsync(_selectedUnits, target);
+            }
             if (action.Type == UnitActionType.Build)
             {
                 Globals.Game.NetworkClient.RequestBuildAsync(action.TargetObjectName, target);

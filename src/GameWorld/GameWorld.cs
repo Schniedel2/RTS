@@ -12,6 +12,8 @@ public class GameWorld
     public Terrain Terrain => _terrain;
     public UnitHandler Units { get; }
     public MarkerHandler Markers { get; }
+    public ProjectileHandler Projectiles { get; }
+    public ParticleSystem Particles { get; }
     public GameGrid GameGrid { get; }
     public PathfindingManager PathfindingManager { get; }
     public Vector3 Center => new Vector3(_terrain.Width * 0.5f, 0.0f, _terrain.Height * 0.5f);
@@ -32,6 +34,8 @@ public class GameWorld
         GameGrid = new GameGrid(terrainWidth, terrainHeight, gameGridCellSize);
         Units = new UnitHandler();
         Markers = new MarkerHandler();
+        Projectiles = new ProjectileHandler();
+        Particles = new ParticleSystem();
         PathfindingManager = new PathfindingManager(this);
     }
 
@@ -51,7 +55,7 @@ public class GameWorld
 
         effect.Parameters["View"]?.SetValue(view);
         effect.Parameters["Projection"]?.SetValue(projection);
-        Units.DrawShadow(Globals.GraphicsDevice, effect);
+        Units.DrawShadow(effect);
     }
 
     public void DrawTerrain(
@@ -93,8 +97,15 @@ public class GameWorld
         unitEffect.Parameters["ShadowTexture"]?.SetValue(shadowTexture);
         unitEffect.Parameters["LightDirection"]?.SetValue(lightDirection);
 
-        Units.Draw(Globals.GraphicsDevice, unitEffect);
-        Markers.Draw(Globals.GraphicsDevice, unitEffect);
+        Units.Draw(unitEffect);
+        Markers.Draw(unitEffect);
+        Projectiles.Draw(unitEffect);
+        Particles.Draw(unitEffect);
+    }
+
+    public void Draw2D(SpriteBatch spriteBatch, Camera camera, Viewport viewport)
+    {
+        Units.Draw2D(spriteBatch, camera, viewport);
     }
 
     public void Update(GameTime gameTime)
@@ -103,6 +114,8 @@ public class GameWorld
         _terrain.Update(gameTime);
         Units.Update(gameTime);
         Markers.Update(gameTime);
+        Projectiles.Update(gameTime);
+        Particles.Update(gameTime);
     }
 
     public bool CanMove(int x, int y, MobileUnit unit)

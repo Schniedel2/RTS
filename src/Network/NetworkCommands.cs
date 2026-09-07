@@ -184,6 +184,35 @@ public static class NetworkCommands
             Z: request.Z);
     }
 
+    public static NetworkMessage CreateAttackRequest(
+        Guid senderId,
+        Guid[] unitIds,
+        float x,
+        float y,
+        float z)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.AttackRequest,
+            senderId,
+            PlayerId: senderId,
+            UnitIds: unitIds,
+            X: x,
+            Y: y,
+            Z: z);
+    }
+
+    public static NetworkMessage CreateAttackCommand(Guid hostId, NetworkMessage request)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.AttackCommand,
+            hostId,
+            PlayerId: request.PlayerId ?? request.SenderId,
+            UnitIds: request.UnitIds,
+            X: request.X,
+            Y: request.Y,
+            Z: request.Z);
+    }
+
     public static NetworkMessage CreateToolActionRequest(
         Guid senderId,
         UnitAction action,
@@ -265,5 +294,15 @@ public static class NetworkCommands
             PlayerId: request.PlayerId ?? request.SenderId,
             UnitIds: request.UnitIds,
             ConstructionSiteId: request.ConstructionSiteId);
+    }
+
+    public static NetworkMessage CreateUnitStateCommand(
+        Guid hostId,
+        UnitState state)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.UnitStateCommand,
+            hostId,
+            UnitState: state);
     }
 }

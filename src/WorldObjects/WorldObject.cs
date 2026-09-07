@@ -11,6 +11,12 @@ public abstract class WorldObject
 
     public Matrix Transform { get; protected set; }
     public Vector3 Position => Transform.Translation;
+    public virtual string StateTypeId => "unit";
+    public uint StateRevision { get; set; }
+    public bool NetworkStateDirty { get; set; } = true;
+    public double NextNetworkUpdateTime { get; set; }
+    public virtual int StateVersion => 1;
+    public bool IsNetworkObject = false; // disable/enable network synchronization for this object
 
     protected WorldObject(Vector3 position)
     {
@@ -29,16 +35,16 @@ public abstract class WorldObject
         Transform = transform;
     }
 
-    public void Draw(GraphicsDevice graphicsDevice, Effect effect)
+    public virtual void Draw(Effect effect)
     {
         effect.Parameters["World"]?.SetValue(GetWorldMatrix());
-        DrawMesh(graphicsDevice, effect);
+        DrawMesh(effect);
     }
 
-    public void DrawShadow(GraphicsDevice graphicsDevice,Effect effect)
+    public void DrawShadow(Effect effect)
     {
         effect.Parameters["World"]?.SetValue(GetWorldMatrix());
-        DrawMesh(graphicsDevice, effect);
+        DrawMesh(effect);
     }
 
     protected virtual Matrix GetWorldMatrix()
@@ -46,13 +52,13 @@ public abstract class WorldObject
         return Transform;
     }
 
-    private void DrawMesh(GraphicsDevice graphicsDevice, Effect effect)
+    private void DrawMesh(Effect effect)
     {
         foreach (EffectPass pass in effect.CurrentTechnique.Passes)
         {
             pass.Apply();
 
-            graphicsDevice.DrawUserIndexedPrimitives(
+            Globals.GraphicsDevice.DrawUserIndexedPrimitives(
                 PrimitiveType.TriangleList,
                 Vertices,
                 0,
@@ -64,4 +70,8 @@ public abstract class WorldObject
     }
 
     public abstract void Update(GameTime gameTime);
+    public virtual void UpdateHost(GameTime gameTime)
+    {
+        //  is called on the host to update network-related state.
+    }
 }

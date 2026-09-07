@@ -19,6 +19,7 @@ public class MobileUnit : Unit
     public float Gravity { get; set; } = 10.0f;
     public float Bounciness { get; set; } = 0.25f;
     public float RestingSpeed { get; set; } = 1.0f;
+    public virtual float BuildRate => 0.0f;
     public IMovementProfile MovementProfile { get; }
     public Guid? CurrentConstructionSiteId { get; private set; }
     public bool IsBuilding { get; private set; }

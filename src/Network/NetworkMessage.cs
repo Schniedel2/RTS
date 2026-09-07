@@ -34,6 +34,8 @@ public enum NetworkMessageType
     SpawnCommand,
     GotoRequest,
     GotoCommand,
+    AttackRequest,
+    AttackCommand,
     TextRequest,
     TextMessage,
     Error,
@@ -46,7 +48,8 @@ public enum NetworkMessageType
     BuildRequest,
     BuildCommand,
     BuildConstructionRequest,
-    BuildConstructionCommand
+    BuildConstructionCommand,
+    UnitStateCommand
 }
 
 public sealed record WorldData(
@@ -69,6 +72,7 @@ public sealed record NetworkMessage(
     Guid? UnitId = null,
     Guid[]? UnitIds = null,
     Guid? ConstructionSiteId = null,
+    UnitState? UnitState = null,
     string? UnitTypeId = null,
     float X = 0.0f,
     float Y = 0.0f,

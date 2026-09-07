@@ -7,6 +7,8 @@ namespace RTS;
 
 public class GDIBulldozer : Car
 {
+    public override float BuildRate => 1000.0f;    
+
     public override IReadOnlyList<UnitAction> Actions =>
     [
         new(UnitActionType.Goto, "Goto", 0, 1),
@@ -33,5 +35,21 @@ public class GDIBulldozer : Car
         Length = 4;
         Width = 3;
         Height = 1.5f;
+    }
+
+    public override void UpdateHost(GameTime gameTime)
+    {
+        if (IsBuilding)
+        {
+            if (CurrentConstructionSiteId.HasValue)
+            {
+                Unit? CurrentConstructionSite = Globals.World.Units.FindById(CurrentConstructionSiteId.Value);
+                ConstructionSite? constructionSite = (CurrentConstructionSite is ConstructionSite site) ? site : null;
+                if (constructionSite != null)
+                {
+                    constructionSite.AdvanceConstruction(BuildRate * (float)gameTime.ElapsedGameTime.TotalSeconds);
+                }
+            }
+        }
     }
 }

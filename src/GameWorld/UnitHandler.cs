@@ -50,16 +50,22 @@ public class UnitHandler
                 unit.Update(gameTime);
     }
 
-    public void DrawShadow(GraphicsDevice graphicsDevice, Effect effect)
+    public void DrawShadow(Effect effect)
     {
         foreach (MobileUnit unit in _units)
-            unit.DrawShadow(graphicsDevice, effect);
+            unit.DrawShadow(effect);
     }
 
-    public void Draw(GraphicsDevice graphicsDevice, Effect effect)
+    public void Draw(Effect effect)
     {
         foreach (MobileUnit unit in _units)
-            unit.Draw(graphicsDevice, effect);
+            unit.Draw(effect);
+    }
+
+    public void Draw2D(SpriteBatch spriteBatch, Camera camera, Viewport viewport)
+    {
+        foreach (ConstructionSite constructionSite in _units.OfType<ConstructionSite>())
+            constructionSite.Draw2D(spriteBatch, camera, viewport);
     }
 
         private void AddUnit(MobileUnit unit)

@@ -29,9 +29,9 @@ public class MarkerHandler
         }
     }
 
-    public void Draw(GraphicsDevice graphicsDevice, Effect effect)
+    public void Draw(Effect effect)
     {
         foreach (Marker marker in _markers)
-            marker.Draw(graphicsDevice, effect);
+            marker.Draw(effect);
     }
 }

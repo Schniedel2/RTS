@@ -78,4 +78,16 @@ public class RenderHelper
             new Vector2(x, y),
             Color.White);
     }
+
+    public void DrawTextCentered(
+        SpriteBatch spriteBatch,
+        SpriteFont font,
+        string text,
+        Vector2 center,
+        Color color)
+    {
+        Vector2 position = center - font.MeasureString(text) * 0.5f;
+        spriteBatch.DrawString(font, text, position + Vector2.One, Color.Black);
+        spriteBatch.DrawString(font, text, position, color);
+    }
 }

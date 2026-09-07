@@ -92,9 +92,21 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type == NetworkMessageType.AttackCommand)
+        {
+            ExecuteAttack(message);
+            return;
+        }
+
         if (message.Type == NetworkMessageType.BuildConstructionCommand)
         {
             ExecuteBuildConstruction(message);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.UnitStateCommand)
+        {
+            ApplyUnitState(message);
             return;
         }
 
@@ -136,6 +148,19 @@ public sealed class NetworkInput
         Globals.Game.World.Markers.ShowGotoMarker(new Vector3(message.X, message.Y, message.Z));
     }
 
+    private void ExecuteAttack(NetworkMessage message)
+    {
+        Vector3 target = new(message.X, message.Y, message.Z);
+        foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
+        {
+            if (Globals.World.Units.FindById(unitId) is not Tank tank)
+                continue;
+
+            Vector3 start = tank.Position + Vector3.Up * (tank.Height * 0.75f);
+            Globals.World.Projectiles.Fire(start, target);
+        }
+    }
+
     private void ExecuteBuildConstruction(NetworkMessage message)
     {
         if (message.ConstructionSiteId is not Guid constructionSiteId ||
@@ -147,6 +172,15 @@ public sealed class NetworkInput
             MobileUnit? unit = Globals.World.Units.FindById(unitId);
             unit?.TryReceiveBuildConstructionCommand(Globals.World, constructionSite);
         }
+    }
+
+    private void ApplyUnitState(NetworkMessage message)
+    {
+        if (message.UnitState is not { } state)
+            return;
+
+        Unit? unit = Globals.World.Units.FindById(state.UnitId);
+        unit?.ApplyState(state);
     }
 
     private void ExecuteToolAction(NetworkMessage message)

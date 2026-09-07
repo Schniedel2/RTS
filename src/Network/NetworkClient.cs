@@ -83,6 +83,18 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
 
+    public Task RequestAttackAsync(IEnumerable<MobileUnit> units, Vector3 target)
+    {
+        Guid[] unitIds = units.Select(unit => unit.UnitId).ToArray();
+        NetworkMessage request = NetworkCommands.CreateAttackRequest(
+            _networkHandler.LocalPeerId,
+            unitIds,
+            target.X,
+            target.Y,
+            target.Z);
+        return _networkHandler.SendToHostAsync(request, CancellationToken.None);
+    }
+
     public Task RequestToolActionAsync(UnitAction action, ToolShape toolShape, int toolSize, Vector3 target)
     {
         return RequestToolActionAsync(action, toolShape, toolSize, target.X, target.Y, target.Z, null);

@@ -57,7 +57,7 @@ public class RTSGame
             Network.LocalPeerId,
             World.Terrain.GetWorldData()));
         NetworkInput = new NetworkInput(Network);
-        NetworkHost = new NetworkHost(Network, NetworkInput);
+        NetworkHost = new NetworkHost(Network, NetworkInput, World);
         NetworkClient = new NetworkClient(Network);
         _consoleCommands = new ConsoleCommands(Globals.Console, this);
 
@@ -147,7 +147,7 @@ public class RTSGame
             LocalPlayer.Update(gameTime, camera, viewport);
         World.Update(gameTime);
         Network.Update();
-        _ = NetworkHost.UpdateAsync();
+        _ = NetworkHost.UpdateAsync(gameTime);
         UpdateConsole(gameTime);
 
         ShadowMap.Update(
@@ -172,6 +172,8 @@ public class RTSGame
   
     public void Draw2D(SpriteBatch spriteBatch)
     {
+        World.Draw2D(spriteBatch, Globals._camera, Globals.GraphicsDevice.Viewport);
+
         if (Globals.Debug_ShadowMap_ShowPreview)
         {
             spriteBatch.Draw(
