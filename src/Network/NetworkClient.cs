@@ -16,6 +16,20 @@ public sealed class NetworkClient
         _networkHandler = networkHandler;
     }
 
+    public Task RequestWorldDataAsync(CancellationToken cancellationToken = default)
+    {
+        return _networkHandler.RequestWorldDataAsync(cancellationToken);
+    }
+
+    public Task RequestPlayerUpdateAsync(
+        Player player,
+        CancellationToken cancellationToken = default)
+    {
+        return _networkHandler.SendToHostAsync(
+            NetworkCommands.CreatePlayerUpdateRequest(player),
+            cancellationToken);
+    }
+
     public Task RequestSpawnAsync(
         string unitTypeId,
         float x,
@@ -33,7 +47,7 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
     
-    public Task RequestGotoAsync(List<Unit> units, Vector3 position)
+    public Task RequestGotoAsync(List<MobileUnit> units, Vector3 position)
     {
         Guid[] unitIds = units.Select(unit => unit.UnitId).ToArray();
         return RequestGotoAsync(unitIds, position.X, position.Y, position.Z, CancellationToken.None);
@@ -45,16 +59,40 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
 
-    public Task RequestToolActionAsync(UnitActionType action, ToolShape toolShape, int toolSize, Vector3 target)
+    public Task RequestBuildAsync(string buildingTypeName, Vector3 target)
+    {
+        return RequestBuildAsync(buildingTypeName, target.X, target.Y, target.Z);
+    }
+
+    public Task RequestBuildAsync(string buildingTypeName, float x, float y, float z)
+    {
+        NetworkMessage request = NetworkCommands.CreateBuildRequest(_networkHandler.LocalPeerId, buildingTypeName, x, y, z);
+        return _networkHandler.SendToHostAsync(request, CancellationToken.None);
+    }
+
+    public Task RequestBuildConstructionAsync(
+        IEnumerable<MobileUnit> units,
+        Guid constructionSiteId,
+        CancellationToken cancellationToken = default)
+    {
+        Guid[] unitIds = units.Select(unit => unit.UnitId).ToArray();
+        NetworkMessage request = NetworkCommands.CreateBuildConstructionRequest(
+            _networkHandler.LocalPeerId,
+            unitIds,
+            constructionSiteId);
+        return _networkHandler.SendToHostAsync(request, cancellationToken);
+    }
+
+    public Task RequestToolActionAsync(UnitAction action, ToolShape toolShape, int toolSize, Vector3 target)
     {
         return RequestToolActionAsync(action, toolShape, toolSize, target.X, target.Y, target.Z, null);
     }
 
-    public Task RequestToolActionAsync(UnitActionType action, ToolShape toolShape, int toolSize, Vector3 target, TerrainTile terrainTile)
+    public Task RequestToolActionAsync(UnitAction action, ToolShape toolShape, int toolSize, Vector3 target, TerrainTile terrainTile)
     {
         return RequestToolActionAsync(action, toolShape, toolSize, target.X, target.Y, target.Z, terrainTile);
     }
-    public Task RequestToolActionAsync(UnitActionType action, ToolShape toolShape, int toolSize, float x, float y, float z, TerrainTile? terrainTile)
+    public Task RequestToolActionAsync(UnitAction action, ToolShape toolShape, int toolSize, float x, float y, float z, TerrainTile? terrainTile)
     {
         NetworkMessage request = NetworkCommands.CreateToolActionRequest(_networkHandler.LocalPeerId, action, toolShape, toolSize, x, y, z, terrainTile);
         return _networkHandler.SendToHostAsync(request, CancellationToken.None);

@@ -4,8 +4,53 @@ namespace RTS.Network;
 
 public static class NetworkCommands
 {
-    public const string Spawn = "spawn";
-    public const string Goto = "goto";
+    public static NetworkMessage CreateWorldData(Guid hostId, WorldData worldData)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.WorldData,
+            hostId,
+            WorldData: worldData);
+    }
+
+    public static NetworkMessage CreateWorldDataRequest(Guid senderId)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.RequestWorldData,
+            senderId);
+    }
+
+    public static NetworkMessage CreatePlayerUpdateRequest(Player player)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.RequestPlayerUpdate,
+            player.Id,
+            PlayerId: player.Id,
+            DisplayName: player.Name,
+            TeamId: player.TeamId);
+    }
+
+    public static NetworkMessage CreatePlayerUpdateCommand(Guid hostId, NetworkMessage request)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.PlayerUpdate,
+            hostId,
+            PlayerId: request.PlayerId ?? request.SenderId,
+            DisplayName: request.DisplayName,
+            TeamId: request.TeamId);
+    }
+
+    public static NetworkMessage CreateBuildCommand(Guid hostId, NetworkMessage request)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.BuildCommand,
+            hostId,
+            PlayerId: request.PlayerId ?? request.SenderId,
+            UnitId: request.UnitId ?? Guid.NewGuid(),
+            UnitTypeId: request.UnitTypeId,
+            X: request.X,
+            Y: request.Y,
+            Z: request.Z);
+    }
 
     public static NetworkMessage CreateTextMessage(Guid senderId, string text)
     {
@@ -141,7 +186,7 @@ public static class NetworkCommands
 
     public static NetworkMessage CreateToolActionRequest(
         Guid senderId,
-        UnitActionType action,
+        UnitAction action,
         ToolShape toolShape,
         int toolSize,
         float x,
@@ -162,6 +207,24 @@ public static class NetworkCommands
             TerrainTile: terrainTile);
     }
 
+    public static NetworkMessage CreateBuildRequest(
+        Guid senderId,
+        string buildingTypeName,
+        float x,
+        float y,
+        float z)
+    {
+        NetworkMessage request = new NetworkMessage(
+            NetworkMessageType.BuildRequest,
+            senderId,
+            PlayerId: senderId,
+            X: x,
+            Y: y,
+            Z: z,
+            UnitTypeId: buildingTypeName);
+        return request;
+    }
+
     public static NetworkMessage CreateToolActionCommand(
         Guid hostId,
         NetworkMessage request)
@@ -177,5 +240,30 @@ public static class NetworkCommands
             Y: request.Y,
             Z: request.Z,
             TerrainTile: request.TerrainTile);
+    }
+
+    public static NetworkMessage CreateBuildConstructionRequest(
+        Guid senderId,
+        Guid[] unitIds,
+        Guid constructionSiteId)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.BuildConstructionRequest,
+            senderId,
+            PlayerId: senderId,
+            UnitIds: unitIds,
+            ConstructionSiteId: constructionSiteId);
+    }
+
+    public static NetworkMessage CreateBuildConstructionCommand(
+        Guid hostId,
+        NetworkMessage request)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.BuildConstructionCommand,
+            hostId,
+            PlayerId: request.PlayerId ?? request.SenderId,
+            UnitIds: request.UnitIds,
+            ConstructionSiteId: request.ConstructionSiteId);
     }
 }

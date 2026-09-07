@@ -42,7 +42,7 @@ public class Marker : WorldObject
         _remainingLifetime = lifetime;
     }
 
-    public void Update(GameTime gameTime)
+    public override void Update(GameTime gameTime)
     {
         _remainingLifetime -= (float)gameTime.ElapsedGameTime.TotalSeconds;
 

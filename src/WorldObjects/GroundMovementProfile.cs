@@ -4,14 +4,14 @@ namespace RTS;
 
 public class GroundMovementProfile : IMovementProfile
 {
-    public bool CanEnter(GameWorld map, Unit unit, Point cell)
+    public bool CanEnter(GameWorld map, MobileUnit unit, Point cell)
     {
         return map.CanMove(cell.X, cell.Y, unit);
     }
 
     public float GetMovementCost(
         GameWorld map,
-        Unit unit,
+        MobileUnit unit,
         Point from,
         Point to)
     {

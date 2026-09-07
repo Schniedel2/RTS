@@ -18,12 +18,12 @@ public class PlayerHandler
 {    
     private readonly GameWorld _map;
     private readonly MarkerHandler _markerHandler;
-    private readonly List<Unit> _selectedUnits = [];
+    private readonly List<MobileUnit> _selectedUnits = [];
     private MouseState _previousMouseState;
     private Point _selectionStart;
 
-    public IReadOnlyList<Unit> SelectedUnits => _selectedUnits;
-    public UnitActionType? ActiveActionType { get; private set; }
+    public IReadOnlyList<MobileUnit> SelectedUnits => _selectedUnits;
+    public UnitAction? ActiveAction { get; private set; }
     private Rectangle _currentSelectionRect;
     private bool _isSelectingUnits;
     public Vector3 MouseWorldPosition { get; private set; }
@@ -34,10 +34,10 @@ public class PlayerHandler
     private double _nextAllowedActionTime;
     public TerrainTile _currentTerrainTile = TerrainTile.Grass;
 
-    public bool SelectAction(UnitActionType actionType, bool alternateAction)
+    public bool SelectAction(UnitAction action, bool alternateAction)
     {
         //  single-use actions are handled immediately / current action-selection remains unchanged
-       switch (actionType)
+       switch (action.Type)
         {
             case UnitActionType.Filler:
                 return false;
@@ -79,7 +79,7 @@ public class PlayerHandler
                 return false;
         }
 
-        ActiveActionType = actionType;        
+        ActiveAction = action;        
         return true;
     }
 
@@ -128,9 +128,19 @@ public class PlayerHandler
                 if (_isSelectingUnits)
                     SelectUnits(camera, viewport, _currentSelectionRect, 99);
                 else
-                if (MouseIsOnTerrain)
-                    if (ActiveActionType is not null)
-                        RequestAction(ActiveActionType.Value, MouseWorldPosition);
+                if (ActiveAction?.Type == UnitActionType.BuildConstruction)
+                {
+                    ConstructionSite? constructionSite = FindConstructionSiteAt(
+                        camera,
+                        viewport,
+                        mouse.Position);
+                    if (constructionSite is not null)
+                        RequestBuildConstruction(constructionSite);
+                }
+                else if (MouseIsOnTerrain && ActiveAction is not null)
+                {
+                    RequestAction(ActiveAction, MouseWorldPosition);
+                }
 
                 _isSelectingUnits = false;
             }
@@ -145,18 +155,25 @@ public class PlayerHandler
                 if (gameTime.TotalGameTime.TotalMilliseconds > _nextAllowedActionTime)
                 {
                     _nextAllowedActionTime = gameTime.TotalGameTime.TotalMilliseconds + 100; // 100 ms cooldown between actions
-                    if (ActiveActionType is not null)
+                    if (ActiveAction is not null)
                     {
                         if (MouseIsOnTerrain)
                             if (mouse.LeftButton == ButtonState.Pressed)
-                                RequestAction(ActiveActionType.Value, MouseWorldPosition);
+                                RequestAction(ActiveAction, MouseWorldPosition);
                         if (mouse.RightButton == ButtonState.Pressed)
                         {
                             //  alternate actions for terrain editing
-                            if (ActiveActionType.Value == UnitActionType.RaiseTerrain)
-                                RequestAction(UnitActionType.LowerTerrain, MouseWorldPosition);
-                            if (ActiveActionType.Value == UnitActionType.LowerTerrain)
-                                RequestAction(UnitActionType.RaiseTerrain, MouseWorldPosition);
+                            if (ActiveAction.Type == UnitActionType.RaiseTerrain)
+                            {
+                                UnitAction altAction = new (UnitActionType.LowerTerrain, ActiveAction.Name, ActiveAction.IconColumn, ActiveAction.IconRow);
+                                RequestAction(altAction, MouseWorldPosition);
+                                
+                            }
+                            if (ActiveAction.Type == UnitActionType.LowerTerrain)
+                            {
+                                UnitAction altAction = new (UnitActionType.RaiseTerrain, ActiveAction.Name, ActiveAction.IconColumn, ActiveAction.IconRow);
+                                RequestAction(altAction, MouseWorldPosition);
+                            }
                         }
                     }
                 }
@@ -168,17 +185,17 @@ public class PlayerHandler
 
     void ClearSelection()
     {
-        foreach (Unit unit in _selectedUnits)
+        foreach (MobileUnit unit in _selectedUnits)
             unit.Select(false);
         _selectedUnits.Clear();
-        ActiveActionType = null;
+        ActiveAction = null;
     }
 
     private void SelectUnits(Camera camera, Viewport viewport, Rectangle selection, int maxUnits) 
     {
         ClearSelection();
 
-        foreach (Unit unit in _map.Units.Units)
+        foreach (MobileUnit unit in _map.Units.Units)
         {
             Rectangle unitBounds = unit.GetScreenBounds(
                 camera.View,
@@ -202,7 +219,7 @@ public class PlayerHandler
             .Select(group => group.First())
             .FirstOrDefault();
         
-        ActiveActionType = commonAction?.Type;
+        ActiveAction = commonAction;
     }
 
     private bool IsLeftButtonPressed(MouseState mouse)
@@ -229,28 +246,55 @@ public class PlayerHandler
                 _previousMouseState.RightButton == ButtonState.Pressed;
         }
 
-        private void RequestAction(UnitActionType actionType, Vector3 target)
+        private void RequestAction(UnitAction action, Vector3 target)
+        {            
+            if (_selectedUnits.Count == 0)
+                return;
+
+            if (action.Type == UnitActionType.Goto)
+            {
+                Globals.Game.NetworkClient.RequestGotoAsync(_selectedUnits, target);
+            }
+            if (action.Type == UnitActionType.Build)
+            {
+                Globals.Game.NetworkClient.RequestBuildAsync(action.TargetObjectName, target);
+            }
+            if ((action.Type == UnitActionType.RaiseTerrain) || 
+                (action.Type == UnitActionType.FlattenTerrain) || 
+                (action.Type == UnitActionType.SmoothTerrain) || 
+                (action.Type == UnitActionType.LowerTerrain))
+            {
+                Globals.Game.NetworkClient.RequestToolActionAsync(action, _toolShape, _toolSize, target);
+            }
+            if ((action.Type == UnitActionType.SetTerrainTile) ||
+                (action.Type == UnitActionType.FillTile)
+                )
+            {
+                Globals.Game.NetworkClient.RequestToolActionAsync(action, _toolShape, _toolSize, target, _currentTerrainTile);
+            }
+        }
+
+        private void RequestBuildConstruction(ConstructionSite constructionSite)
         {
             if (_selectedUnits.Count == 0)
                 return;
 
-            if (actionType == UnitActionType.Goto)
-            {
-                Globals.Game.NetworkClient.RequestGotoAsync(_selectedUnits, target);
-            }
-            if ((actionType == UnitActionType.RaiseTerrain) || 
-                (actionType == UnitActionType.FlattenTerrain) || 
-                (actionType == UnitActionType.SmoothTerrain) || 
-                (actionType == UnitActionType.LowerTerrain))
-            {
-                Globals.Game.NetworkClient.RequestToolActionAsync(actionType, _toolShape, _toolSize, target);
-            }
-            if ((actionType == UnitActionType.SetTerrainTile) ||
-                (actionType == UnitActionType.FillTile)
-                )
-            {
-                Globals.Game.NetworkClient.RequestToolActionAsync(actionType, _toolShape, _toolSize, target, _currentTerrainTile);
-            }
+            _ = Globals.Game.NetworkClient.RequestBuildConstructionAsync(
+                _selectedUnits,
+                constructionSite.UnitId);
+        }
+
+        private ConstructionSite? FindConstructionSiteAt(
+            Camera camera,
+            Viewport viewport,
+            Point screenPosition)
+        {
+            return _map.Units.Units
+                .OfType<ConstructionSite>()
+                .FirstOrDefault(site => site.GetScreenBounds(
+                    camera.View,
+                    camera.Projection,
+                    viewport).Contains(screenPosition));
         }
 
         private static Ray CreatePickRay(
@@ -294,13 +338,16 @@ public class PlayerHandler
 
     public bool IsTerrainEditingEnabled()
     {
+        if (ActiveAction is null)
+            return false;
+
         return MouseIsOnTerrain && (
-            (ActiveActionType == UnitActionType.RaiseTerrain) || 
-            (ActiveActionType == UnitActionType.LowerTerrain) || 
-            (ActiveActionType == UnitActionType.SmoothTerrain) || 
-            (ActiveActionType == UnitActionType.FlattenTerrain) ||
-            (ActiveActionType == UnitActionType.SetTerrainTile) ||
-            (ActiveActionType == UnitActionType.FillTile) 
+            (ActiveAction.Type == UnitActionType.RaiseTerrain) || 
+            (ActiveAction.Type == UnitActionType.LowerTerrain) || 
+            (ActiveAction.Type == UnitActionType.SmoothTerrain) || 
+            (ActiveAction.Type == UnitActionType.FlattenTerrain) ||
+            (ActiveAction.Type == UnitActionType.SetTerrainTile) ||
+            (ActiveAction.Type == UnitActionType.FillTile) 
             );
     }
 
@@ -328,7 +375,7 @@ public class PlayerHandler
         Camera camera,
         Viewport viewport)
     {
-        foreach (Unit unit in _selectedUnits)
+        foreach (MobileUnit unit in _selectedUnits)
         {
             Rectangle unitBounds = unit.GetScreenBounds(
                 camera.View,

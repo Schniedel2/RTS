@@ -29,6 +29,30 @@ public sealed class NetworkInput
         if (message.Type == NetworkMessageType.JoinAccepted)
         {
             Globals.Console.Print($"Joined session as {Globals.Game.Network.DisplayName}.");
+            _ = Globals.Game.Players[0].RequestUpdateAsync(Globals.Game.NetworkClient);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.PlayerUpdate &&
+            message.PlayerId is Guid updatedPlayerId &&
+            !string.IsNullOrWhiteSpace(message.DisplayName))
+        {
+            Globals.Game.UpdatePlayer(
+                updatedPlayerId,
+                message.DisplayName,
+                message.TeamId);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.MemberLeft)
+        {
+            Globals.Game.RemovePlayer(message.SenderId);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.WorldData && message.WorldData is not null)
+        {
+            Globals.World.Terrain.ApplyWorldData(message.WorldData);
             return;
         }
 
@@ -48,7 +72,16 @@ public sealed class NetworkInput
         {
             Guid unitId = message.UnitId ?? Guid.NewGuid();
             if (message.PlayerId is Guid playerId && message.UnitTypeId is not null)
-                SpawnLocally(message.UnitTypeId, playerId, unitId, message.X, message.Y, message.Z);
+                SpawnUnitLocally(message.UnitTypeId, playerId, unitId, message.X, message.Y, message.Z);
+
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.BuildCommand)
+        {
+            Guid unitId = message.UnitId ?? Guid.NewGuid();
+            if (message.PlayerId is Guid playerId && message.UnitTypeId is not null)
+                SpawnBuildingLocally(message.UnitTypeId, playerId, unitId, message.X, message.Y, message.Z);
 
             return;
         }
@@ -59,6 +92,12 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type == NetworkMessageType.BuildConstructionCommand)
+        {
+            ExecuteBuildConstruction(message);
+            return;
+        }
+
         if (message.Type == NetworkMessageType.ToolActionCommand)
         {
             ExecuteToolAction(message);
@@ -66,15 +105,22 @@ public sealed class NetworkInput
         }
     }
 
-    private void SpawnLocally(string unitTypeId, Guid playerId, Guid unitId, float x, float y, float z)
+    private void SpawnUnitLocally(string unitTypeId, Guid playerId, Guid unitId, float x, float y, float z)
     {
         Vector3 target = new(x, z, y);
-        Globals.World.Markers.ShowGotoMarker(target);
-
-        Globals.World.Units.SpawnUnit(unitTypeId, target, unitId);
+        Globals.World.Units.SpawnUnit(unitTypeId, target, unitId, playerId);
 
         string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);
         Globals.Console.Print($"Spawned {unitTypeId} for player {playerName}.");
+    }
+
+    private void SpawnBuildingLocally(string buildingTypeId, Guid playerId, Guid unitId, float x, float y, float z)
+    {
+        Vector3 target = new(x, y, z);
+        Globals.World.Units.SpawnBuilding(buildingTypeId, target, unitId, playerId);
+
+        string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);
+        Globals.Console.Print($"Spawned {buildingTypeId} for player {playerName}.");
     }
 
     private void ExecuteGoto(NetworkMessage message)
@@ -83,16 +129,32 @@ public sealed class NetworkInput
 
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
         {
-            Unit? unit = Globals.World.Units.FindById(unitId);
+            MobileUnit? unit = Globals.World.Units.FindById(unitId);
             unit?.TryReceiveGotoCommand(Globals.World, command);
         }
 
         Globals.Game.World.Markers.ShowGotoMarker(new Vector3(message.X, message.Y, message.Z));
     }
 
+    private void ExecuteBuildConstruction(NetworkMessage message)
+    {
+        if (message.ConstructionSiteId is not Guid constructionSiteId ||
+            Globals.World.Units.FindById(constructionSiteId) is not ConstructionSite constructionSite)
+            return;
+
+        foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
+        {
+            MobileUnit? unit = Globals.World.Units.FindById(unitId);
+            unit?.TryReceiveBuildConstructionCommand(Globals.World, constructionSite);
+        }
+    }
+
     private void ExecuteToolAction(NetworkMessage message)
     {
-        switch (message.Action)
+        if (message.Action is null)
+            return;
+
+        switch (message.Action.Type)
         {
             case UnitActionType.RaiseTerrain:
                 // Handle RaiseTerrain action

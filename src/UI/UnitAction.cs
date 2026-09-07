@@ -4,6 +4,8 @@ public enum UnitActionType
 {
     Filler,
     Goto,
+    Build,
+    BuildConstruction,
     RaiseTerrain,
     LowerTerrain,
     FlattenTerrain,
@@ -29,4 +31,5 @@ public sealed record UnitAction(
     UnitActionType Type,
     string Name,
     int IconColumn,
-    int IconRow);
+    int IconRow,
+    string TargetObjectName = "");

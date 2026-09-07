@@ -50,12 +50,11 @@ public class Game1 : Game
         Globals._terrainEffect = Content.Load<Effect>("Terrain");
         Globals._shadowEffect = Content.Load<Effect>("ShadowMap");
         Globals._unitEffect = Content.Load<Effect>("Unit");
-        Globals._terrainTileSheet = Content.Load<Texture2D>("terrainTileSheet");
         Globals._debugFont = Content.Load<SpriteFont>("DebugFont");
         Globals.TooltipFont = Content.Load<SpriteFont>("TooltipFont");
         Globals.ActionIcons = Content.Load<Texture2D>("actionIcons");
+        Globals._terrainTileSheet = Content.Load<Texture2D>("terrainTileSheet");
 
-        Texture2D? heightMapTexture = LoadHeightMapTexture();
 
         Globals._terrainEffect.Parameters["TerrainTilesTexture"]?.SetValue(Globals._terrainTileSheet);
 
@@ -76,32 +75,9 @@ public class Game1 : Game
 
         _rtsGame = new RTSGame(
               terrainWidth: 512,
-              terrainHeight: 512,
-              heightMapTexture: heightMapTexture);
+              terrainHeight: 512);
         
         Globals._shadowEffect.Parameters["DebugMode"]?.SetValue(0);
-    }
-
-    private Texture2D? LoadHeightMapTexture()
-    {
-        string heightMapPath = Path.Combine(
-            AppContext.BaseDirectory,
-            "Content",
-            "Heightmaps",
-            "terrain-height.png");
-
-        if (!File.Exists(heightMapPath))
-            return null;
-
-        try
-        {
-            using FileStream stream = File.OpenRead(heightMapPath);
-            return Texture2D.FromStream(GraphicsDevice, stream);
-        }
-        catch (InvalidDataException)
-        {
-            return null;
-        }
     }
 
     protected override void Update(GameTime gameTime)

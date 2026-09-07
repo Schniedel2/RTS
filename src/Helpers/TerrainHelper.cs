@@ -51,7 +51,7 @@ public static class TerrainHelper
             h += amount * MathF.Max(0, 1 - distance / toolSize);
             _terrain.SetHeight(cell.X, cell.Y, h);
         }
-        _terrain.BuildMesh();
+        _terrain.BuildTerrainMesh();
     }    
 
     public static void FlattenTerrain(Terrain _terrain, float x, float z, float targetHeight, ToolShape toolShape, int toolSize, float amount)
@@ -65,7 +65,7 @@ public static class TerrainHelper
             h += (averageHeight - h) * amount * MathF.Max(0, 1 - distance / toolSize);
             _terrain.SetHeight(cell.X, cell.Y, h);
         }
-        _terrain.BuildMesh();
+        _terrain.BuildTerrainMesh();
     }
 
     public static void SmoothTerrain(Terrain _terrain, float x, float z, ToolShape toolShape, int toolSize, float amount)
@@ -84,7 +84,7 @@ public static class TerrainHelper
             h += (averageHeight - h) * amount * MathF.Max(0, 1 - distance / toolSize);
             _terrain.SetHeight(cell.X, cell.Y, h);
         }
-        _terrain.BuildMesh();
+        _terrain.BuildTerrainMesh();
     }
     
     public static void SetTile(Terrain _terrain, float x, float z, ToolShape toolShape, int toolSize, TerrainTile terrainTile)
@@ -94,7 +94,7 @@ public static class TerrainHelper
         {
             _terrain.SetTile(cell.X, cell.Y, terrainTile);
         }
-        _terrain.UpdateTilemap();
+        _terrain.UpdateTilemapTexture();
     }    
     
 }

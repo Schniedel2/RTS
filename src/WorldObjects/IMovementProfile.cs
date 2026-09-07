@@ -4,11 +4,11 @@ namespace RTS;
 
 public interface IMovementProfile
 {
-    bool CanEnter(GameWorld map, Unit unit, Point cell);
+    bool CanEnter(GameWorld map, MobileUnit unit, Point cell);
 
     float GetMovementCost(
         GameWorld map,
-        Unit unit,
+        MobileUnit unit,
         Point from,
         Point to);
 }

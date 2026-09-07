@@ -38,8 +38,22 @@ public enum NetworkMessageType
     TextMessage,
     Error,
     ToolActionRequest,
-    ToolActionCommand
+    ToolActionCommand,
+    RequestWorldData,
+    WorldData,
+    RequestPlayerUpdate,
+    PlayerUpdate,
+    BuildRequest,
+    BuildCommand,
+    BuildConstructionRequest,
+    BuildConstructionCommand
 }
+
+public sealed record WorldData(
+    int Width,
+    int Height,
+    byte[] TileMap,
+    float[] HeightMap);
 
 public sealed record NetworkMessage(
     NetworkMessageType Type,
@@ -54,11 +68,14 @@ public sealed record NetworkMessage(
     Guid? PlayerId = null,
     Guid? UnitId = null,
     Guid[]? UnitIds = null,
+    Guid? ConstructionSiteId = null,
     string? UnitTypeId = null,
     float X = 0.0f,
     float Y = 0.0f,
     float Z = 0.0f,
     ToolShape? ToolShape = null,
     int ToolSize = 0,
-    UnitActionType? Action = null,
-    TerrainTile? TerrainTile = null);
+    UnitAction? Action = null,
+    TerrainTile? TerrainTile = null,
+    WorldData? WorldData = null,
+    int TeamId = 0);

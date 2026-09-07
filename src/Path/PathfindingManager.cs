@@ -18,7 +18,7 @@ public class PathfindingManager
     }
 
     public void RequestPath(
-        Unit unit,
+        MobileUnit unit,
         IMovementProfile movementProfile,
         Vector2 target,
         int pathRequestId)
@@ -45,7 +45,7 @@ public class PathfindingManager
             return true;
 
         PathRequest request = _requests.Dequeue();
-        Unit unit = request.Unit;
+        MobileUnit unit = request.Unit;
 
         if (unit._pathRequestId != request.PathRequestId)
             return true; // force next call to process the next request
@@ -79,7 +79,7 @@ public class PathfindingManager
     }
 
     private readonly record struct PathRequest(
-        Unit Unit,
+        MobileUnit Unit,
         IMovementProfile MovementProfile,
         Vector2 Target,
         int PathRequestId);

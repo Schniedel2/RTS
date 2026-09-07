@@ -4,7 +4,7 @@ using System;
 
 namespace RTS;
 
-public class Tank : Unit
+public class Tank : MobileUnit
 {
     public Tank(
         Vector3 position,

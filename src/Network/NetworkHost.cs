@@ -26,14 +26,24 @@ public sealed class NetworkHost
 
         if (message.Type != NetworkMessageType.SpawnRequest &&
             message.Type != NetworkMessageType.GotoRequest &&
-            message.Type != NetworkMessageType.ToolActionRequest&&
-            message.Type != NetworkMessageType.TextRequest)
+            message.Type != NetworkMessageType.ToolActionRequest &&
+            message.Type != NetworkMessageType.BuildRequest &&
+            message.Type != NetworkMessageType.BuildConstructionRequest &&
+            message.Type != NetworkMessageType.TextRequest &&
+            message.Type != NetworkMessageType.RequestPlayerUpdate)
             return;
-
         if (message.Type == NetworkMessageType.SpawnRequest && message.UnitTypeId is null)
             return;
 
         if (message.Type == NetworkMessageType.TextRequest && string.IsNullOrWhiteSpace(message.Text))
+            return;
+
+        if (message.Type == NetworkMessageType.RequestPlayerUpdate &&
+            (message.PlayerId is null || string.IsNullOrWhiteSpace(message.DisplayName)))
+            return;
+
+        if (message.Type == NetworkMessageType.BuildConstructionRequest &&
+            (message.ConstructionSiteId is null || message.UnitIds is null || message.UnitIds.Length == 0))
             return;
 
         if (_requestQueue.Count >= MaximumQueuedRequests)
@@ -60,6 +70,9 @@ public sealed class NetworkHost
                     NetworkMessageType.GotoRequest => NetworkCommands.CreateGotoCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.TextRequest => NetworkCommands.CreateTextCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.ToolActionRequest => NetworkCommands.CreateToolActionCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.RequestPlayerUpdate => NetworkCommands.CreatePlayerUpdateCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.BuildRequest => NetworkCommands.CreateBuildCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.BuildConstructionRequest => NetworkCommands.CreateBuildConstructionCommand(_networkHandler.LocalPeerId, request),
                     _ => throw new InvalidOperationException($"Unsupported request type: {request.Type}")
                 };
 

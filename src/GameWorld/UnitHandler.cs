@@ -8,74 +8,70 @@ namespace RTS;
 
 public class UnitHandler
 {
-    private readonly Terrain _terrain;
-    private readonly GameWorld _map;
-    private readonly List<Unit> _units = [];
+    private readonly List<MobileUnit> _units = new List<MobileUnit>();
 
-    public IReadOnlyList<Unit> Units => _units;
+    public IReadOnlyList<MobileUnit> Units => _units;
 
-    public UnitHandler(
-        Terrain terrain,
-        GameWorld map)
+    public UnitHandler()
     {
-        _terrain = terrain;
-        _map = map;
     }
 
-    public Unit SpawnUnit(string unitTypeName, Vector3 position, Guid unitId)
+    public MobileUnit SpawnUnit(
+        string unitTypeName,
+        Vector3 position,
+        Guid unitId,
+        Guid creatorPlayerId)
     {
-        Unit unit;            
-        switch (unitTypeName.ToLower())
-        {
-            case "soldier":
-                unit = new Soldier(position, unitId);
-                break;
-            case "car":
-                unit = new Car(position, unitId);
-                break;
-            case "tank":
-                unit = new Tank(position, unitId);
-                break;
-            case "editor":
-                unit = new TerrainEditorTool(position, unitId);
-                break;
-            default:
-                throw new ArgumentException($"Unknown unit type: {unitTypeName}");
-        }
+        MobileUnit unit = UnitFactory.SpawnUnit(unitTypeName, position, unitId, creatorPlayerId);
         AddUnit(unit);
         return unit;
     }
-    
-    public Unit? FindById(Guid unitId)
+
+    public MobileUnit SpawnBuilding(
+        string buildingTypeName,
+        Vector3 position,
+        Guid unitId,
+        Guid creatorPlayerId)
+    {
+        MobileUnit unit = BuildingFactory.SpawnBuilding(buildingTypeName, position, unitId, creatorPlayerId);
+        if (unit != null)
+            AddUnit(unit);
+        return unit;
+    }
+
+    public MobileUnit? FindById(Guid unitId)
     {
         return _units.FirstOrDefault(unit => unit.UnitId == unitId);
     }
 
     public void Update(GameTime gameTime)
     {
-        foreach (Unit unit in _units)
-                unit.Update(gameTime, _terrain, _map);
+        foreach (MobileUnit unit in _units)
+                unit.Update(gameTime);
     }
 
     public void DrawShadow(GraphicsDevice graphicsDevice, Effect effect)
     {
-        foreach (Unit unit in _units)
+        foreach (MobileUnit unit in _units)
             unit.DrawShadow(graphicsDevice, effect);
     }
 
     public void Draw(GraphicsDevice graphicsDevice, Effect effect)
     {
-        foreach (Unit unit in _units)
+        foreach (MobileUnit unit in _units)
             unit.Draw(graphicsDevice, effect);
     }
 
-        private void AddUnit(Unit unit)
+        private void AddUnit(MobileUnit unit)
         {
-            Point cell = _map.GameGrid.ToCell(unit.Position);
-
-            if (!_map.GameGrid.TryMove(unit, cell))
-                throw new InvalidOperationException("Unit footprint overlaps another unit or leaves the game grid.");
-
+            Point cell = Globals.World.GameGrid.ToCell(unit.Position);
+            if (!Globals.World.GameGrid.TryMove(unit, cell))
+            {
+                Random rnd = new Random();
+                cell.X += rnd.Next(-10, 10);
+                cell.Y += rnd.Next(-10, 10);
+                Globals.World.GameGrid.TryMove(unit, cell);
+            }
             _units.Add(unit);
         }
 }

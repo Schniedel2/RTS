@@ -461,8 +461,8 @@ public class ConsoleCommands
         string unitTypeId = args[0].ToLowerInvariant();
         Vector3 target = _localPlayer.MouseWorldPosition;
         float x = target.X;
-        float y = target.Y;
-        float z = target.Z;
+        float y = target.Z;
+        float z = target.Y;
 
         if (args.Length > 1)
             float.TryParse(args[1], out x);

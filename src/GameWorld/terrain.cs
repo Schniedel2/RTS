@@ -2,6 +2,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.IO;
+using RTS.Network;
 
 namespace RTS;
 
@@ -26,52 +27,19 @@ public class Terrain
 
     public Terrain(
         int width,
-        int height,
-        Texture2D? heightMapTexture = null)
+        int height)
     {
         Width = width;
         Height = height;
 
-        if (heightMapTexture is not null &&
-            heightMapTexture.Width == Width &&
-            heightMapTexture.Height == Height)
-        {
-            BuildHeightMap(heightMapTexture);
-        }
-        else
-        {
-            BuildProceduralHeightMap();
-        }
-        CreateDummyTileMap();
-        UpdateTilemap();
+        ClearHightmap(0);
+        ClearTilemap(TerrainTile.Rock);
 
-        BuildMesh();
+        UpdateTilemapTexture();
+        BuildTerrainMesh();
     }
 
-    public void UpdateTilemap()
-    {
-        CreateTileMapTexture();
-    }
-
-    public void CreateTilemap(Texture2D _tilemap)
-    {
-        _tiles = new TerrainTile[Width, Height];
-        Color[] data = new Color[Width * Height];
-        _tilemap.GetData(data);
-
-        for (int y = 0; y < Height; y++)
-        {
-            for (int x = 0; x < Width; x++)
-            {
-                Color c = data[y * Width + x];
-                byte tileId = c.R;
-                _tiles[x, y] = (TerrainTile)tileId;
-            }
-        }
-        CreateTileMapTexture();
-    }
-
-    private void CreateTileMapTexture()
+    public void UpdateTilemapTexture()
     {
         _tileMapTexture = new Texture2D(
             Globals.GraphicsDevice,
@@ -185,7 +153,7 @@ public class Terrain
         }
     }
 
-    public void BuildMesh()
+    public void BuildTerrainMesh()
     {
         _vertices = new VertexPositionColorNormal[
             Width * Height];
@@ -283,51 +251,15 @@ public class Terrain
             HeightMap[index] = pixels[index].R / 255.0f * HeightScale;
     }
 
-    private void BuildProceduralHeightMap()
+    private void ClearHightmap(float height)
     {
         HeightMap = new float[Width * Height];
         for (int z = 0; z < Height; z++)
-        {
             for (int x = 0; x < Width; x++)
             {
-                float h = 0;
-
-                h +=
-                    MathF.Sin(x * 0.08f) *
-                    MathF.Cos(z * 0.07f) *
-                        3.0f;
-
-                h +=
-                    MathF.Sin(x * 0.17f + 1.3f) *
-                    MathF.Cos(z * 0.13f) *
-                    1.5f;
-
-                h +=
-                    MathF.Sin(x * 0.035f - 0.7f) *
-                    MathF.Cos(z * 0.045f) *
-                    5.0f;
-
-                // Großer zentraler Hügel                
-                float distance = 0;
-                if ((x > 35) && (x <45))
-                    if ((z > 35) && (z <45))
-                    {
-                        distance = -10.0f;
-                        h = 12.0f;
-                    }
-                //float distance =
-                //    MathF.Sqrt((40-x) * (40-x) + (40-z) * (40-z));
-
-                h +=
-                    MathF.Max(
-                        0,
-                        10.0f - distance * 0.15f);
-                            
-                h *= HeightScale;
                 int index = z * Width + x;
-                HeightMap[index] = h;
+                HeightMap[index] = height;
             }
-        }
     }
 
     public float GetHeight(int x, int z)
@@ -339,6 +271,52 @@ public class Terrain
 
         int index = z * Width + x;
         return HeightMap[index];
+    }
+
+    public WorldData GetWorldData()
+    {
+        byte[] tileMap = new byte[Width * Height];
+        float[] heightMap = new float[Width * Height];
+
+        for (int z = 0; z < Height; z++)
+        {
+            for (int x = 0; x < Width; x++)
+            {
+                int index = z * Width + x;
+                tileMap[index] = (byte)_tiles[x, z];
+                heightMap[index] = HeightMap[index];
+            }
+        }
+
+        return new WorldData(Width, Height, tileMap, heightMap);
+    }
+
+    public void ApplyWorldData(WorldData worldData)
+    {
+        int cellCount = worldData.Width * worldData.Height;
+        if (worldData.Width <= 0 ||
+            worldData.Height <= 0 ||
+            worldData.TileMap.Length != cellCount ||
+            worldData.HeightMap.Length != cellCount)
+            throw new ArgumentException("World data dimensions do not match the payload.", nameof(worldData));
+
+        Width = worldData.Width;
+        Height = worldData.Height;
+        _tiles = new TerrainTile[Width, Height];
+        HeightMap = new float[cellCount];
+
+        for (int z = 0; z < Height; z++)
+        {
+            for (int x = 0; x < Width; x++)
+            {
+                int index = z * Width + x;
+                _tiles[x, z] = (TerrainTile)worldData.TileMap[index];
+                HeightMap[index] = worldData.HeightMap[index];
+            }
+        }
+
+        UpdateTilemapTexture();
+        BuildTerrainMesh();
     }
 
     public void SetHeight(int x, int z, float height)
@@ -411,16 +389,12 @@ public class Terrain
         _tiles[x, y] = tile;
     }
 
-    public void CreateDummyTileMap()
+    public void ClearTilemap(TerrainTile defaultTile)
     {        
         _tiles = new TerrainTile[Width, Height];
         for (int x = 0; x < Width; x++)
             for (int y = 0; y < Height; y++)
-                _tiles[x, y] = TerrainTile.Rock;
-
-        for (int x = 12; x < 20; x++)
-            for (int y = 12; y < 20; y++)
-                _tiles[x, y] = TerrainTile.Grass;
+                _tiles[x, y] = defaultTile;
     }
 
     public void Update(GameTime gameTime)
@@ -536,16 +510,16 @@ public class Terrain
                 _tiles[x, y] = IOHelper.RGBtoTile(pixelColor);
             }
 
-        UpdateTilemap();
+        UpdateTilemapTexture();
    }
 
     public void LoadHeightmap(string mapDirectory)
-    {
+    {        
         string filename = Path.Combine(mapDirectory, "terrain-heightmap.png");
         Texture2D heightmapTexture = Texture2D.FromFile(Globals.GraphicsDevice, filename);
         Width = heightmapTexture.Width;
         Height = heightmapTexture.Height;
         BuildHeightMap(heightmapTexture);
-        BuildMesh();
+        BuildTerrainMesh();
    }
 }

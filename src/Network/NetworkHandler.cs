@@ -26,6 +26,8 @@ public sealed class NetworkHandler : IDisposable
     private CancellationTokenSource? _cancellation;
     private readonly NetworkDiscovery _discovery = new();
     private bool _sessionAccepted;
+    private Func<NetworkMessage>? _worldDataProvider;
+    private Func<IEnumerable<NetworkMessage>>? _playerDataProvider;
 
     public Guid LocalPeerId { get; } = Guid.NewGuid();
     public string DisplayName { get; set; }
@@ -37,6 +39,26 @@ public sealed class NetworkHandler : IDisposable
     public IReadOnlyDictionary<Guid, string> PeerDisplayNames => _peerDisplayNames;
 
     public event Action<NetworkMessage>? MessageReceived;
+
+    public void SetWorldDataProvider(Func<NetworkMessage> worldDataProvider)
+    {
+        _worldDataProvider = worldDataProvider ?? throw new ArgumentNullException(nameof(worldDataProvider));
+    }
+
+    public void SetPlayerDataProvider(Func<IEnumerable<NetworkMessage>> playerDataProvider)
+    {
+        _playerDataProvider = playerDataProvider ?? throw new ArgumentNullException(nameof(playerDataProvider));
+    }
+
+    public Task RequestWorldDataAsync(CancellationToken cancellationToken = default)
+    {
+        if (IsHost)
+            return Task.CompletedTask;
+
+        return SendToServerAsync(
+            NetworkCommands.CreateWorldDataRequest(LocalPeerId),
+            cancellationToken);
+    }
 
     public NetworkHandler() : this(CreateTestDisplayName())
     {
@@ -350,6 +372,15 @@ public sealed class NetworkHandler : IDisposable
                 SessionId: SessionId,
                 DisplayName: DisplayName), cancellationToken);
 
+            if (_worldDataProvider is not null)
+                await SendAsync(client, _worldDataProvider(), cancellationToken);
+
+            if (_playerDataProvider is not null)
+            {
+                foreach (NetworkMessage playerData in _playerDataProvider())
+                    await SendAsync(client, playerData, cancellationToken);
+            }
+
             foreach (NetworkPeer member in _members.Values.Where(member => member.Id != peer.Id))
             {
                 await SendAsync(client, new NetworkMessage(
@@ -376,11 +407,11 @@ public sealed class NetworkHandler : IDisposable
         if (!_members.ContainsKey(message.SenderId))
             return;
 
-        if (message.Type == NetworkMessageType.SpawnRequest ||
-            message.Type == NetworkMessageType.GotoRequest ||
-            message.Type == NetworkMessageType.TextRequest)
+        if (message.Type == NetworkMessageType.RequestWorldData)
         {
-            _receivedMessages.Enqueue(message);
+            if (_worldDataProvider is not null)
+                await SendAsync(client, _worldDataProvider(), cancellationToken);
+
             return;
         }
 
@@ -392,6 +423,9 @@ public sealed class NetworkHandler : IDisposable
             case NetworkMessageType.CommandToMember:
             case NetworkMessageType.CommandToAll:
                 await BroadcastAsync(message, cancellationToken);
+                break;
+            default:
+                _receivedMessages.Enqueue(message);
                 break;
         }
     }

@@ -26,7 +26,7 @@ public class Pathfinder
     }
 
     public bool TryFindPath(
-        Unit unit,
+        MobileUnit unit,
         IMovementProfile movementProfile,
         Vector2 target,
         out List<Point> path)
@@ -47,7 +47,7 @@ public class Pathfinder
     }
 
     public bool TryFindPath_AStar(
-        Unit unit,
+        MobileUnit unit,
         IMovementProfile movementProfile,
         Vector2 target,
         out List<Point> path)
@@ -158,7 +158,7 @@ public class Pathfinder
 
     //  Dijkstra
     public bool TryFindPath_Dijkstra(
-        Unit unit,
+        MobileUnit unit,
         IMovementProfile movementProfile,
         Vector2 target,
         out List<Point> path)

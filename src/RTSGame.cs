@@ -2,6 +2,9 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using RTS.Network;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace RTS;
 
@@ -19,18 +22,19 @@ public class RTSGame
     public NetworkHost NetworkHost { get; }
     public NetworkClient NetworkClient { get; }
     public ActionPanel? ActionPanel { get; }
+    private readonly List<Player> _players = [];
+    public IReadOnlyList<Player> Players => _players;
 
     public RTSGame(
         int terrainWidth,
-        int terrainHeight,
-        Texture2D? heightMapTexture = null)
+        int terrainHeight)
     {
         Globals.Game = this;
         Globals.RenderHelper = new RenderHelper(Globals.GraphicsDevice);
         Globals._debugRenderer = new DebugRenderer();
         Globals._camera = new Camera();
     
-        World = new GameWorld(terrainWidth, terrainHeight, 1, heightMapTexture);
+        World = new GameWorld(terrainWidth, terrainHeight, 1);
         Globals.World = World;
         Globals.LocalPlayer = new PlayerHandler(World, World.Markers);
         _shadowMap = new ShadowMap();
@@ -39,6 +43,19 @@ public class RTSGame
         ActionPanel = new ActionPanel(Globals.ActionIcons);
 
         Network = new NetworkHandler();
+        _players.Add(new Player(Network.LocalPeerId, Network.DisplayName));
+        Network.SetPlayerDataProvider(() => _players.Select(player =>
+            NetworkCommands.CreatePlayerUpdateCommand(
+                Network.LocalPeerId,
+                new NetworkMessage(
+                    NetworkMessageType.RequestPlayerUpdate,
+                    player.Id,
+                    PlayerId: player.Id,
+                    DisplayName: player.Name,
+                    TeamId: player.TeamId))));
+        Network.SetWorldDataProvider(() => NetworkCommands.CreateWorldData(
+            Network.LocalPeerId,
+            World.Terrain.GetWorldData()));
         NetworkInput = new NetworkInput(Network);
         NetworkHost = new NetworkHost(Network, NetworkInput);
         NetworkClient = new NetworkClient(Network);
@@ -51,6 +68,25 @@ public class RTSGame
 
 
         _ = _consoleCommands.CallBatch(new[] { "autorun.batch" });
+    }
+
+    public void UpdatePlayer(Guid playerId, string name, int teamId)
+    {
+        Player? player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
+        if (player is null)
+        {
+            _players.Add(new Player(playerId, name, teamId));
+            return;
+        }
+
+        player.SetRequestedData(name, teamId);
+    }
+
+    public void RemovePlayer(Guid playerId)
+    {
+        Player? player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
+        if (player is not null)
+            _players.Remove(player);
     }
 
     private void UpdateConsole(GameTime gameTime)

@@ -19,8 +19,7 @@ public class GameWorld
     public GameWorld(
         int terrainWidth,
         int terrainHeight,
-        int gameGridCellSize,
-        Texture2D? heightMapTexture = null)
+        int gameGridCellSize)
     {
         Globals.MapsDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Maps");
         Globals.MapsDirectory = "c:\\temp\\Maps";
@@ -28,11 +27,10 @@ public class GameWorld
         _terrain =
             new Terrain(
                 width: terrainWidth,
-                height: terrainHeight,
-                heightMapTexture: heightMapTexture);
+                height: terrainHeight);
 
         GameGrid = new GameGrid(terrainWidth, terrainHeight, gameGridCellSize);
-        Units = new UnitHandler(_terrain, this);
+        Units = new UnitHandler();
         Markers = new MarkerHandler();
         PathfindingManager = new PathfindingManager(this);
     }
@@ -107,7 +105,7 @@ public class GameWorld
         Markers.Update(gameTime);
     }
 
-    public bool CanMove(int x, int y, Unit unit)
+    public bool CanMove(int x, int y, MobileUnit unit)
     {
            return GameGrid.CanPlace(unit, new Point(x, y));
     }

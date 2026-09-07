@@ -1,0 +1,22 @@
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using System;
+using System.Collections.Generic;
+
+namespace RTS;
+
+public class GDIBarracks : Building
+{
+    public GDIBarracks(
+        Vector3 position,
+        Guid unitId) : base(
+            position,
+            unitId)
+    {
+    }
+    
+    public override IReadOnlyList<UnitAction> Actions =>
+    [
+        new(UnitActionType.Goto, "Build Soldier", 0, 1, "Soldier")
+    ];
+}

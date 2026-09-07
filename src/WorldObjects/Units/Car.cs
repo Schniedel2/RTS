@@ -4,7 +4,7 @@ using System;
 
 namespace RTS;
 
-public class Car : Unit
+public class Car : MobileUnit
 {
     private bool _isManeuvering;
 
@@ -38,14 +38,11 @@ public class Car : Unit
             return accepted;
         }
 
-        protected override void MoveAlongPath(
-            GameTime gameTime,
-            Terrain terrain,
-            GameWorld map)
+        protected override void MoveAlongPath(GameTime gameTime)
         {
             if (!_isManeuvering)
             {
-                base.MoveAlongPath(gameTime, terrain, map);
+                base.MoveAlongPath(gameTime);
                 return;
             }
 
@@ -83,6 +80,6 @@ public class Car : Unit
 
             float movementDistance = ReverseSpeed *
                 (float)gameTime.ElapsedGameTime.TotalSeconds;
-            TryMoveTo(map, Position - forward * movementDistance);
+            TryMoveTo(Position - forward * movementDistance);
         }
 }

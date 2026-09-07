@@ -4,7 +4,7 @@ using System;
 
 namespace RTS;
 
-public class Soldier : Unit
+public class Soldier : MobileUnit
 {
     public Soldier(
         Vector3 position,

@@ -18,7 +18,7 @@ public sealed class ActionPanel
     private readonly Texture2D _pixel;
     private readonly List<(Rectangle Bounds, UnitAction Action)> _buttons = [];
     private MouseState _previousMouseState;
-    private UnitActionType? _activeActionType;
+    private UnitAction? _activeAction;
     private UnitAction? _hoverAction;
     private bool _isMouseOnPanel = false;
     private string _tooltipText = "";
@@ -30,27 +30,28 @@ public sealed class ActionPanel
         _pixel.SetData([Color.White]);
     }
 
-    public bool Update(IReadOnlyList<Unit> selectedUnits, Viewport viewport)
+    public bool Update(IReadOnlyList<MobileUnit> selectedUnits, Viewport viewport)
     {
+        _tooltipText = "";
         _isMouseOnPanel = false;
         _buttons.Clear();
         if (selectedUnits.Count == 0)
         {
-            _activeActionType = null;
+            _activeAction = null;
             _previousMouseState = Mouse.GetState();
             return false;
         }
 
         IEnumerable<UnitAction> actions = selectedUnits
             .SelectMany(unit => unit.Actions)
-            .GroupBy(action => action.Type)
+            .GroupBy(action => action.Name)
             .Where(group => group.Count() == selectedUnits.Count)
             .Select(group => group.First());
 
         List<UnitAction> availableActions = actions.ToList();
-        if (_activeActionType is null ||
-            availableActions.All(action => action.Type != _activeActionType.Value))
-            _activeActionType = availableActions.FirstOrDefault()?.Type;
+        if (_activeAction is null)
+            if (availableActions.Count > 0)
+                _activeAction = availableActions[0];
 
         int index = 0;
         foreach (UnitAction action in availableActions)
@@ -96,18 +97,17 @@ public sealed class ActionPanel
 
         if (_hoverAction is not null)
         {
-            UnitActionType actionType = _hoverAction!.Type;
             if (mouse.LeftButton == ButtonState.Pressed &&
                 _previousMouseState.LeftButton == ButtonState.Released)
             {       
-                if (Globals.LocalPlayer.SelectAction(actionType, false))
-                    _activeActionType = actionType;
+                if (Globals.LocalPlayer.SelectAction(_hoverAction, false))
+                    _activeAction = _hoverAction;
             }
             if (mouse.RightButton == ButtonState.Pressed &&
                 _previousMouseState.RightButton == ButtonState.Released)
             {       
-                if (Globals.LocalPlayer.SelectAction(actionType, true))
-                    _activeActionType = actionType;
+                if (Globals.LocalPlayer.SelectAction(_hoverAction, true))
+                    _activeAction = _hoverAction;
             }
         }
 
@@ -172,16 +172,17 @@ public sealed class ActionPanel
             // TODO: if action is disabled: spriteBatch.Draw(_pixel, bounds, Color.DimGray);
             spriteBatch.Draw(_iconSheet, iconBounds, source, Color.White);
 
-            if (action.Type == _activeActionType)
-            {
-                //  render "selected"-Border
-                Rectangle source2 = new(
-                    IconSize * 1,
-                    IconSize * 0,
-                    IconSize,
-                    IconSize);
-                spriteBatch.Draw(_iconSheet, iconBounds, source2, Color.White);
-            }
+            if (_activeAction is not null)
+                if (action == _activeAction)
+                {
+                    //  render "selected"-Border
+                    Rectangle source2 = new(
+                        IconSize * 1,
+                        IconSize * 0,
+                        IconSize,
+                        IconSize);
+                    spriteBatch.Draw(_iconSheet, iconBounds, source2, Color.White);
+                }
             
         }
 

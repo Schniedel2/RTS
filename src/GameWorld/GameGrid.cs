@@ -5,22 +5,22 @@ namespace RTS;
 
 public class GameGrid
 {
-    private readonly Unit?[,] _occupants;
+    private readonly MobileUnit?[,] _occupants;
 
     public int Width { get; }
     public int Height { get; }
     public int CellSize { get; }
-    private readonly Dictionary<Unit, Point> _positions = [];
+    private readonly Dictionary<MobileUnit, Point> _positions = [];
 
     public GameGrid(int width, int height, int cellSize)
     {
         Width = width;
         Height = height;
         CellSize = cellSize;
-        _occupants = new Unit[width, height];
+        _occupants = new MobileUnit[width, height];
     }
 
-    private void Clear(Unit unit)
+    private void Clear(MobileUnit unit)
     {
         if (!_positions.TryGetValue(unit, out Point centerCell))
             return;
@@ -45,7 +45,7 @@ public class GameGrid
         _positions.Remove(unit);
     }
 
-    public bool CanPlace(Unit unit, Point centerCell)
+    public bool CanPlace(MobileUnit unit, Point centerCell)
     {
         GetFootprintBounds(unit, centerCell, out int left, out int top, out int right, out int bottom);
 
@@ -56,7 +56,7 @@ public class GameGrid
         {
             for (int x = left; x <= right; x++)
             {
-                Unit? occupant = _occupants[x, y];
+                MobileUnit? occupant = _occupants[x, y];
 
                 if (occupant != null && occupant != unit)
                     return false;
@@ -66,7 +66,7 @@ public class GameGrid
         return true;
     }
 
-    public bool TryMove(Unit unit, Point centerCell)
+    public bool TryMove(MobileUnit unit, Point centerCell)
     {
         if (_positions.TryGetValue(unit, out Point oldCell) &&
             oldCell == centerCell)
@@ -103,7 +103,7 @@ public class GameGrid
             (centerCell.Y + 0.5f) * CellSize);
     }
 
-    private void Occupy(Unit unit, Point centerCell)
+    private void Occupy(MobileUnit unit, Point centerCell)
     {
         GetFootprintBounds(
             unit,
@@ -123,7 +123,7 @@ public class GameGrid
     }
 
     private static void GetFootprintBounds(
-        Unit unit,
+        MobileUnit unit,
         Point centerCell,
         out int left,
         out int top,

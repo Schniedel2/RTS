@@ -62,4 +62,6 @@ public abstract class WorldObject
                 Indices.Length / 3);
         }
     }
+
+    public abstract void Update(GameTime gameTime);
 }
