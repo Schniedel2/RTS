@@ -39,6 +39,83 @@ public class DebugRenderer
         }
     }
 
+    /// <summary>Draws the right (red), up (green) and forward (blue) axis of every unit transform.</summary>
+    public void DrawUnitTransforms(
+        GameWorld world,
+        Matrix view,
+        Matrix projection)
+    {
+        var vertices = new List<VertexPositionColor>();
+
+        foreach (Unit unit in world.Units.Units)
+        {
+            Matrix transform = unit.Transform;
+            Vector3 origin = transform.Translation + new Vector3(0.0f, 0.1f, 0.0f);
+
+            AddAxis(vertices, origin, transform.Right, (unit.Width + 1.0f), Color.Red);
+            AddAxis(vertices, origin, transform.Up, (unit.Height + 1.0f), Color.Lime);
+            AddAxis(vertices, origin, transform.Forward, (unit.Length), Color.DeepSkyBlue);
+        }
+
+        if (vertices.Count > 0)
+            DrawLines(vertices.ToArray(), view, projection);
+    }
+
+    private static void AddAxis(
+        List<VertexPositionColor> vertices,
+        Vector3 origin,
+        Vector3 direction,
+        float length,
+        Color color)
+    {
+        if (direction.LengthSquared() <= 0.0001f)
+            return;
+
+        vertices.Add(new VertexPositionColor(origin, color));
+        vertices.Add(new VertexPositionColor(origin + Vector3.Normalize(direction) * length, color));
+    }
+
+    public void DrawSelectedUnitPaths(
+        GameWorld world,
+        Matrix view,
+        Matrix projection)
+    {
+        var vertices = new List<VertexPositionColor>();
+        const float heightOffset = 0.16f;
+
+        foreach (MobileUnit unit in world.Units.Units)
+        {
+            if (!unit.IsSelected || unit.PlannedPath.Count == 0)
+                continue;
+
+            Vector3 previous = unit.Position + Vector3.Up * heightOffset;
+            foreach (Point waypoint in unit.PlannedPath)
+            {
+                Vector3 point = world.GameGrid.ToWorldPosition(waypoint, 0.0f);
+                point.Y = world.Terrain.GetHeight(waypoint.X, waypoint.Y) + heightOffset;
+
+                vertices.Add(new VertexPositionColor(previous, Color.Lime));
+                vertices.Add(new VertexPositionColor(point, Color.Lime));
+
+                // A small cross makes every individual cell of the path visible.
+                const float markerRadius = 0.18f;
+                vertices.Add(new VertexPositionColor(
+                    point + new Vector3(-markerRadius, 0.0f, 0.0f), Color.Yellow));
+                vertices.Add(new VertexPositionColor(
+                    point + new Vector3(markerRadius, 0.0f, 0.0f), Color.Yellow));
+                vertices.Add(new VertexPositionColor(
+                    point + new Vector3(0.0f, 0.0f, -markerRadius), Color.Yellow));
+                vertices.Add(new VertexPositionColor(
+                    point + new Vector3(0.0f, 0.0f, markerRadius), Color.Yellow));
+
+                previous = point;
+            }
+        }
+
+        if (vertices.Count > 0)
+            DrawLines(vertices.ToArray(), view, projection);
+    }
+
     /*
     public void DrawTileMapGrid(
         GameMap gameMap,

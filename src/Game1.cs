@@ -54,7 +54,8 @@ public class Game1 : Game
         Globals.TooltipFont = Content.Load<SpriteFont>("TooltipFont");
         Globals.ActionIcons = Content.Load<Texture2D>("actionIcons");
         Globals._terrainTileSheet = Content.Load<Texture2D>("terrainTileSheet");
-
+        Globals.UnitsTexture = Content.Load<Texture2D>("unitsTexture");
+        Globals.UnitsMaterialMask = Content.Load<Texture2D>("unitsMaterialMask");
 
         Globals._terrainEffect.Parameters["TerrainTilesTexture"]?.SetValue(Globals._terrainTileSheet);
 
@@ -116,6 +117,22 @@ public class Game1 : Game
             Color.CornflowerBlue);
 
         _rtsGame.Draw3D(Globals._camera);
+
+        if (Globals.Debug_ShowPathfindingMessages)
+        {
+            Globals._debugRenderer.DrawSelectedUnitPaths(
+                _rtsGame.World,
+                Globals._camera.View,
+                Globals._camera.Projection);
+        }
+
+        if (Globals.Debug_ShowUnitTransforms)
+        {
+            Globals._debugRenderer.DrawUnitTransforms(
+                _rtsGame.World,
+                Globals._camera.View,
+                Globals._camera.Projection);
+        }
 
       /*
         _debugRenderer.DrawTerrainGrid(

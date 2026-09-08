@@ -7,7 +7,7 @@ namespace RTS;
 
 public abstract class Unit : WorldObject
 {
-    private static readonly VertexPositionColorNormal[] MeshVertices =
+    private static readonly VertexPositionColorNormalTexture[] MeshVertices =
     [
         new(new Vector3(-0.5f, 0.0f, -0.5f), Color.SteelBlue, Vector3.Down),
         new(new Vector3(0.5f, 0.0f, -0.5f), Color.SteelBlue, Vector3.Down),
@@ -33,7 +33,7 @@ public abstract class Unit : WorldObject
     public float HitPoints { get; private set; }
     public float MaxHitPoints { get; }
     public Guid CreatorPlayerId { get; private set; }
-    protected override VertexPositionColorNormal[] Vertices => MeshVertices;
+    protected override VertexPositionColorNormalTexture[] Vertices => MeshVertices;
     protected override int[] Indices => MeshIndices;
 
     public int Length { get; protected set; }
@@ -46,6 +46,11 @@ public abstract class Unit : WorldObject
         new(UnitActionType.Goto, "Goto", 0, 0)
     ];
     public override string StateTypeId => "unit";
+    public float AttackRange { get; set; } = 12.0f;
+    public float AttackCooldown { get; set; } = 0.75f;
+    public Guid? AttackTargetId { get; private set; }
+    public Vector3? AttackGroundTarget { get; private set; }
+    private double _nextShotTime;
 
     public Unit(
         Vector3 position,
@@ -88,6 +93,13 @@ public abstract class Unit : WorldObject
         // Units without specialized state intentionally have no payload to apply.
     }
 
+    public virtual void Stop()
+    {
+        ClearCommand();
+        AttackTargetId = null;
+        AttackGroundTarget = null;
+    }
+
     // Gameplay mutation: only the host invokes this method.
     public virtual bool OnHit(HitInfo hit)
     {
@@ -105,6 +117,49 @@ public abstract class Unit : WorldObject
     {
     }
 
+    public void SetAttackTarget(Guid targetId)
+    {
+        AttackTargetId = targetId;
+        AttackGroundTarget = null;
+    }
+
+    public void SetAttackGroundTarget(Vector3 target)
+    {
+        AttackGroundTarget = target;
+        AttackTargetId = null;
+    }
+
+    public bool TryQueueShot(double hostTime, out MobileUnit? target)
+    {
+        target = AttackTargetId is Guid targetId ? Globals.World.Units.FindById(targetId) : null;
+        if (target is null)
+        {
+            AttackTargetId = null;
+            return false;
+        }
+
+        Vector2 offset = new(target.Position.X - Position.X, target.Position.Z - Position.Z);
+        if (offset.LengthSquared() > AttackRange * AttackRange || hostTime < _nextShotTime)
+            return false;
+
+        _nextShotTime = hostTime + AttackCooldown;
+        return true;
+    }
+
+    public bool TryQueueGroundShot(double hostTime, out Vector3 target)
+    {
+        target = AttackGroundTarget ?? default;
+        if (AttackGroundTarget is null)
+            return false;
+
+        Vector2 offset = new(target.X - Position.X, target.Z - Position.Z);
+        if (offset.LengthSquared() > AttackRange * AttackRange || hostTime < _nextShotTime)
+            return false;
+
+        _nextShotTime = hostTime + AttackCooldown;
+        return true;
+    }
+
     public Rectangle GetScreenBounds(
         Matrix view,
         Matrix projection,
@@ -114,7 +169,7 @@ public abstract class Unit : WorldObject
         Point minimum = new(int.MaxValue, int.MaxValue);
         Point maximum = new(int.MinValue, int.MinValue);
 
-        foreach (VertexPositionColorNormal vertex in Vertices)
+        foreach (VertexPositionColorNormalTexture vertex in Vertices)
         {
             Vector3 screenPosition = viewport.Project(
                 vertex.Position,

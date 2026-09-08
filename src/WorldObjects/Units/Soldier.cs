@@ -1,11 +1,19 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
+using System.Collections.Generic;
 
 namespace RTS;
 
 public class Soldier : MobileUnit
 {
+    public override IReadOnlyList<UnitAction> Actions =>
+    [
+        new(UnitActionType.Goto, "Goto", 0, 1),
+        new(UnitActionType.Attack, "Attack", 1, 1),
+        new(UnitActionType.Stop, "Stop", 7, 1)
+    ];
+
     public Soldier(
         Vector3 position,
         Guid unitId,

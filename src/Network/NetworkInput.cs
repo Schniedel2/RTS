@@ -1,5 +1,6 @@
 using Microsoft.Xna.Framework;
 using System;
+using System.Linq;
 
 namespace RTS.Network;
 
@@ -14,8 +15,24 @@ public sealed class NetworkInput
 
     private void OnMessageReceived(NetworkMessage message)
     {
+        if (Globals.Debug_ShowNetworkMessages)
+            Globals.Console.Print(FormatDebugMessage(message));
+
         MessageReceived?.Invoke(message);
         HandleNetworkMessage(message);
+    }
+
+    private static string FormatDebugMessage(NetworkMessage message)
+    {
+        string unitIds = message.UnitIds is { Length: > 0 }
+            ? $" units={string.Join(',', message.UnitIds.Select(id => id.ToString("N")[..8]))}"
+            : "";
+        string unitId = message.UnitId is Guid id ? $" unit={id.ToString("N")[..8]}" : "";
+        string targetId = message.TargetId is Guid target ? $" target={target.ToString("N")[..8]}" : "";
+        string position = message.X != 0.0f || message.Y != 0.0f || message.Z != 0.0f
+            ? $" pos=({message.X:0.0},{message.Y:0.0},{message.Z:0.0})"
+            : "";
+        return $"[NET] {message.Type} from={message.SenderId.ToString("N")[..8]}{unitId}{unitIds}{targetId}{position}";
     }
 
     private void HandleNetworkMessage(NetworkMessage message)
@@ -40,7 +57,8 @@ public sealed class NetworkInput
             Globals.Game.UpdatePlayer(
                 updatedPlayerId,
                 message.DisplayName,
-                message.TeamId);
+                message.TeamId,
+                Player.ColorFromPacked(message.PlayerColor ?? Player.ColorPalette[0].PackedValue));
             return;
         }
 
@@ -92,9 +110,28 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type == NetworkMessageType.StopCommand)
+        {
+            foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
+                Globals.World.Units.FindById(unitId)?.Stop();
+            return;
+        }
+
         if (message.Type == NetworkMessageType.AttackCommand)
         {
             ExecuteAttack(message);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.AttackTargetCommand)
+        {
+            ExecuteAttackTarget(message);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.AttackGroundCommand)
+        {
+            ExecuteAttackGround(message);
             return;
         }
 
@@ -171,6 +208,23 @@ public sealed class NetworkInput
             Vector3 start = tank.Position + Vector3.Up * (tank.Height * 0.75f);
             Globals.World.Projectiles.Fire(start, target);
         }
+    }
+
+    private void ExecuteAttackTarget(NetworkMessage message)
+    {
+        if (message.TargetId is not Guid targetId)
+            return;
+        foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
+            if (Globals.World.Units.FindById(unitId) is MobileUnit unit)
+                unit.SetAttackTarget(targetId);
+    }
+
+    private void ExecuteAttackGround(NetworkMessage message)
+    {
+        Vector3 target = new(message.X, message.Y, message.Z);
+        foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
+            if (Globals.World.Units.FindById(unitId) is MobileUnit unit)
+                unit.SetAttackGroundTarget(target);
     }
 
     private void ApplyHit(NetworkMessage message)

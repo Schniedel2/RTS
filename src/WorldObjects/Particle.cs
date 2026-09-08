@@ -6,14 +6,14 @@ namespace RTS;
 public sealed class Particle : WorldObject
 {
     private static readonly int[] MeshIndices = [0, 1, 2, 0, 2, 3];
-    private readonly VertexPositionColorNormal[] _vertices;
+    private readonly VertexPositionColorNormalTexture[] _vertices;
     private readonly float _lifetime;
     private readonly float _initialSize;
     private float _remainingLifetime;
 
     public Vector3 Velocity { get; private set; }
     public bool IsExpired => _remainingLifetime <= 0.0f;
-    protected override VertexPositionColorNormal[] Vertices => _vertices;
+    protected override VertexPositionColorNormalTexture[] Vertices => _vertices;
     protected override int[] Indices => MeshIndices;
 
     public Particle(

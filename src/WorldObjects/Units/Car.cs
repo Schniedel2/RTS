@@ -1,11 +1,19 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
+using System.Collections.Generic;
 
 namespace RTS;
 
 public class Car : MobileUnit
 {
+    public override IReadOnlyList<UnitAction> Actions =>
+    [
+        new(UnitActionType.Goto, "Goto", 0, 1),
+        new(UnitActionType.Attack, "Attack", 1, 1),
+        new(UnitActionType.Stop, "Stop", 7, 1)
+    ];
+        
     private bool _isManeuvering;
 
     public float ReverseSpeed { get; set; } = 2.0f;
@@ -33,7 +41,7 @@ public class Car : MobileUnit
         public override bool TryReceiveGotoCommand(GameWorld map, GotoCommand command)
         {
             bool accepted = base.TryReceiveGotoCommand(map, command);
-            _isManeuvering = accepted;
+            _isManeuvering = accepted && CanOnlyMoveForward;
 
             return accepted;
         }

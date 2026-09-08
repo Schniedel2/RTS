@@ -34,8 +34,14 @@ public enum NetworkMessageType
     SpawnCommand,
     GotoRequest,
     GotoCommand,
+    StopRequest,
+    StopCommand,
     AttackRequest,
     AttackCommand,
+    AttackTargetRequest,
+    AttackTargetCommand,
+    AttackGroundRequest,
+    AttackGroundCommand,
     UnitHitCommand,
     DestroyUnitCommand,
     TextRequest,
@@ -86,4 +92,5 @@ public sealed record NetworkMessage(
     UnitAction? Action = null,
     TerrainTile? TerrainTile = null,
     WorldData? WorldData = null,
-    int TeamId = 0);
+    int TeamId = 0,
+    uint? PlayerColor = null);

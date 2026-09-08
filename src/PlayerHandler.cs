@@ -77,6 +77,12 @@ public class PlayerHandler
                 if (_toolSize < 1)
                     _toolSize = 1;
                 return false;
+            case UnitActionType.Stop:
+                {
+                    if (action.Type == UnitActionType.Stop)
+                        _ = Globals.Game.NetworkClient.RequestStopAsync(_selectedUnits);
+                    return false;
+                }
         }
 
         ActiveAction = action;        
@@ -257,7 +263,11 @@ public class PlayerHandler
             }
             if (action.Type == UnitActionType.Attack)
             {
-                _ = Globals.Game.NetworkClient.RequestAttackAsync(_selectedUnits, target);
+                MobileUnit? targetUnit = FindUnitAt(Globals._camera, Globals.GraphicsDevice.Viewport, Mouse.GetState().Position);
+                if (targetUnit is not null)
+                    _ = Globals.Game.NetworkClient.RequestAttackTargetAsync(_selectedUnits, targetUnit.UnitId);
+                else
+                    _ = Globals.Game.NetworkClient.RequestAttackAsync(_selectedUnits, target);
             }
             if (action.Type == UnitActionType.Build)
             {
@@ -299,6 +309,12 @@ public class PlayerHandler
                     camera.View,
                     camera.Projection,
                     viewport).Contains(screenPosition));
+        }
+
+        private MobileUnit? FindUnitAt(Camera camera, Viewport viewport, Point screenPosition)
+        {
+            return _map.Units.Units.FirstOrDefault(unit => unit.GetScreenBounds(
+                camera.View, camera.Projection, viewport).Contains(screenPosition));
         }
 
         private static Ray CreatePickRay(

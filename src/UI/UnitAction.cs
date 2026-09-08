@@ -4,6 +4,7 @@ public enum UnitActionType
 {
     Filler,
     Goto,
+    Stop,
     Attack,
     Build,
     BuildConstruction,

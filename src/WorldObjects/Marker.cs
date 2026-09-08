@@ -6,7 +6,7 @@ namespace RTS;
 
 public class Marker : WorldObject
 {
-    private static readonly VertexPositionColorNormal[] MeshVertices =
+    private static readonly VertexPositionColorNormalTexture[] MeshVertices =
     [
         new(new Vector3(0.0f, 0.0f, 0.0f), Color.Gold, Vector3.Down),
         new(new Vector3(-0.6f, 1.0f, -0.6f), Color.Gold, Vector3.Up),
@@ -27,7 +27,7 @@ public class Marker : WorldObject
     private readonly float _lifetime;
     private float _remainingLifetime;
 
-    protected override VertexPositionColorNormal[] Vertices => MeshVertices;
+    protected override VertexPositionColorNormalTexture[] Vertices => MeshVertices;
     protected override int[] Indices => MeshIndices;
 
     public bool IsExpired => _remainingLifetime <= 0.0f;

@@ -6,7 +6,7 @@ namespace RTS;
 
 public sealed class Projectile : WorldObject
 {
-    private static readonly VertexPositionColorNormal[] MeshVertices =
+    private static readonly VertexPositionColorNormalTexture[] MeshVertices =
     [
         new(new Vector3(-0.5f, 0.0f, -0.5f), Color.OrangeRed, Vector3.Up),
         new(new Vector3(0.5f, 0.0f, -0.5f), Color.OrangeRed, Vector3.Up),
@@ -21,7 +21,7 @@ public sealed class Projectile : WorldObject
     private float _elapsed;
     private float _trailElapsed;
 
-    protected override VertexPositionColorNormal[] Vertices => MeshVertices;
+    protected override VertexPositionColorNormalTexture[] Vertices => MeshVertices;
     protected override int[] Indices => MeshIndices;
     public bool IsExpired => _elapsed >= _duration;
 

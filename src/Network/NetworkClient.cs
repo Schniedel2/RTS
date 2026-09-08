@@ -70,6 +70,12 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, CancellationToken.None);
     }
 
+    public Task RequestStopAsync(IEnumerable<MobileUnit> units)
+    {
+        return _networkHandler.SendToHostAsync(NetworkCommands.CreateStopRequest(
+            _networkHandler.LocalPeerId, units.Select(unit => unit.UnitId).ToArray()));
+    }
+
     public Task RequestBuildConstructionAsync(
         IEnumerable<MobileUnit> units,
         Guid constructionSiteId,
@@ -85,13 +91,19 @@ public sealed class NetworkClient
 
     public Task RequestAttackAsync(IEnumerable<MobileUnit> units, Vector3 target)
     {
-        Guid[] unitIds = units.Select(unit => unit.UnitId).ToArray();
-        NetworkMessage request = NetworkCommands.CreateAttackRequest(
+        NetworkMessage request = NetworkCommands.CreateAttackGroundRequest(
             _networkHandler.LocalPeerId,
-            unitIds,
-            target.X,
-            target.Y,
-            target.Z);
+            units.Select(unit => unit.UnitId).ToArray(),
+            target);
+        return _networkHandler.SendToHostAsync(request, CancellationToken.None);
+    }
+
+    public Task RequestAttackTargetAsync(IEnumerable<MobileUnit> units, Guid targetId)
+    {
+        NetworkMessage request = NetworkCommands.CreateAttackTargetRequest(
+            _networkHandler.LocalPeerId,
+            units.Select(unit => unit.UnitId).ToArray(),
+            targetId);
         return _networkHandler.SendToHostAsync(request, CancellationToken.None);
     }
 

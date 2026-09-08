@@ -1,6 +1,7 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
+using System.IO;
 
 namespace RTS;
 
@@ -27,10 +28,13 @@ public struct Telemetry
 public static class Globals
 {
     public static string MapsDirectory = "c:\\temp\\Maps";
+    public static string ModelsDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Models");
     public static GraphicsDeviceManager Graphics = null!;
     public static GraphicsDevice GraphicsDevice = null!;
     public static PlayerHandler LocalPlayer = null!;
     public static Texture2D ActionIcons = null!;
+    public static Texture2D UnitsTexture = null!;
+    public static Texture2D UnitsMaterialMask = null!;
     public static RTSGame Game = null!;
     public static GameWorld World = null!;
     public static RenderHelper RenderHelper = null!;
@@ -54,5 +58,8 @@ public static class Globals
     public static bool Debug_ShadowMap_ShowPreview = false;
     public static bool Debug_ShowGameGrid = false;
     public static bool Debug_ShowUnitBounds = false;
+    public static bool Debug_ShowUnitTransforms = false;
     public static bool Debug_ShowMarkers = false;
+    public static bool Debug_ShowNetworkMessages = false;
+    public static bool Debug_ShowPathfindingMessages = false;
 }

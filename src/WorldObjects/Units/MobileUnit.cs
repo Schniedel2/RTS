@@ -26,10 +26,13 @@ public class MobileUnit : Unit
     public IReadOnlyList<Point> PlannedPath => _plannedPath;
     public override IReadOnlyList<UnitAction> Actions =>
     [
-        new(UnitActionType.Goto, "Goto", 0, 0)
+        new(UnitActionType.Goto, "Goto", 0, 0),
+        new(UnitActionType.Stop, "Stop", 2, 0)
     ];
 
     private readonly List<Point> _plannedPath = [];
+    private double _nextAttackReplanTime;
+    private Vector2? _lastAttackApproachTarget;
 
     public MobileUnit(
         Vector3 position,
@@ -170,18 +173,22 @@ public class MobileUnit : Unit
             Position.X, Position.Y, Position.Z, 1.0f);
     }
 
-    private void CompleteWaypoint()
+    protected void CompleteWaypoint()
     {
+        Point completedWaypoint = _plannedPath[0];
         _plannedPath.RemoveAt(0);
+        PathDebug($"waypoint reached cell=({completedWaypoint.X},{completedWaypoint.Y}) remaining={_plannedPath.Count}");
 
         if (_plannedPath.Count == 0)
         {
             if (CurrentConstructionSiteId is not null)
             {
                 IsBuilding = true;
+                PathDebug("arrived at construction site; building starts");
                 return;
             }
 
+            PathDebug("destination reached; command completed");
             ClearCommand();
         }
     }
@@ -198,7 +205,10 @@ public class MobileUnit : Unit
         Point targetCell = Globals.World.GameGrid.ToCell(position);
 
         if (!Globals.World.GameGrid.TryMove(this, targetCell))
+        {
+            PathDebug($"movement blocked at cell=({targetCell.X},{targetCell.Y})");
             return false;
+        }
 
         SetPosition(position);
         return true;
@@ -224,6 +234,7 @@ public class MobileUnit : Unit
         CurrentCommand = command;
 
         _plannedPath.Clear();
+        PathDebug($"path search requested target=({command.Target.X:0.0},{command.Target.Y:0.0}) request={_pathRequestId}");
 
         map.PathfindingManager.RequestPath(
             this,
@@ -271,10 +282,13 @@ public class MobileUnit : Unit
     {
         _plannedPath.Clear();
         _plannedPath.AddRange(path);
+        PathDebug($"path applied waypoints={_plannedPath.Count}");
     }
 
     public override void ClearCommand()
     {
+        if (CurrentCommand is not null || _plannedPath.Count > 0)
+            PathDebug($"command cleared remainingWaypoints={_plannedPath.Count}");
         _plannedPath.Clear();
         CurrentConstructionSiteId = null;
         IsBuilding = false;
@@ -283,8 +297,67 @@ public class MobileUnit : Unit
 
     public override void Update(GameTime gameTime)
     {
+        UpdateAttackMovement(gameTime);
         MoveAlongPath(gameTime);
         AlignToTerrain(gameTime);
+    }
+
+    private void UpdateAttackMovement(GameTime gameTime)
+    {
+        Vector2? targetPosition = null;
+        MobileUnit? targetUnit = null;
+        if (AttackTargetId is Guid targetId)
+        {
+            targetUnit = Globals.World.Units.FindById(targetId);
+            if (targetUnit is null)
+                return;
+            targetPosition = new(targetUnit.Position.X, targetUnit.Position.Z);
+        }
+        else if (AttackGroundTarget is Vector3 groundTarget)
+        {
+            targetPosition = new(groundTarget.X, groundTarget.Z);
+        }
+
+        if (targetPosition is not Vector2 target)
+            return;
+
+        Vector2 position = new(Position.X, Position.Z);
+        if (Vector2.DistanceSquared(position, target) <= AttackRange * AttackRange)
+        {
+            if (CurrentCommand is not null)
+                ClearCommand();
+            _lastAttackApproachTarget = null;
+            PathDebug("attack target is in range; approach path cleared");
+            return;
+        }
+
+        if (gameTime.TotalGameTime.TotalSeconds < _nextAttackReplanTime)
+            return;
+
+        Vector2 approachTarget = target;
+        if (targetUnit is not null)
+        {
+            Vector2 away = position - target;
+            if (away.LengthSquared() <= 0.001f)
+                away = Vector2.UnitX;
+            else
+                away.Normalize();
+            float distance = MathF.Max(AttackRange * 0.75f,
+                MathF.Max(targetUnit.Length, targetUnit.Width) * 0.5f +
+                MathF.Max(Length, Width) * 0.5f + 1.0f);
+            approachTarget = target + away * distance;
+        }
+
+        bool needsReplan = CurrentCommand is null ||
+            _lastAttackApproachTarget is null ||
+            Vector2.DistanceSquared(approachTarget, _lastAttackApproachTarget.Value) > 4.0f;
+        if (needsReplan)
+        {
+            PathDebug($"attack replan target=({approachTarget.X:0.0},{approachTarget.Y:0.0})");
+            if (TryReceiveGotoCommand(Globals.World, new GotoCommand(approachTarget)))
+                _lastAttackApproachTarget = approachTarget;
+        }
+        _nextAttackReplanTime = gameTime.TotalGameTime.TotalSeconds + 0.5;
     }
 
     private Vector3 SnapDirectionToHeading(Vector3 direction)
@@ -360,7 +433,7 @@ public class MobileUnit : Unit
             worldPosition.Z);
     }
 
-    private Vector3 GetHorizontalDirection(Vector3 localDirection)
+    protected Vector3 GetHorizontalDirection(Vector3 localDirection)
         {
         Vector3 worldDirection = Vector3.TransformNormal(
             localDirection,
@@ -368,5 +441,11 @@ public class MobileUnit : Unit
         worldDirection.Y = 0.0f;
 
         return Vector3.Normalize(worldDirection);
+    }
+
+    protected void PathDebug(string message)
+    {
+        if (Globals.Debug_ShowPathfindingMessages)
+            Globals.Console.Print($"[PATH] unit={UnitId.ToString("N")[..8]} {message}");
     }
 }

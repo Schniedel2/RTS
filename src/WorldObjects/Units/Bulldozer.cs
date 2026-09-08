@@ -12,9 +12,10 @@ public class GDIBulldozer : Car
     public override IReadOnlyList<UnitAction> Actions =>
     [
         new(UnitActionType.Goto, "Goto", 0, 1),
-        new(UnitActionType.Build, "Build Base", 0, 1, "GDI-Base"),
-        new(UnitActionType.Build, "Build Barracks", 0, 1, "GDI-Barracks"),
-        new(UnitActionType.BuildConstruction, "Build construction site", 0, 1),
+        new(UnitActionType.Build, "Build Base", 1, 4, "GDI-Base"),
+        new(UnitActionType.Build, "Build Barracks", 2, 4, "GDI-Barracks"),
+        new(UnitActionType.BuildConstruction, "Build construction site", 0, 4),
+        new(UnitActionType.Stop, "Stop", 7, 1)
     ];
 
     public GDIBulldozer(

@@ -3,6 +3,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using RTS.Network;
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -29,6 +30,8 @@ public class RTSGame
         int terrainWidth,
         int terrainHeight)
     {
+        Globals.ModelsDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Models");
+
         Globals.Game = this;
         Globals.RenderHelper = new RenderHelper(Globals.GraphicsDevice);
         Globals._debugRenderer = new DebugRenderer();
@@ -52,7 +55,8 @@ public class RTSGame
                     player.Id,
                     PlayerId: player.Id,
                     DisplayName: player.Name,
-                    TeamId: player.TeamId))));
+                    TeamId: player.TeamId),
+                player.Color.PackedValue)));
         Network.SetWorldDataProvider(() => NetworkCommands.CreateWorldData(
             Network.LocalPeerId,
             World.Terrain.GetWorldData()));
@@ -70,16 +74,16 @@ public class RTSGame
         _ = _consoleCommands.CallBatch(new[] { "autorun.batch" });
     }
 
-    public void UpdatePlayer(Guid playerId, string name, int teamId)
+    public void UpdatePlayer(Guid playerId, string name, int teamId, Color color)
     {
         Player? player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
         if (player is null)
         {
-            _players.Add(new Player(playerId, name, teamId));
+            _players.Add(new Player(playerId, name, teamId, color));
             return;
         }
 
-        player.SetRequestedData(name, teamId);
+        player.SetRequestedData(name, teamId, color);
     }
 
     public void RemovePlayer(Guid playerId)

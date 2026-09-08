@@ -38,7 +38,10 @@ public sealed class NetworkHost
 
         if (message.Type != NetworkMessageType.SpawnRequest &&
             message.Type != NetworkMessageType.GotoRequest &&
+            message.Type != NetworkMessageType.StopRequest &&
             message.Type != NetworkMessageType.AttackRequest &&
+            message.Type != NetworkMessageType.AttackTargetRequest &&
+            message.Type != NetworkMessageType.AttackGroundRequest &&
             message.Type != NetworkMessageType.ToolActionRequest &&
             message.Type != NetworkMessageType.BuildRequest &&
             message.Type != NetworkMessageType.BuildConstructionRequest &&
@@ -83,10 +86,13 @@ public sealed class NetworkHost
                 {
                     NetworkMessageType.SpawnRequest => NetworkCommands.CreateSpawnCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.GotoRequest => NetworkCommands.CreateGotoCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.StopRequest => NetworkCommands.CreateStopCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.AttackRequest => NetworkCommands.CreateAttackCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.AttackTargetRequest => NetworkCommands.CreateAttackTargetCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.AttackGroundRequest => NetworkCommands.CreateAttackGroundCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.TextRequest => NetworkCommands.CreateTextCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.ToolActionRequest => NetworkCommands.CreateToolActionCommand(_networkHandler.LocalPeerId, request),
-                    NetworkMessageType.RequestPlayerUpdate => NetworkCommands.CreatePlayerUpdateCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.RequestPlayerUpdate => NetworkCommands.CreatePlayerUpdateCommand(_networkHandler.LocalPeerId, request, ConfirmPlayerColor(request)),
                     NetworkMessageType.BuildRequest => NetworkCommands.CreateBuildCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.BuildConstructionRequest => NetworkCommands.CreateBuildConstructionCommand(_networkHandler.LocalPeerId, request),
                     _ => throw new InvalidOperationException($"Unsupported request type: {request.Type}")
@@ -105,8 +111,28 @@ public sealed class NetworkHost
         }
     }
 
-    private void UpdateHostSimulation(GameTime gameTime)
+    /// <summary>Grants the requested color unless another player already owns it, otherwise picks the first free palette entry.</summary>
+    private static uint ConfirmPlayerColor(NetworkMessage request)
     {
+        Guid playerId = request.PlayerId ?? request.SenderId;
+        Player[] otherPlayers = Globals.Game.Players.Where(player => player.Id != playerId).ToArray();
+
+        bool IsTaken(uint packedColor) =>
+            otherPlayers.Any(player => player.Color.PackedValue == packedColor);
+
+        if (request.PlayerColor is uint requestedColor && !IsTaken(requestedColor))
+            return requestedColor;
+
+        foreach (Color paletteColor in Player.ColorPalette)
+        {
+            if (!IsTaken(paletteColor.PackedValue))
+                return paletteColor.PackedValue;
+        }
+
+        return Player.ColorPalette[0].PackedValue;
+    }
+
+    private void UpdateHostSimulation(GameTime gameTime)    {
         if (!_networkHandler.IsHost)
             return;
 
@@ -120,6 +146,24 @@ public sealed class NetworkHost
             foreach (var unit in _world.Units.Units.OfType<Unit>())
             {
                 unit.UpdateHost(gameTime);
+            }
+
+            foreach (Unit unit in _world.Units.Units.OfType<Unit>())
+            {
+                if (!unit.TryQueueShot(_hostTime, out MobileUnit? target) || target is null)
+                    continue;
+                _requestQueue.Enqueue(NetworkCommands.CreateAttackRequest(
+                    _networkHandler.LocalPeerId,
+                    [unit.UnitId],
+                    target.Position.X, target.Position.Y, target.Position.Z));
+            }
+
+            foreach (Unit unit in _world.Units.Units.OfType<Unit>())
+            {
+                if (!unit.TryQueueGroundShot(_hostTime, out Vector3 target))
+                    continue;
+                _requestQueue.Enqueue(NetworkCommands.CreateAttackRequest(
+                    _networkHandler.LocalPeerId, [unit.UnitId], target.X, target.Y, target.Z));
             }
         }
 

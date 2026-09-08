@@ -537,6 +537,20 @@ public class ConsoleCommands
 
     private void EnableFlag(string name, bool enable)
     {
+        if (name == "?")
+        {
+            _console.Print($"Lighting: {!Globals.DebugFX_DisableLighting}");
+            _console.Print($"Shadowmap: {!Globals.DebugFX_DisableShadowMap}");
+            _console.Print($"Shadowmappreview: {Globals.Debug_ShadowMap_ShowPreview}");
+            _console.Print($"Gamegrid: {Globals.Debug_ShowGameGrid}");
+            _console.Print($"Unitbounds: {Globals.Debug_ShowUnitBounds}");
+            _console.Print($"Unittransforms, transforms, axes: {Globals.Debug_ShowUnitTransforms}");
+            _console.Print($"Markers: {Globals.Debug_ShowMarkers}");
+            _console.Print($"Network, networkmessages: {Globals.Debug_ShowNetworkMessages}");
+            _console.Print($"Path, pathfinding, pathmessages: {Globals.Debug_ShowPathfindingMessages}");
+            return;
+        }
+
         switch (name.ToLowerInvariant())
         {
             case "shadowmap":
@@ -559,9 +573,26 @@ public class ConsoleCommands
                 Globals.Debug_ShowUnitBounds = enable;
                 _console.Print($"Unit bounds {(enable ? "enabled" : "disabled")}.");
                 break;
+            case "unittransforms":
+            case "transforms":
+            case "axes":
+                Globals.Debug_ShowUnitTransforms = enable;
+                _console.Print($"Unit transforms {(enable ? "enabled" : "disabled")}.");
+                break;
             case "markers":
                 Globals.Debug_ShowMarkers = enable;
                 _console.Print($"Markers {(enable ? "enabled" : "disabled")}.");
+                break;
+            case "network":
+            case "networkmessages":
+                Globals.Debug_ShowNetworkMessages = enable;
+                _console.Print($"Network message debug {(enable ? "enabled" : "disabled")}.");
+                break;
+            case "pathfinding":
+            case "path":
+            case "pathmessages":
+                Globals.Debug_ShowPathfindingMessages = enable;
+                _console.Print($"Pathfinding debug {(enable ? "enabled" : "disabled")}.");
                 break;
             default:
                 _console.Print($"Unknown flag: {name}");

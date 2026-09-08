@@ -27,17 +27,19 @@ public static class NetworkCommands
             player.Id,
             PlayerId: player.Id,
             DisplayName: player.Name,
-            TeamId: player.TeamId);
+            TeamId: player.TeamId,
+            PlayerColor: player.Color.PackedValue);
     }
 
-    public static NetworkMessage CreatePlayerUpdateCommand(Guid hostId, NetworkMessage request)
+    public static NetworkMessage CreatePlayerUpdateCommand(Guid hostId, NetworkMessage request, uint confirmedColor)
     {
         return new NetworkMessage(
             NetworkMessageType.PlayerUpdate,
             hostId,
             PlayerId: request.PlayerId ?? request.SenderId,
             DisplayName: request.DisplayName,
-            TeamId: request.TeamId);
+            TeamId: request.TeamId,
+            PlayerColor: confirmedColor);
     }
 
     public static NetworkMessage CreateBuildCommand(Guid hostId, NetworkMessage request)
@@ -185,6 +187,13 @@ public static class NetworkCommands
             Z: request.Z);
     }
 
+    public static NetworkMessage CreateStopRequest(Guid senderId, Guid[] unitIds) =>
+        new(NetworkMessageType.StopRequest, senderId, PlayerId: senderId, UnitIds: unitIds);
+
+    public static NetworkMessage CreateStopCommand(Guid hostId, NetworkMessage request) =>
+        new(NetworkMessageType.StopCommand, hostId,
+            PlayerId: request.PlayerId ?? request.SenderId, UnitIds: request.UnitIds);
+
     public static NetworkMessage CreateAttackRequest(
         Guid senderId,
         Guid[] unitIds,
@@ -212,6 +221,32 @@ public static class NetworkCommands
             X: request.X,
             Y: request.Y,
             Z: request.Z);
+    }
+
+    public static NetworkMessage CreateAttackTargetRequest(Guid senderId, Guid[] unitIds, Guid targetId)
+    {
+        return new NetworkMessage(NetworkMessageType.AttackTargetRequest, senderId,
+            PlayerId: senderId, UnitIds: unitIds, TargetId: targetId);
+    }
+
+    public static NetworkMessage CreateAttackTargetCommand(Guid hostId, NetworkMessage request)
+    {
+        return new NetworkMessage(NetworkMessageType.AttackTargetCommand, hostId,
+            PlayerId: request.PlayerId ?? request.SenderId,
+            UnitIds: request.UnitIds, TargetId: request.TargetId);
+    }
+
+    public static NetworkMessage CreateAttackGroundRequest(Guid senderId, Guid[] unitIds, Vector3 target)
+    {
+        return new NetworkMessage(NetworkMessageType.AttackGroundRequest, senderId,
+            PlayerId: senderId, UnitIds: unitIds, X: target.X, Y: target.Y, Z: target.Z);
+    }
+
+    public static NetworkMessage CreateAttackGroundCommand(Guid hostId, NetworkMessage request)
+    {
+        return new NetworkMessage(NetworkMessageType.AttackGroundCommand, hostId,
+            PlayerId: request.PlayerId ?? request.SenderId,
+            UnitIds: request.UnitIds, X: request.X, Y: request.Y, Z: request.Z);
     }
 
     public static NetworkMessage CreateUnitHitCommand(

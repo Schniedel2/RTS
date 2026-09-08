@@ -6,8 +6,11 @@ namespace RTS;
 public abstract class WorldObject
 {
 
-    protected abstract VertexPositionColorNormal[] Vertices { get; }
+    protected abstract VertexPositionColorNormalTexture[] Vertices { get; }
     protected abstract int[] Indices { get; }
+
+    /// <summary>True when the mesh carries atlas UVs and should be sampled from the unit texture.</summary>
+    protected virtual bool IsTextured => false;
 
     public Matrix Transform { get; protected set; }
     public Vector3 Position => Transform.Translation;
@@ -41,7 +44,7 @@ public abstract class WorldObject
         DrawMesh(effect);
     }
 
-    public void DrawShadow(Effect effect)
+    public virtual void DrawShadow(Effect effect)
     {
         effect.Parameters["World"]?.SetValue(GetWorldMatrix());
         DrawMesh(effect);
@@ -52,20 +55,29 @@ public abstract class WorldObject
         return Transform;
     }
 
-    private void DrawMesh(Effect effect)
+    protected void DrawMesh(Effect effect)
     {
+        DrawMesh(effect, Vertices, Indices);
+    }
+
+    protected void DrawMesh(
+        Effect effect,
+        VertexPositionColorNormalTexture[] vertices,
+        int[] indices)
+    {
+        effect.Parameters["TextureStrength"]?.SetValue(IsTextured ? 1.0f : 0.0f);
+
         foreach (EffectPass pass in effect.CurrentTechnique.Passes)
         {
             pass.Apply();
-
             Globals.GraphicsDevice.DrawUserIndexedPrimitives(
                 PrimitiveType.TriangleList,
-                Vertices,
+                vertices,
                 0,
-                Vertices.Length,
-                Indices,
+                vertices.Length,
+                indices,
                 0,
-                Indices.Length / 3);
+                indices.Length / 3);
         }
     }
 
