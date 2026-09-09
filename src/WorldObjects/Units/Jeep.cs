@@ -10,11 +10,6 @@ public class Jeep : Car
 {
     // The turret angle is local to the hull.  Keeping it this way means that a
     // rotating hull does not automatically drag the turret around in world space.
-    public float TurretRotation { get; private set; }
-    public float ReverseWithoutTurningDistance { get; set; } = 6.0f;
-    public float TurretRotationSpeed { get; set; } = 0.01f;
-    public float TurnInPlaceDotThreshold { get; set; } = 0.5f;
-    private string? _lastMovementMode;
     public override IReadOnlyList<UnitAction> Actions =>
     [
         new(UnitActionType.Goto, "Goto", 0, 1),
@@ -34,18 +29,17 @@ public class Jeep : Car
         HeadingSnapAngle = 0.0f;
         CanOnlyMoveForward = true;
         CanTurnInPlace = true;
+    
+        TargetAngleMinimumDegrees = -120.0f;
+        TargetAngleMaximumDegrees = 120.0f;
     }
 
     public override void Draw(Effect effect)
     {
-        TurretRotation += 0.1f;
         if (Globals.MeshHandler.Meshes.TryGetValue("jeep", out Mesh? mesh))
         {
-            mesh.SetParameter(Mesh.TurretAngle, TurretRotation);
-            mesh.SetParameter(Mesh.WheelAngle, TurretRotation);
-            mesh.SetParameter(Mesh.WheelAngleY, TurretRotation);
+            mesh.SetParameter(Mesh.TurretAngle, MathHelper.ToRadians(TargetAngleDegrees));
+            Globals.MeshHandler.DrawMesh(effect, mesh, GetWorldMatrix());
         }
-
-        Globals.MeshHandler.DrawMesh(effect, "jeep", GetWorldMatrix());
     }
 }

@@ -10,10 +10,8 @@ public class Tank : MobileUnit
 {
     // The turret angle is local to the hull.  Keeping it this way means that a
     // rotating hull does not automatically drag the turret around in world space.
-    public float TurretRotation { get; private set; }
     public float ReverseSpeed { get; set; } = 1.4f;
     public float ReverseWithoutTurningDistance { get; set; } = 6.0f;
-    public float TurretRotationSpeed { get; set; } = 0.01f;
     public float TurnInPlaceDotThreshold { get; set; } = 0.5f;
     private string? _lastMovementMode;
     public override IReadOnlyList<UnitAction> Actions =>
@@ -31,14 +29,7 @@ public class Tank : MobileUnit
         HeadingSnapAngle = 0.0f;
         CanOnlyMoveForward = true;
         CanTurnInPlace = true;
-    }
-
-    public override void Update(GameTime gameTime)
-    {
-        base.Update(gameTime);        
-        //TurretRotation = WrapAngle(TurretRotation + TurretRotationSpeed);
-        TurretRotation = WrapAngle(TurretRotation + TurretRotationSpeed);
-        //UpdateTurret(gameTime);
+        TargetAngleDegreesPerSecond = 50.0f;
     }
 
     protected override void MoveAlongPath(GameTime gameTime)
@@ -97,50 +88,6 @@ public class Tank : MobileUnit
         TryMoveTo(Position + forward * speed * deltaTime);
     }
 
-    private void UpdateTurret(GameTime gameTime)
-    {
-        Vector3 desiredDirection = GetHorizontalDirection(Vector3.Forward);
-
-        if (AttackTargetId is Guid targetId &&
-            Globals.World.Units.FindById(targetId) is Unit targetUnit)
-        {
-            desiredDirection = targetUnit.Position - Position;
-        }
-        else if (AttackGroundTarget is Vector3 groundTarget)
-        {
-            desiredDirection = groundTarget - Position;
-        }
-
-        desiredDirection.Y = 0.0f;
-        if (desiredDirection.LengthSquared() <= 0.0001f)
-            return;
-        desiredDirection.Normalize();
-
-        float hullYaw = DirectionToYaw(GetHorizontalDirection(Vector3.Forward));
-        float desiredYaw = DirectionToYaw(desiredDirection);
-        float currentTurretWorldYaw = hullYaw + TurretRotation;
-        float maximumTurn = TurretRotationSpeed *
-            (float)gameTime.ElapsedGameTime.TotalSeconds;
-        float newTurretWorldYaw = currentTurretWorldYaw + MathHelper.Clamp(
-            WrapAngle(desiredYaw - currentTurretWorldYaw),
-            -maximumTurn,
-            maximumTurn);
-
-        TurretRotation = WrapAngle(newTurretWorldYaw - hullYaw);
-    }
-
-    private static float DirectionToYaw(Vector3 direction) =>
-        MathF.Atan2(-direction.X, -direction.Z);
-
-    private static float WrapAngle(float angle)
-    {
-        while (angle > MathHelper.Pi)
-            angle -= MathHelper.TwoPi;
-        while (angle < -MathHelper.Pi)
-            angle += MathHelper.TwoPi;
-        return angle;
-    }
-
     private void LogMovementMode(string mode, float distance, float directionDot)
     {
         if (_lastMovementMode == mode)
@@ -152,6 +99,10 @@ public class Tank : MobileUnit
 
     public override void Draw(Effect effect)
     {
-        Globals.MeshHandler.DrawMesh(effect, Globals.MeshHandler.Meshes["tank"], GetWorldMatrix());
+        if (Globals.MeshHandler.Meshes.TryGetValue("tank", out Mesh? mesh))
+        {
+            mesh.SetParameter(Mesh.TurretAngle, MathHelper.ToRadians(TargetAngleDegrees));
+            Globals.MeshHandler.DrawMesh(effect, mesh, GetWorldMatrix());
+        }
     }
 }

@@ -216,7 +216,7 @@ public sealed class NetworkInput
             return;
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
             if (Globals.World.Units.FindById(unitId) is MobileUnit unit)
-                unit.SetAttackTarget(targetId);
+                unit.SetTargetUnit(targetId);
     }
 
     private void ExecuteAttackGround(NetworkMessage message)
@@ -224,7 +224,7 @@ public sealed class NetworkInput
         Vector3 target = new(message.X, message.Y, message.Z);
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
             if (Globals.World.Units.FindById(unitId) is MobileUnit unit)
-                unit.SetAttackGroundTarget(target);
+                unit.SetTargetTerrain(target);
     }
 
     private void ApplyHit(NetworkMessage message)

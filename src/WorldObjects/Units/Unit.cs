@@ -25,7 +25,25 @@ public abstract class Unit : WorldObject
     public float AttackCooldown { get; set; } = 0.75f;
     public Guid? AttackTargetId { get; private set; }
     public Vector3? AttackGroundTarget { get; private set; }
+    /// <summary>The unit currently being visually targeted, if any.</summary>
+    public Guid? TargetUnitId { get; private set; }
+    /// <summary>The terrain cell currently being visually targeted, if any.</summary>
+    public Point? TargetTerrainCell { get; private set; }
+    /// <summary>
+    /// Current local yaw towards the target, in degrees. Values are always in
+    /// the range -180 to +180 degrees.
+    /// </summary>
+    public float TargetAngleDegrees { get; private set; }
+    public float TargetAngleDegreesPerSecond { get; set; } = 50.0f;
+    /// <summary>
+    /// Lowest permitted local target angle in degrees. The default permits a
+    /// full turret rotation; values such as -120 limit a vehicle turret.
+    /// </summary>
+    public float TargetAngleMinimumDegrees { get; set; } = -360.0f;
+    /// <summary>Highest permitted local target angle in degrees.</summary>
+    public float TargetAngleMaximumDegrees { get; set; } = 360.0f;
     private double _nextShotTime;
+    private Vector3? _targetTerrainPosition;
 
     public Unit(
         Vector3 position,
@@ -73,6 +91,7 @@ public abstract class Unit : WorldObject
         ClearCommand();
         AttackTargetId = null;
         AttackGroundTarget = null;
+        ClearTarget();
     }
 
     // Gameplay mutation: only the host invokes this method.
@@ -92,16 +111,184 @@ public abstract class Unit : WorldObject
     {
     }
 
-    public void SetAttackTarget(Guid targetId)
+    public void SetTargetUnit(Guid targetId)
     {
-        AttackTargetId = targetId;
-        AttackGroundTarget = null;
+        TargetUnitId = targetId;
+        TargetTerrainCell = null;
+        _targetTerrainPosition = null;
     }
 
-    public void SetAttackGroundTarget(Vector3 target)
+    public void SetTargetTerrainCell(Point targetCell)
     {
-        AttackGroundTarget = target;
-        AttackTargetId = null;
+        Vector3 target = Globals.World.GameGrid.ToWorldPosition(targetCell, 0.0f);
+        target.Y = Globals.World.Terrain.GetHeight(targetCell.X, targetCell.Y);
+        SetTargetTerrain(target, targetCell);
+    }
+
+    public void SetTargetTerrain(Vector3 target)
+    {
+        SetTargetTerrain(target, Globals.World.GameGrid.ToCell(target));
+    }
+
+    public void ClearTarget()
+    {
+        TargetUnitId = null;
+        TargetTerrainCell = null;
+        _targetTerrainPosition = null;
+    }
+
+    /// <summary>
+    /// Advances the local mesh angle towards the current target. Call this
+    /// after a unit's body transform has been updated for the frame.
+    /// </summary>
+    public void UpdateTargetAngle(GameTime gameTime)
+    {
+        Vector3? targetPosition = GetTargetPosition();
+        if (targetPosition is not Vector3 target)
+        {
+            // No target: return the visual aiming part (turret, head, ...) to
+            // its neutral local angle, which is the unit's forward direction.
+            float returnStep = TargetAngleDegreesPerSecond *
+                (float)gameTime.ElapsedGameTime.TotalSeconds;
+            float neutralAngle = ClampTargetAngleDegrees(0.0f);
+            TargetAngleDegrees = ClampTargetAngleDegrees(TargetAngleDegrees + MoveTargetAngleTowardsDegrees(
+                TargetAngleDegrees,
+                neutralAngle,
+                returnStep));
+            return;
+        }
+
+        Vector3 desiredDirection = target - Position;
+        desiredDirection.Y = 0.0f;
+        if (desiredDirection.LengthSquared() <= 0.0001f)
+            return;
+        desiredDirection.Normalize();
+
+        Vector3 bodyForward = Vector3.TransformNormal(Vector3.Forward, Transform);
+        bodyForward.Y = 0.0f;
+        if (bodyForward.LengthSquared() <= 0.0001f)
+            return;
+        bodyForward.Normalize();
+
+        float bodyYawDegrees = DirectionToAngleDegrees(bodyForward);
+        float desiredWorldYawDegrees = DirectionToAngleDegrees(desiredDirection);
+        float desiredLocalAngleDegrees = ClampTargetAngleDegrees(
+            WrapAngleDegrees(desiredWorldYawDegrees - bodyYawDegrees));
+        float currentWorldYawDegrees = bodyYawDegrees + TargetAngleDegrees;
+        float maximumStep = TargetAngleDegreesPerSecond *
+            (float)gameTime.ElapsedGameTime.TotalSeconds;
+        float nextWorldYawDegrees = currentWorldYawDegrees + MoveTargetAngleTowardsDegrees(
+            TargetAngleDegrees,
+            desiredLocalAngleDegrees,
+            maximumStep);
+
+        TargetAngleDegrees = ClampTargetAngleDegrees(nextWorldYawDegrees - bodyYawDegrees);
+    }
+
+    /// <summary>
+    /// Returns true when a valid target lies inside the turret's rotation arc
+    /// and the current angle is within <paramref name="toleranceDegrees"/>.
+    /// </summary>
+    public bool IsTargetAimed(float toleranceDegrees = 2.0f)
+    {
+        if (toleranceDegrees < 0.0f || !TryGetDesiredLocalAngleDegrees(out float desiredAngleDegrees))
+            return false;
+
+        return MathF.Abs(WrapAngleDegrees(desiredAngleDegrees - TargetAngleDegrees)) <=
+            toleranceDegrees;
+    }
+
+    private Vector3? GetTargetPosition()
+    {
+        if (TargetUnitId is Guid targetUnitId)
+        {
+            MobileUnit? targetUnit = Globals.World.Units.FindById(targetUnitId);
+            if (targetUnit is not null)
+                return targetUnit.Position;
+
+            ClearTarget();
+            return null;
+        }
+
+        return _targetTerrainPosition;
+    }
+
+    private void SetTargetTerrain(Vector3 target, Point targetCell)
+    {
+        TargetUnitId = null;
+        TargetTerrainCell = targetCell;
+        _targetTerrainPosition = target;
+    }
+
+    private bool TryGetDesiredLocalAngleDegrees(out float desiredAngleDegrees)
+    {
+        desiredAngleDegrees = 0.0f;
+        if (GetTargetPosition() is not Vector3 target)
+            return false;
+
+        Vector3 desiredDirection = target - Position;
+        desiredDirection.Y = 0.0f;
+        if (desiredDirection.LengthSquared() <= 0.0001f)
+            return false;
+        desiredDirection.Normalize();
+
+        Vector3 bodyForward = Vector3.TransformNormal(Vector3.Forward, Transform);
+        bodyForward.Y = 0.0f;
+        if (bodyForward.LengthSquared() <= 0.0001f)
+            return false;
+        bodyForward.Normalize();
+
+        float unconstrainedAngleDegrees = WrapAngleDegrees(
+            DirectionToAngleDegrees(desiredDirection) - DirectionToAngleDegrees(bodyForward));
+        float constrainedAngleDegrees = ClampTargetAngleDegrees(unconstrainedAngleDegrees);
+        if (MathF.Abs(WrapAngleDegrees(constrainedAngleDegrees - unconstrainedAngleDegrees)) > 0.001f)
+            return false;
+
+        desiredAngleDegrees = constrainedAngleDegrees;
+        return true;
+    }
+
+    private static float DirectionToAngleDegrees(Vector3 direction) =>
+        MathHelper.ToDegrees(MathF.Atan2(-direction.X, -direction.Z));
+
+    private static float WrapAngleDegrees(float angleDegrees)
+    {
+        while (angleDegrees > 180.0f)
+            angleDegrees -= 360.0f;
+        while (angleDegrees < -180.0f)
+            angleDegrees += 360.0f;
+        return angleDegrees;
+    }
+
+    private float ClampTargetAngleDegrees(float angleDegrees)
+    {
+        angleDegrees = WrapAngleDegrees(angleDegrees);
+        if (TargetAngleMinimumDegrees > TargetAngleMaximumDegrees)
+            throw new InvalidOperationException(
+                "TargetAngleMinimumDegrees must not be greater than TargetAngleMaximumDegrees.");
+        return MathHelper.Clamp(
+            angleDegrees,
+            TargetAngleMinimumDegrees,
+            TargetAngleMaximumDegrees);
+    }
+
+    private float MoveTargetAngleTowardsDegrees(
+        float currentDegrees,
+        float targetDegrees,
+        float maximumStepDegrees)
+    {
+        // A restricted turret must remain inside its continuous rotation arc.
+        // Example: from -110° to +110° in a [-120°, +120°] arc, it must take
+        // the allowed +220° path via the front instead of crossing the -120°
+        // stop on the mathematically shorter -140° path.
+        float deltaDegrees = TargetAngleMaximumDegrees - TargetAngleMinimumDegrees < 360.0f
+            ? targetDegrees - currentDegrees
+            : WrapAngleDegrees(targetDegrees - currentDegrees);
+
+        return MathHelper.Clamp(
+            deltaDegrees,
+            -maximumStepDegrees,
+            maximumStepDegrees);
     }
 
     public bool TryQueueShot(double hostTime, out MobileUnit? target)

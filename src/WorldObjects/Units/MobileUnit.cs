@@ -300,6 +300,7 @@ public class MobileUnit : Unit
         UpdateAttackMovement(gameTime);
         MoveAlongPath(gameTime);
         AlignToTerrain(gameTime);
+        UpdateTargetAngle(gameTime);
     }
 
     private void UpdateAttackMovement(GameTime gameTime)

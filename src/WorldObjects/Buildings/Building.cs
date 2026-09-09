@@ -21,5 +21,6 @@ public class Building : MobileUnit
 
     public override void Update(GameTime gameTime)
     {
+        UpdateTargetAngle(gameTime);
     }
 }
