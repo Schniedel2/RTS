@@ -25,6 +25,29 @@ public abstract class Unit : WorldObject
     public float AttackCooldown { get; set; } = 0.75f;
     public Guid? AttackTargetId { get; private set; }
     public Vector3? AttackGroundTarget { get; private set; }
+
+    // -----------------------------------------------------------------------
+    // Visual targeting / aiming model
+    // -----------------------------------------------------------------------
+    // A Unit may visually target either another Unit (TargetUnitId) or a terrain
+    // position (TargetTerrainCell plus the internally stored world position).
+    // SetTarget... only changes visual aiming. SetAttack... changes both visual
+    // aiming and the host-authoritative attack state used by TryQueueShot.
+    //
+    // TargetAngleDegrees is a LOCAL yaw relative to the unit body's forward
+    // direction. It is deliberately normalized to [-180°, +180°]. A mesh node
+    // using Mesh.TurretAngle must convert it to radians at draw time:
+    //     mesh.SetParameter(Mesh.TurretAngle,
+    //         MathHelper.ToRadians(unit.TargetAngleDegrees));
+    //
+    // UpdateTargetAngle runs after body movement, follows moving targets, and
+    // returns the angle smoothly to 0° when no target remains. The min/max
+    // degree values describe the permitted continuous turret arc. An arc below
+    // 360° never crosses its stop; it may therefore use the longer legal turn.
+    // Before an authoritative host queues a shot, use IsTargetAimed(tolerance)
+    // when the weapon must not fire until its visual part is aligned.
+    // -----------------------------------------------------------------------
+
     /// <summary>The unit currently being visually targeted, if any.</summary>
     public Guid? TargetUnitId { get; private set; }
     /// <summary>The terrain cell currently being visually targeted, if any.</summary>
@@ -109,6 +132,22 @@ public abstract class Unit : WorldObject
 
     public virtual void PlayHitEffects(HitInfo hit)
     {
+    }
+
+    /// <summary>Starts a continuous attack against another unit.</summary>
+    public void SetAttackTarget(Guid targetId)
+    {
+        AttackTargetId = targetId;
+        AttackGroundTarget = null;
+        SetTargetUnit(targetId);
+    }
+
+    /// <summary>Starts a continuous attack against a terrain position.</summary>
+    public void SetAttackGroundTarget(Vector3 target)
+    {
+        AttackGroundTarget = target;
+        AttackTargetId = null;
+        SetTargetTerrain(target);
     }
 
     public void SetTargetUnit(Guid targetId)

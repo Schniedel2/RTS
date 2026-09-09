@@ -23,6 +23,13 @@ public sealed class SubMesh(string name, VertexPositionColorNormalTexture[] vert
         }
         return (min, max);
     }
+
+    /// <summary>
+    /// Replaces this sub-mesh's UV coordinates using its own bounds and the
+    /// supplied cube texture-atlas layout.
+    /// </summary>
+    public void ApplyCubeMapping(CubeTileMapping mapping) =>
+        CubeMapping.Apply(this, mapping);
 }
 
 /// <summary>Node of the mesh hierarchy; transforms itself and all its children around its pivot.</summary>
@@ -139,6 +146,14 @@ public class Mesh
         }
         return (min, max);
     }
+
+    /// <summary>
+    /// Replaces UV coordinates on every sub-mesh using one shared set of mesh
+    /// bounds. Use <see cref="SubMesh.ApplyCubeMapping"/> for independent UV
+    /// projection per individual part.
+    /// </summary>
+    public void ApplyCubeMapping(CubeTileMapping mapping) =>
+        CubeMapping.Apply(this, mapping);
 
     public void Draw(Effect effect, Matrix world) => Root.Draw(effect, world, parameters);
 

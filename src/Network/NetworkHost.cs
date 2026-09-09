@@ -196,7 +196,7 @@ public sealed class NetworkHost
 
         foreach (Guid attackerId in request.UnitIds ?? Array.Empty<Guid>())
         {
-            if (_world.Units.FindById(attackerId) is not Tank)
+            if (_world.Units.FindById(attackerId) is not Unit)
                 continue;
 
             MobileUnit? target = _world.Units.Units.FirstOrDefault(unit =>

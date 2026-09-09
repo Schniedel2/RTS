@@ -202,10 +202,10 @@ public sealed class NetworkInput
         Vector3 target = new(message.X, message.Y, message.Z);
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
         {
-            if (Globals.World.Units.FindById(unitId) is not Tank tank)
+            if (Globals.World.Units.FindById(unitId) is not Unit attacker)
                 continue;
 
-            Vector3 start = tank.Position + Vector3.Up * (tank.Height * 0.75f);
+            Vector3 start = attacker.Position + Vector3.Up * (attacker.Height * 0.75f);
             Globals.World.Projectiles.Fire(start, target);
         }
     }
@@ -216,7 +216,7 @@ public sealed class NetworkInput
             return;
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
             if (Globals.World.Units.FindById(unitId) is MobileUnit unit)
-                unit.SetTargetUnit(targetId);
+                unit.SetAttackTarget(targetId);
     }
 
     private void ExecuteAttackGround(NetworkMessage message)
@@ -224,7 +224,7 @@ public sealed class NetworkInput
         Vector3 target = new(message.X, message.Y, message.Z);
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
             if (Globals.World.Units.FindById(unitId) is MobileUnit unit)
-                unit.SetTargetTerrain(target);
+                unit.SetAttackGroundTarget(target);
     }
 
     private void ApplyHit(NetworkMessage message)
