@@ -96,7 +96,7 @@ public static class BBModelLoader
         return node;
     }
 
-    /// <summary>Groups steer around Y, the wheel geometry inside them rolls around X.</summary>
+    /// <summary>Wheel groups roll around their local X axis.</summary>
     private static void ApplyRotationParameter(MeshNode node, bool isGroup)
     {
         if (node.Name.Contains("turret", StringComparison.OrdinalIgnoreCase))
@@ -105,15 +105,9 @@ public static class BBModelLoader
             node.RotationAxis = Vector3.Up;
             return;
         }
-        if (!node.Name.Contains("wheel", StringComparison.OrdinalIgnoreCase))
+        if (!isGroup || !node.Name.StartsWith("wheel", StringComparison.OrdinalIgnoreCase))
             return;
 
-        if (isGroup)
-        {
-            node.RotationParameter = Mesh.WheelAngleY;
-            node.RotationAxis = Vector3.Up;
-            return;
-        }
         node.RotationParameter = Mesh.WheelAngle;
         node.RotationAxis = Vector3.Right;
     }

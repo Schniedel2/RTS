@@ -39,6 +39,7 @@ public class Jeep : Car
         if (Globals.MeshHandler.Meshes.TryGetValue("jeep", out Mesh? mesh))
         {
             mesh.SetParameter(Mesh.TurretAngle, MathHelper.ToRadians(TargetAngleDegrees));
+            ApplyMeshAnimationParameters(mesh);
             Globals.MeshHandler.DrawMesh(effect, mesh, GetWorldMatrix());
         }
     }

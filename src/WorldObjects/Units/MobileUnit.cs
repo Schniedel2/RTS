@@ -19,6 +19,10 @@ public class MobileUnit : Unit
     public float Gravity { get; set; } = 10.0f;
     public float Bounciness { get; set; } = 0.25f;
     public float RestingSpeed { get; set; } = 1.0f;
+    /// <summary>Current wheel roll angle in degrees, normalized to -180..+180.</summary>
+    public float WheelRotationDegrees { get; private set; }
+    /// <summary>Wheel radius in world units, used to convert travelled distance into rotation.</summary>
+    public float WheelRadius { get; set; } = 0.35f;
     public virtual float BuildRate => 0.0f;
     public IMovementProfile MovementProfile { get; }
     public Guid? CurrentConstructionSiteId { get; private set; }
@@ -210,8 +214,44 @@ public class MobileUnit : Unit
             return false;
         }
 
+        AdvanceWheelRotation(position);
         SetPosition(position);
         return true;
+    }
+
+    /// <summary>
+    /// Applies the standard vehicle animation parameters to a Blockbench mesh.
+    /// Mesh parameters use radians; Unit state uses degrees.
+    /// </summary>
+    protected void ApplyMeshAnimationParameters(Mesh mesh)
+    {
+        mesh.SetParameter(Mesh.WheelAngle, -MathHelper.ToRadians(WheelRotationDegrees));
+    }
+
+    private void AdvanceWheelRotation(Vector3 nextPosition)
+    {
+        if (WheelRadius <= 0.0f)
+            return;
+
+        Vector3 movement = nextPosition - Position;
+        movement.Y = 0.0f;
+        float distance = movement.Length();
+        if (distance <= 0.0001f)
+            return;
+
+        Vector3 forward = GetHorizontalDirection(Vector3.Forward);
+        float direction = Vector3.Dot(movement, forward) < 0.0f ? -1.0f : 1.0f;
+        float rotationDegrees = MathHelper.ToDegrees(distance / WheelRadius) * direction;
+        WheelRotationDegrees = WrapDegrees(WheelRotationDegrees + rotationDegrees);
+    }
+
+    private static float WrapDegrees(float degrees)
+    {
+        while (degrees > 180.0f)
+            degrees -= 360.0f;
+        while (degrees < -180.0f)
+            degrees += 360.0f;
+        return degrees;
     }
 
     public void SetVelocity(Vector3 velocity)
