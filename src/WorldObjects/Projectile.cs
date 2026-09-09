@@ -21,8 +21,6 @@ public sealed class Projectile : WorldObject
     private float _elapsed;
     private float _trailElapsed;
 
-    protected override VertexPositionColorNormalTexture[] Vertices => MeshVertices;
-    protected override int[] Indices => MeshIndices;
     public bool IsExpired => _elapsed >= _duration;
 
     public Projectile(Vector3 start, Vector3 target, float duration = 0.35f)
@@ -52,4 +50,9 @@ public sealed class Projectile : WorldObject
 
     protected override Matrix GetWorldMatrix() =>
         Matrix.CreateScale(0.35f) * Transform;
+
+    public override void Draw(Effect effect)
+    {        
+        RenderHelper.DrawMesh(effect, MeshVertices, MeshIndices);        
+    }
 }

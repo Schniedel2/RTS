@@ -8,9 +8,6 @@ using System.Linq;
 
 namespace RTS;
 
-public sealed record ObjSubMesh(string Name, VertexPositionColorNormalTexture[] Vertices, int[] Indices, Vector3 Pivot);
-public sealed record ObjMesh(IReadOnlyList<ObjSubMesh> SubMeshes);
-
 /// <summary>Layout of the six cube faces inside a texture atlas, in pixels.</summary>
 /// <remarks>
 /// Left (X, Y), Top (X + TileSize, Y), Right (X + 2 * TileSize, Y),
@@ -20,9 +17,11 @@ public sealed record CubeTileMapping(int TileSize, int X, int Y, int TextureWidt
 
 public static class ObjMeshLoader
 {
-    public static ObjMesh Load(string filename, Color? color = null, CubeTileMapping? cubeMapping = null)
-    {
-        string path = Path.Combine(Globals.ModelsDirectory, filename);
+    /// <summary>Sub-mesh of an OBJ model that acts as the rotatable turret.</summary>
+    private const string TurretObjectName = "obj_1";
+
+    public static Mesh Load(string path, Color? color = null, CubeTileMapping? cubeMapping = null)
+    {        
         List<Vector3> positions = [];
         Dictionary<string, List<VertexPositionColorNormalTexture>> vertices = [];
         Dictionary<string, List<int>> indices = [];
@@ -88,15 +87,28 @@ public static class ObjMeshLoader
         }
 
         Vector3 size = max - min;
+        const float ModelScale = 0.1f;
 
-        //  center the model around the origin
         for (int index = 0; index < allVertices.Count; index++)
         {
             VertexPositionColorNormalTexture vertex = allVertices[index];
-            vertex.Position = (vertex.Position - min) / size;
+
+            // Nur für Cube-Texture-Mapping normalisieren
             if (cubeMapping is not null)
-                vertex.TextureCoordinate = GetCubeTextureCoordinate(vertex.Position, vertex.Normal, cubeMapping);
-            vertex.Position -= new Vector3(0.5f, 0.0f, 0.5f);
+            {
+                Vector3 normalizedPosition =
+                    (vertex.Position - min) / size;
+
+                vertex.TextureCoordinate =
+                    GetCubeTextureCoordinate(
+                        normalizedPosition,
+                        vertex.Normal,
+                        cubeMapping);
+            }
+
+            // Tatsächliche Geometrie nur uniform skalieren
+            vertex.Position *= ModelScale;
+
             allVertices[index] = vertex;
         }
 
@@ -108,12 +120,17 @@ public static class ObjMeshLoader
             offset += objectVertices.Count;
         }
 
-        return new ObjMesh(vertices.Select(pair =>
+        Mesh mesh = new(Path.GetFileNameWithoutExtension(path), vertices.Select(pair =>
         {
             VertexPositionColorNormalTexture[] objectVertices = pair.Value.ToArray();
             Vector3 pivot = objectVertices.Aggregate(Vector3.Zero, (sum, vertex) => sum + vertex.Position) / objectVertices.Length;
-            return new ObjSubMesh(pair.Key, objectVertices, indices[pair.Key].ToArray(), pivot);
+            return new SubMesh(pair.Key, objectVertices, indices[pair.Key].ToArray(), pivot);
         }).ToArray());
+
+        MeshNode? turret = mesh.FindNode(TurretObjectName);
+        if (turret is not null)
+            turret.RotationParameter = Mesh.TurretAngle;
+        return mesh;
     }
 
     /// <summary>Projects a normalized (0..1) model position onto the atlas tile of the cube face its normal points to.</summary>

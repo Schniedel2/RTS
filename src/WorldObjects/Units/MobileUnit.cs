@@ -416,8 +416,7 @@ public class MobileUnit : Unit
 
     protected override Matrix GetWorldMatrix()
     {
-        return Matrix.CreateScale(Width, Height, Length) *
-                Transform;
+        return Matrix.CreateScale(1.0f) * Transform;
     }
 
     private static Vector3 GetTerrainPoint(

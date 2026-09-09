@@ -38,56 +38,56 @@ public class Car : MobileUnit
         CanTurnInPlace = false;
     }
 
-        public override bool TryReceiveGotoCommand(GameWorld map, GotoCommand command)
-        {
-            bool accepted = base.TryReceiveGotoCommand(map, command);
-            _isManeuvering = accepted && CanOnlyMoveForward;
+    public override bool TryReceiveGotoCommand(GameWorld map, GotoCommand command)
+    {
+        bool accepted = base.TryReceiveGotoCommand(map, command);
+        _isManeuvering = accepted && CanOnlyMoveForward;
 
-            return accepted;
+        return accepted;
+    }
+
+    protected override void MoveAlongPath(GameTime gameTime)
+    {
+        if (!_isManeuvering)
+        {
+            base.MoveAlongPath(gameTime);
+            return;
         }
 
-        protected override void MoveAlongPath(GameTime gameTime)
+        if (!CurrentCommand.HasValue)
         {
-            if (!_isManeuvering)
-            {
-                base.MoveAlongPath(gameTime);
-                return;
-            }
-
-            if (!CurrentCommand.HasValue)
-            {
-                _isManeuvering = false;
-                return;
-            }
-
-            Vector2 target = CurrentCommand.Value.Target;
-            Vector3 desiredDirection = new(
-                target.X - Position.X,
-                0.0f,
-                target.Y - Position.Z);
-
-            if (desiredDirection == Vector3.Zero)
-            {
-                _isManeuvering = false;
-                return;
-            }
-
-            desiredDirection.Normalize();
-            Vector3 forward = TurnTowards(desiredDirection, gameTime);
-            float directionDot = Vector3.Dot(forward, desiredDirection);
-
-            if (directionDot >= MathF.Cos(ReplanAngle))
-            {
-                _isManeuvering = false;
-
-                //if (!TryReplanPath(map))
-                //    ClearCommand();
-
-                return;
-            }
-
-            float movementDistance = ReverseSpeed *
-                (float)gameTime.ElapsedGameTime.TotalSeconds;
-            TryMoveTo(Position - forward * movementDistance);
+            _isManeuvering = false;
+            return;
         }
+
+        Vector2 target = CurrentCommand.Value.Target;
+        Vector3 desiredDirection = new(
+            target.X - Position.X,
+            0.0f,
+            target.Y - Position.Z);
+
+        if (desiredDirection == Vector3.Zero)
+        {
+            _isManeuvering = false;
+            return;
+        }
+
+        desiredDirection.Normalize();
+        Vector3 forward = TurnTowards(desiredDirection, gameTime);
+        float directionDot = Vector3.Dot(forward, desiredDirection);
+
+        if (directionDot >= MathF.Cos(ReplanAngle))
+        {
+            _isManeuvering = false;
+
+            //if (!TryReplanPath(map))
+            //    ClearCommand();
+
+            return;
+        }
+
+        float movementDistance = ReverseSpeed *
+            (float)gameTime.ElapsedGameTime.TotalSeconds;
+        TryMoveTo(Position - forward * movementDistance);
+    }
 }

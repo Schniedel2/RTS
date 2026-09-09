@@ -31,6 +31,8 @@ public class RTSGame
         int terrainHeight)
     {
         Globals.ModelsDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Models");
+        Globals.MeshHandler = new MeshHandler();
+        Globals.MeshHandler.LoadMeshes();
 
         Globals.Game = this;
         Globals.RenderHelper = new RenderHelper(Globals.GraphicsDevice);

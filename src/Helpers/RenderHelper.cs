@@ -79,7 +79,7 @@ public class RenderHelper
             Color.White);
     }
 
-    public void DrawTextCentered(
+    public static void DrawTextCentered(
         SpriteBatch spriteBatch,
         SpriteFont font,
         string text,
@@ -89,5 +89,26 @@ public class RenderHelper
         Vector2 position = center - font.MeasureString(text) * 0.5f;
         spriteBatch.DrawString(font, text, position + Vector2.One, Color.Black);
         spriteBatch.DrawString(font, text, position, color);
+    }
+
+    public static void DrawMesh(
+        Effect effect,
+        VertexPositionColorNormalTexture[] vertices,
+        int[] indices)
+    {
+        effect.Parameters["TextureStrength"]?.SetValue(0.5f);
+
+        foreach (EffectPass pass in effect.CurrentTechnique.Passes)
+        {
+            pass.Apply();
+            Globals.GraphicsDevice.DrawUserIndexedPrimitives(
+                PrimitiveType.TriangleList,
+                vertices,
+                0,
+                vertices.Length,
+                indices,
+                0,
+                indices.Length / 3);
+        }
     }
 }

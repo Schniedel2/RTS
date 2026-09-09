@@ -8,17 +8,12 @@ namespace RTS;
 
 public class Tank : MobileUnit
 {
-    private static readonly ObjMesh Mesh = ObjMeshLoader.Load("tank.obj", Color.White, new CubeTileMapping(32, 0, 0, 2048, 2048));
-
-    protected override VertexPositionColorNormalTexture[] Vertices => Mesh.SubMeshes[0].Vertices;
-    protected override int[] Indices => Mesh.SubMeshes[0].Indices;
-    protected override bool IsTextured => true;
     // The turret angle is local to the hull.  Keeping it this way means that a
     // rotating hull does not automatically drag the turret around in world space.
     public float TurretRotation { get; private set; }
     public float ReverseSpeed { get; set; } = 1.4f;
     public float ReverseWithoutTurningDistance { get; set; } = 6.0f;
-    public float TurretRotationSpeed { get; set; } = 0.85f;
+    public float TurretRotationSpeed { get; set; } = 0.01f;
     public float TurnInPlaceDotThreshold { get; set; } = 0.5f;
     private string? _lastMovementMode;
     public override IReadOnlyList<UnitAction> Actions =>
@@ -40,8 +35,10 @@ public class Tank : MobileUnit
 
     public override void Update(GameTime gameTime)
     {
-        base.Update(gameTime);
-        UpdateTurret(gameTime);
+        base.Update(gameTime);        
+        //TurretRotation = WrapAngle(TurretRotation + TurretRotationSpeed);
+        TurretRotation = WrapAngle(TurretRotation + TurretRotationSpeed);
+        //UpdateTurret(gameTime);
     }
 
     protected override void MoveAlongPath(GameTime gameTime)
@@ -153,20 +150,8 @@ public class Tank : MobileUnit
         PathDebug($"tank mode={mode} distance={distance:0.00} alignment={directionDot:0.00}");
     }
 
-    public override void Draw(Effect effect) => DrawSubMeshes(effect);
-
-    public override void DrawShadow(Effect effect) => DrawSubMeshes(effect);
-
-    private void DrawSubMeshes(Effect effect)
+    public override void Draw(Effect effect)
     {
-        Matrix baseWorld = GetWorldMatrix();
-        foreach (ObjSubMesh subMesh in Mesh.SubMeshes)
-        {
-            Matrix local = subMesh.Name == "obj_1"
-                ? Matrix.CreateTranslation(-subMesh.Pivot) * Matrix.CreateRotationY(TurretRotation) * Matrix.CreateTranslation(subMesh.Pivot)
-                : Matrix.Identity;
-            effect.Parameters["World"]?.SetValue(local * baseWorld);
-            DrawMesh(effect, subMesh.Vertices, subMesh.Indices);
-        }
+        Globals.MeshHandler.DrawMesh(effect, Globals.MeshHandler.Meshes["tank"], GetWorldMatrix());
     }
 }

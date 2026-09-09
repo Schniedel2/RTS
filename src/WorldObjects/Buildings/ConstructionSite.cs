@@ -107,7 +107,7 @@ public class ConstructionSite : Building
             return;
 
         string text = $"{MathF.Round(ConstructionPercentage * 100.0f):0}%";
-        Globals.RenderHelper.DrawTextCentered(
+        RenderHelper.DrawTextCentered(
             spriteBatch,
             Globals._debugFont,
             text,

@@ -6,15 +6,13 @@ namespace RTS;
 public sealed class Particle : WorldObject
 {
     private static readonly int[] MeshIndices = [0, 1, 2, 0, 2, 3];
-    private readonly VertexPositionColorNormalTexture[] _vertices;
+    private readonly VertexPositionColorNormalTexture[] MeshVertices;
     private readonly float _lifetime;
     private readonly float _initialSize;
     private float _remainingLifetime;
 
     public Vector3 Velocity { get; private set; }
     public bool IsExpired => _remainingLifetime <= 0.0f;
-    protected override VertexPositionColorNormalTexture[] Vertices => _vertices;
-    protected override int[] Indices => MeshIndices;
 
     public Particle(
         Vector3 position,
@@ -27,7 +25,7 @@ public sealed class Particle : WorldObject
         _initialSize = size;
         _lifetime = lifetime;
         _remainingLifetime = lifetime;
-        _vertices =
+        MeshVertices =
         [
             new(new Vector3(-0.5f, 0.0f, -0.5f), color, Vector3.Up),
             new(new Vector3(0.5f, 0.0f, -0.5f), color, Vector3.Up),
@@ -49,5 +47,10 @@ public sealed class Particle : WorldObject
         float progress = MathHelper.Clamp(_remainingLifetime / _lifetime, 0.0f, 1.0f);
         float size = _initialSize * (0.35f + progress * 0.65f);
         return Matrix.CreateScale(size) * Transform;
+    }
+
+    public override void Draw(Effect effect)
+    {        
+        RenderHelper.DrawMesh(effect, MeshVertices, MeshIndices);        
     }
 }

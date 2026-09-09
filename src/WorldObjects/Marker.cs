@@ -27,9 +27,6 @@ public class Marker : WorldObject
     private readonly float _lifetime;
     private float _remainingLifetime;
 
-    protected override VertexPositionColorNormalTexture[] Vertices => MeshVertices;
-    protected override int[] Indices => MeshIndices;
-
     public bool IsExpired => _remainingLifetime <= 0.0f;
     public float HoverHeight { get; set; } = 1.0f;
 
@@ -51,5 +48,10 @@ public class Marker : WorldObject
         float verticalOffset = MathF.Sin(progress * MathHelper.Pi) * HoverHeight;
 
         SetPosition(_groundPosition + Vector3.Up * verticalOffset);
+    }
+    
+    public override void Draw(Effect effect)
+    {        
+        RenderHelper.DrawMesh(effect, MeshVertices, MeshIndices);        
     }
 }

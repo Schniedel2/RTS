@@ -23,6 +23,9 @@ public static class UnitFactory
             case "tank":
                 unit = new Tank(position, unitId);
                 break;
+            case "jeep":
+                unit = new Jeep(position, unitId);
+                break;
             case "editor":
                 unit = new TerrainEditorTool(position, unitId);
                 break;
