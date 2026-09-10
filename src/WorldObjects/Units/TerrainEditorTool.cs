@@ -22,7 +22,7 @@ public class TerrainEditorTool : Soldier
         new(UnitActionType.IncToolSize, "Increase shape size", 8, 5),
         new(UnitActionType.DecToolSize, "Decrease shape size", 9, 5),
         new(UnitActionType.AdjustToolSize, "Adjust shape size", 8, 5),
-        new(UnitActionType.Filler, "", 15, 0),
+        new(UnitActionType.None, "", 15, 0),
         //new(UnitActionType.GetTerrainTile, "Get Terrain Tile", 3, 2), // icon needed
         new(UnitActionType.Save, "Save", 13, 2),
         new(UnitActionType.TilePreview, "Current Tile", 9, 8)

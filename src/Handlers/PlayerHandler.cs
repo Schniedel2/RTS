@@ -27,7 +27,7 @@ public class PlayerHandler
     private Rectangle _currentSelectionRect;
     private bool _isSelectingUnits;
     public Vector3 MouseWorldPosition { get; private set; }
-    private bool MouseIsOnTerrain = false;
+    private bool IsMouseOnTerrain = false;
 
     private int _toolSize;
     private ToolShape _toolShape;    
@@ -39,7 +39,7 @@ public class PlayerHandler
         //  single-use actions are handled immediately / current action-selection remains unchanged
        switch (action.Type)
         {
-            case UnitActionType.Filler:
+            case UnitActionType.None:
                 return false;
 
             case UnitActionType.IncToolSize:
@@ -110,7 +110,7 @@ public class PlayerHandler
         if (_map.Terrain.TryGetIntersection(ray, out Vector3 target))
         {
             MouseWorldPosition = new Vector3(target.X, target.Y, target.Z);
-            MouseIsOnTerrain = true;
+            IsMouseOnTerrain = true;
         }
 
         if (IsUnitSelectionEnabled())
@@ -134,19 +134,8 @@ public class PlayerHandler
                 if (_isSelectingUnits)
                     SelectUnits(camera, viewport, _currentSelectionRect, 99);
                 else
-                if (ActiveAction?.Type == UnitActionType.BuildConstruction)
-                {
-                    ConstructionSite? constructionSite = FindConstructionSiteAt(
-                        camera,
-                        viewport,
-                        mouse.Position);
-                    if (constructionSite is not null)
-                        RequestBuildConstruction(constructionSite);
-                }
-                else if (MouseIsOnTerrain && ActiveAction is not null)
-                {
-                    RequestAction(ActiveAction, MouseWorldPosition);
-                }
+                    if (IsMouseOnTerrain)
+                        PerformClickAction(_selectedUnits, MouseWorldPosition);
 
                 _isSelectingUnits = false;
             }
@@ -163,22 +152,22 @@ public class PlayerHandler
                     _nextAllowedActionTime = gameTime.TotalGameTime.TotalMilliseconds + 100; // 100 ms cooldown between actions
                     if (ActiveAction is not null)
                     {
-                        if (MouseIsOnTerrain)
+                        if (IsMouseOnTerrain)
                             if (mouse.LeftButton == ButtonState.Pressed)
-                                RequestAction(ActiveAction, MouseWorldPosition);
+                                RequestAction(ActiveAction, MouseWorldPosition, null);
                         if (mouse.RightButton == ButtonState.Pressed)
                         {
                             //  alternate actions for terrain editing
                             if (ActiveAction.Type == UnitActionType.RaiseTerrain)
                             {
                                 UnitAction altAction = new (UnitActionType.LowerTerrain, ActiveAction.Name, ActiveAction.IconColumn, ActiveAction.IconRow);
-                                RequestAction(altAction, MouseWorldPosition);
+                                RequestAction(altAction, MouseWorldPosition, null);
                                 
                             }
                             if (ActiveAction.Type == UnitActionType.LowerTerrain)
                             {
                                 UnitAction altAction = new (UnitActionType.RaiseTerrain, ActiveAction.Name, ActiveAction.IconColumn, ActiveAction.IconRow);
-                                RequestAction(altAction, MouseWorldPosition);
+                                RequestAction(altAction, MouseWorldPosition, null);
                             }
                         }
                     }
@@ -187,6 +176,70 @@ public class PlayerHandler
         }
 
         _previousMouseState = mouse;
+    }
+
+    UnitActionType SuggestAction(List<MobileUnit> selectedUnits, Vector3 mouseWorldPosition, out Unit? targetUnit)
+    {
+        targetUnit = null;
+        if (selectedUnits.Count == 0)
+            return UnitActionType.None;
+
+        if (ActiveAction?.Type != UnitActionType.Goto)
+        {
+            if (ActiveAction?.Type != UnitActionType.Follow)
+                return UnitActionType.None;
+        }
+
+        targetUnit = FindUnitAt(Globals._camera, Globals.GraphicsDevice.Viewport, Mouse.GetState().Position);
+        KeyboardState keyboardState = Keyboard.GetState();
+
+        if (targetUnit == null)
+        {
+            if (ActiveAction?.Type == UnitActionType.Follow)
+                return UnitActionType.None;
+            if (keyboardState.IsKeyDown(Keys.LeftControl) || keyboardState.IsKeyDown(Keys.RightControl))
+                return UnitActionType.Attack;
+
+            return UnitActionType.Goto;
+        }
+
+        if (ActiveAction?.Type == UnitActionType.Follow)
+            return UnitActionType.Follow;
+
+        if (targetUnit.IsEnemy(selectedUnits.First()))
+            return UnitActionType.Attack;
+
+        if (targetUnit.IsSamePlayer(selectedUnits.First()) && (targetUnit is ConstructionSite))
+        {
+            return UnitActionType.BuildConstruction;
+        }
+
+        if (keyboardState.IsKeyDown(Keys.LeftControl) || keyboardState.IsKeyDown(Keys.RightControl))
+            return UnitActionType.Attack;
+
+        if (keyboardState.IsKeyDown(Keys.LeftAlt) || keyboardState.IsKeyDown(Keys.RightAlt))
+            return UnitActionType.Repair;
+
+        if (targetUnit is Building)
+            return UnitActionType.EnterBuilding;
+
+        return UnitActionType.None;
+    }
+
+    bool PerformClickAction(List<MobileUnit> selectedUnits, Vector3 mouseWorldPosition)
+    {
+        if (ActiveAction == null)
+            return false;
+
+        Unit? targetUnit;
+        UnitActionType suggestedAction = SuggestAction(selectedUnits, mouseWorldPosition, out targetUnit);
+        if (suggestedAction != UnitActionType.None)
+        {
+            SendRequestAction(suggestedAction, mouseWorldPosition, targetUnit);
+            return true;
+        }
+        RequestAction(ActiveAction, mouseWorldPosition, targetUnit);
+        return true;
     }
 
     void ClearSelection()
@@ -252,39 +305,71 @@ public class PlayerHandler
                 _previousMouseState.RightButton == ButtonState.Pressed;
         }
 
-        private void RequestAction(UnitAction action, Vector3 target)
+        private bool SendRequestAction(UnitActionType actionType, Vector3 targetPosition, Unit? targetUnit)
+        {            
+            if (_selectedUnits.Count == 0)
+                return false;
+
+            if (actionType == UnitActionType.Goto)
+            {
+                Globals.Game.NetworkClient.RequestGotoAsync(_selectedUnits, targetPosition);
+                return true;
+            }
+            if (actionType == UnitActionType.Attack)
+            {
+                if (targetUnit is not null)
+                    _ = Globals.Game.NetworkClient.RequestAttackTargetAsync(_selectedUnits, targetUnit.UnitId);
+                else
+                    _ = Globals.Game.NetworkClient.RequestAttackTerrainAsync(_selectedUnits, targetPosition);
+                return true;
+            }
+            if (actionType == UnitActionType.Follow && targetUnit is not null)
+            {
+                _ = Globals.Game.NetworkClient.RequestFollowAsync(_selectedUnits, targetUnit.UnitId);
+                return true;
+            }
+            if (actionType == UnitActionType.BuildConstruction)
+            {
+                Globals.Game.NetworkClient.RequestBuildConstructionAsync(_selectedUnits, targetUnit?.UnitId ?? Guid.Empty);
+                return true;
+            }
+            return false;
+        }
+
+        private void RequestAction(UnitAction action, Vector3 targetPosition, Unit? targetUnit)
         {            
             if (_selectedUnits.Count == 0)
                 return;
 
             if (action.Type == UnitActionType.Goto)
             {
-                Globals.Game.NetworkClient.RequestGotoAsync(_selectedUnits, target);
+                Globals.Game.NetworkClient.RequestGotoAsync(_selectedUnits, targetPosition);
             }
             if (action.Type == UnitActionType.Attack)
             {
-                MobileUnit? targetUnit = FindUnitAt(Globals._camera, Globals.GraphicsDevice.Viewport, Mouse.GetState().Position);
                 if (targetUnit is not null)
                     _ = Globals.Game.NetworkClient.RequestAttackTargetAsync(_selectedUnits, targetUnit.UnitId);
                 else
-                    _ = Globals.Game.NetworkClient.RequestAttackAsync(_selectedUnits, target);
+                    _ = Globals.Game.NetworkClient.RequestAttackTerrainAsync(_selectedUnits, targetPosition);
             }
+            if (action.Type == UnitActionType.Follow && targetUnit is not null)
+                _ = Globals.Game.NetworkClient.RequestFollowAsync(_selectedUnits, targetUnit.UnitId);
             if (action.Type == UnitActionType.Build)
             {
-                Globals.Game.NetworkClient.RequestBuildAsync(action.TargetObjectName, target);
+                Globals.Game.NetworkClient.RequestBuildAsync(action.TargetObjectName, targetPosition);
             }
             if ((action.Type == UnitActionType.RaiseTerrain) || 
                 (action.Type == UnitActionType.FlattenTerrain) || 
                 (action.Type == UnitActionType.SmoothTerrain) || 
                 (action.Type == UnitActionType.LowerTerrain))
             {
-                Globals.Game.NetworkClient.RequestToolActionAsync(action, _toolShape, _toolSize, target);
+                Globals.Game.NetworkClient.RequestToolActionAsync(action, _toolShape, _toolSize, targetPosition);
             }
             if ((action.Type == UnitActionType.SetTerrainTile) ||
                 (action.Type == UnitActionType.FillTile)
                 )
             {
-                Globals.Game.NetworkClient.RequestToolActionAsync(action, _toolShape, _toolSize, target, _currentTerrainTile);
+                Globals.Game.NetworkClient.RequestToolActionAsync(action, _toolShape, _toolSize, targetPosition, _currentTerrainTile);
             }
         }
 
@@ -311,7 +396,13 @@ public class PlayerHandler
                     viewport).Contains(screenPosition));
         }
 
-        private MobileUnit? FindUnitAt(Camera camera, Viewport viewport, Point screenPosition)
+        private MobileUnit? FindMobileUnitAt(Camera camera, Viewport viewport, Point screenPosition)
+        {
+            return _map.Units.Units.FirstOrDefault(unit => unit.GetScreenBounds(
+                camera.View, camera.Projection, viewport).Contains(screenPosition));
+        }
+
+        private Unit? FindUnitAt(Camera camera, Viewport viewport, Point screenPosition)
         {
             return _map.Units.Units.FirstOrDefault(unit => unit.GetScreenBounds(
                 camera.View, camera.Projection, viewport).Contains(screenPosition));
@@ -361,7 +452,7 @@ public class PlayerHandler
         if (ActiveAction is null)
             return false;
 
-        return MouseIsOnTerrain && (
+        return IsMouseOnTerrain && (
             (ActiveAction.Type == UnitActionType.RaiseTerrain) || 
             (ActiveAction.Type == UnitActionType.LowerTerrain) || 
             (ActiveAction.Type == UnitActionType.SmoothTerrain) || 
@@ -374,7 +465,7 @@ public class PlayerHandler
     public void Draw3D(Camera camera)
     {
        //  render editor-tool
-        if (MouseIsOnTerrain)
+        if (IsMouseOnTerrain)
         {
             if (IsTerrainEditingEnabled())
             {
@@ -394,7 +485,7 @@ public class PlayerHandler
         SpriteBatch spriteBatch,
         Camera camera,
         Viewport viewport)
-    {
+    {                
         foreach (MobileUnit unit in _selectedUnits)
         {
             Rectangle unitBounds = unit.GetScreenBounds(
@@ -417,6 +508,17 @@ public class PlayerHandler
                 Color.White * 0.1f,
                 Color.LimeGreen,
                 borderThickness: 2);
+
+        if (IsMouseOnTerrain)
+        {
+            Unit? targetUnit;
+            UnitActionType suggestedAction = SuggestAction(_selectedUnits, MouseWorldPosition, out targetUnit);
+            if (suggestedAction != UnitActionType.None)
+            {
+                string suggestion = suggestedAction.ToString();
+                RenderHelper.DrawTooltip(spriteBatch, suggestion, _previousMouseState.Position.X + 24, _previousMouseState.Position.Y + 16);
+            }
+        }
     }
 
     public bool IsUnitSelectionEnabled()

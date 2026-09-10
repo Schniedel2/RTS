@@ -109,7 +109,7 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
 
-    public Task RequestAttackAsync(IEnumerable<MobileUnit> units, Vector3 target)
+    public Task RequestAttackTerrainAsync(IEnumerable<MobileUnit> units, Vector3 target)
     {
         NetworkMessage request = NetworkCommands.CreateAttackGroundRequest(
             _networkHandler.LocalPeerId,
@@ -124,6 +124,13 @@ public sealed class NetworkClient
             _networkHandler.LocalPeerId,
             units.Select(unit => unit.UnitId).ToArray(),
             targetId);
+        return _networkHandler.SendToHostAsync(request, CancellationToken.None);
+    }
+
+    public Task RequestFollowAsync(IEnumerable<MobileUnit> units, Guid targetId)
+    {
+        NetworkMessage request = NetworkCommands.CreateFollowRequest(
+            _networkHandler.LocalPeerId, units.Select(unit => unit.UnitId).ToArray(), targetId);
         return _networkHandler.SendToHostAsync(request, CancellationToken.None);
     }
 

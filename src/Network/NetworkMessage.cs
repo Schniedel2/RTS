@@ -42,6 +42,8 @@ public enum NetworkMessageType
     AttackTargetCommand,
     AttackGroundRequest,
     AttackGroundCommand,
+    FollowRequest,
+    FollowCommand,
     TemporaryTargetCommand,
     UnitHitCommand,
     DestroyUnitCommand,

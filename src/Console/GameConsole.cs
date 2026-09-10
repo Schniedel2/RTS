@@ -15,6 +15,7 @@ public class GameConsole
         new(StringComparer.OrdinalIgnoreCase);
 
     private readonly List<string> _history = new();
+    private List<string> _commandsHistory = new();
 
     private string _input = "";
     private int _historyIndex = -1;
@@ -27,6 +28,7 @@ public class GameConsole
     public SpriteFont Font { get; } = Globals._debugFont;
     int _autoCompleteIndex = 0;
     string _autoCompleteText = "";
+    int _cursorPosition = 0;
 
     public GameConsole()
     {
@@ -67,7 +69,8 @@ public class GameConsole
         if (!IsOpen)
             return;
 
-        _input += c;
+        _cursorPosition++;
+        _input = _input.Insert(_cursorPosition - 1, c.ToString());
     }
 
     public void Backspace()
@@ -75,7 +78,22 @@ public class GameConsole
         if (!IsOpen || _input.Length == 0)
             return;
 
-        _input = _input[..^1];
+        if (_cursorPosition > 0)
+        {
+            _input = _input.Remove(_cursorPosition - 1, 1);
+            _cursorPosition--;
+        }
+    }
+
+    public void Delete()
+    {
+        if (!IsOpen || _input.Length == 0)
+            return;
+
+        if (_cursorPosition < _input.Length)
+        {
+            _input = _input.Remove(_cursorPosition, 1);
+        }
     }
 
     public void Execute()
@@ -93,6 +111,7 @@ public class GameConsole
         _ = ExecuteCommandAsync(command);
 
         _input = "";
+        _cursorPosition = 0;
         _historyIndex = -1;
     }
 
@@ -114,20 +133,18 @@ public class GameConsole
 
     public void HistoryUp()
     {
-        if (_history.Count == 0)
+        if (_commandsHistory.Count == 0)
             return;
 
-        if (_historyIndex < _history.Count - 1)
+        if (_historyIndex < _commandsHistory.Count - 1)
             _historyIndex++;
 
         // ">" entfernen
-        string line = _history[
-            _history.Count - 1 - _historyIndex];
-
-        if (line.StartsWith("> "))
-            line = line[2..];
+        string line = _commandsHistory[
+            _commandsHistory.Count - 1 - _historyIndex];
 
         _input = line;
+        _cursorPosition = _input.Length;
     }
 
     public void HistoryDown()
@@ -136,22 +153,25 @@ public class GameConsole
         {
             _historyIndex = -1;
             _input = "";
+            _cursorPosition = 0;
             return;
         }
 
         _historyIndex--;
 
-        string line = _history[
-            _history.Count - 1 - _historyIndex];
-
-        if (line.StartsWith("> "))
-            line = line[2..];
+        string line = _commandsHistory[
+            _commandsHistory.Count - 1 - _historyIndex];
 
         _input = line;
+        _cursorPosition = _input.Length;
     }
 
     private async Task ParseAndExecuteAsync(string commandLine)
     {
+        _commandsHistory.Add(commandLine);
+        if (_commandsHistory.Count > 100)
+            _commandsHistory.RemoveAt(0);
+
         string[] tokens = Tokenize(commandLine);
 
         if (tokens.Length == 0)
@@ -253,6 +273,8 @@ public class GameConsole
         if (character == '\u001b') // ESC to clear input
         {
             _input = "";
+            _cursorPosition = 0;
+            _historyIndex = -1;
             return;
         }
 
@@ -268,12 +290,35 @@ public class GameConsole
                 if (_commands.Keys.ElementAt(_autoCompleteIndex).StartsWith(_autoCompleteText, StringComparison.InvariantCultureIgnoreCase))
                 {
                     _input = _commands.Keys.ElementAt(_autoCompleteIndex);
+                    _cursorPosition = _input.Length;
                     return;
                 }
             }
             while (_autoCompleteIndex != stop);
         }
     }
+
+    public void CursorLeft()
+    {
+        if (_cursorPosition > 0)
+            _cursorPosition--;
+    }
+
+    public void CursorRight()
+    {
+        if (_cursorPosition < Input.Length)
+            _cursorPosition++;
+    }
+
+    public void CursorHome()
+    {
+        _cursorPosition = 0;
+    }
+
+    public void CursorEnd()
+    {
+        _cursorPosition = Input.Length;
+    }   
 
     public void Draw(SpriteBatch spriteBatch)
     {
@@ -315,12 +360,30 @@ public class GameConsole
         }
 
         // Eingabezeile
+        Vector2 pos = new Vector2(
+                padding,
+                consoleHeight - Font.LineSpacing - padding);
+
+        string inputLine = "> " + _input;
+        char cursorChar = 'W';
+        if (_cursorPosition < _input.Length)
+        cursorChar = _input[_cursorPosition];
+
         spriteBatch.DrawString(
             Font,
-            "> " + Input + "_",
-            new Vector2(
-                padding,
-                consoleHeight - Font.LineSpacing - padding),
+            inputLine,
+            pos,
             Color.White);
+
+        float inputWidth = Font.MeasureString(inputLine.Substring(0, 2 + _cursorPosition)).X;
+        float cursorWidth = Font.MeasureString(cursorChar.ToString()).X;
+
+        pos.X += inputWidth - 2;
+        spriteBatch.DrawString(
+            Font,
+            "|",
+            pos,
+            Color.GreenYellow);
+
     }
 }

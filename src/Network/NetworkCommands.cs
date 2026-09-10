@@ -236,6 +236,15 @@ public static class NetworkCommands
             UnitIds: request.UnitIds, TargetId: request.TargetId);
     }
 
+    public static NetworkMessage CreateFollowRequest(Guid senderId, Guid[] unitIds, Guid targetId) =>
+        new(NetworkMessageType.FollowRequest, senderId,
+            PlayerId: senderId, UnitIds: unitIds, TargetId: targetId);
+
+    public static NetworkMessage CreateFollowCommand(Guid hostId, NetworkMessage request) =>
+        new(NetworkMessageType.FollowCommand, hostId,
+            PlayerId: request.PlayerId ?? request.SenderId,
+            UnitIds: request.UnitIds, TargetId: request.TargetId);
+
     public static NetworkMessage CreateAttackGroundRequest(Guid senderId, Guid[] unitIds, Vector3 target)
     {
         return new NetworkMessage(NetworkMessageType.AttackGroundRequest, senderId,

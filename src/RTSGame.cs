@@ -148,6 +148,12 @@ public class RTSGame
                 Globals.Console.Backspace();
             }
 
+            if (keyboard.IsKeyDown(Keys.Delete) &&
+                !_previousKeyboardState.IsKeyDown(Keys.Delete))
+            {
+                Globals.Console.Delete();
+            }
+
             if (keyboard.IsKeyDown(Keys.Enter) &&
                 !_previousKeyboardState.IsKeyDown(Keys.Enter))
             {
@@ -165,6 +171,31 @@ public class RTSGame
             {
                 Globals.Console.HistoryDown();
             }
+
+            if (keyboard.IsKeyDown(Keys.Left) &&
+                !_previousKeyboardState.IsKeyDown(Keys.Left))
+            {
+                Globals.Console.CursorLeft();
+            }
+            
+            if (keyboard.IsKeyDown(Keys.Right) &&
+                !_previousKeyboardState.IsKeyDown(Keys.Right))
+            {
+                Globals.Console.CursorRight();
+            }
+
+            if (keyboard.IsKeyDown(Keys.Home) &&
+                !_previousKeyboardState.IsKeyDown(Keys.Home))
+            {
+                Globals.Console.CursorHome();
+            }
+            
+            if (keyboard.IsKeyDown(Keys.End) &&
+                !_previousKeyboardState.IsKeyDown(Keys.End))
+            {
+                Globals.Console.CursorEnd();
+            }
+
         }
 
         _previousKeyboardState = keyboard;

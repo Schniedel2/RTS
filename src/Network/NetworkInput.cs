@@ -135,6 +135,12 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type == NetworkMessageType.FollowCommand)
+        {
+            ExecuteFollow(message);
+            return;
+        }
+
         if (message.Type == NetworkMessageType.TemporaryTargetCommand)
         {
             ExecuteTemporaryTarget(message);
@@ -197,6 +203,7 @@ public sealed class NetworkInput
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
         {
             MobileUnit? unit = Globals.World.Units.FindById(unitId);
+            unit?.ClearFollowUnit();
             unit?.TryReceiveGotoCommand(Globals.World, command);
         }
 
@@ -231,6 +238,15 @@ public sealed class NetworkInput
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
             if (Globals.World.Units.FindById(unitId) is MobileUnit unit)
                 unit.SetAttackGroundTarget(target);
+    }
+
+    private void ExecuteFollow(NetworkMessage message)
+    {
+        if (message.TargetId is not Guid targetId)
+            return;
+        foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
+            if (Globals.World.Units.FindById(unitId) is MobileUnit unit)
+                unit.SetFollowUnit(targetId);
     }
 
     private void ExecuteTemporaryTarget(NetworkMessage message)
@@ -276,6 +292,7 @@ public sealed class NetworkInput
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
         {
             MobileUnit? unit = Globals.World.Units.FindById(unitId);
+            unit?.ClearFollowUnit();
             unit?.TryReceiveBuildConstructionCommand(Globals.World, constructionSite);
         }
     }

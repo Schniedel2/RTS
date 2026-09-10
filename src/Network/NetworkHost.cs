@@ -42,6 +42,7 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.AttackRequest &&
             message.Type != NetworkMessageType.AttackTargetRequest &&
             message.Type != NetworkMessageType.AttackGroundRequest &&
+            message.Type != NetworkMessageType.FollowRequest &&
             message.Type != NetworkMessageType.ToolActionRequest &&
             message.Type != NetworkMessageType.BuildRequest &&
             message.Type != NetworkMessageType.BuildConstructionRequest &&
@@ -90,6 +91,7 @@ public sealed class NetworkHost
                     NetworkMessageType.AttackRequest => NetworkCommands.CreateAttackCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.AttackTargetRequest => NetworkCommands.CreateAttackTargetCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.AttackGroundRequest => NetworkCommands.CreateAttackGroundCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.FollowRequest => NetworkCommands.CreateFollowCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.TextRequest => NetworkCommands.CreateTextCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.ToolActionRequest => NetworkCommands.CreateToolActionCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.RequestPlayerUpdate => NetworkCommands.CreatePlayerUpdateCommand(_networkHandler.LocalPeerId, request, ConfirmPlayerColor(request)),

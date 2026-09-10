@@ -1,13 +1,17 @@
 namespace RTS;
 
 public enum UnitActionType
-{
-    Filler,
+{    
+    None,
     Goto,
     Stop,
     Attack,
     Build,
     BuildConstruction,
+    Follow,
+    EnterBuilding,
+    LeaveBuilding,
+    Repair,
     RaiseTerrain,
     LowerTerrain,
     FlattenTerrain,

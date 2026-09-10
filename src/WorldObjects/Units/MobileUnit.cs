@@ -31,12 +31,16 @@ public class MobileUnit : Unit
     public override IReadOnlyList<UnitAction> Actions =>
     [
         new(UnitActionType.Goto, "Goto", 0, 0),
+        new(UnitActionType.Follow, "Follow", 6, 1),
         new(UnitActionType.Stop, "Stop", 2, 0)
     ];
 
     private readonly List<Point> _plannedPath = [];
     private double _nextAttackReplanTime;
     private Vector2? _lastAttackApproachTarget;
+    private double _nextFollowReplanTime;
+    private Vector2? _lastFollowApproachTarget;
+    private bool _followPathActive;
 
     public MobileUnit(
         Vector3 position,
@@ -337,6 +341,7 @@ public class MobileUnit : Unit
 
     public override void Update(GameTime gameTime)
     {
+        UpdateFollowMovement(gameTime);
         UpdateAttackMovement(gameTime);
         MoveAlongPath(gameTime);
         AlignToTerrain(gameTime);
@@ -346,15 +351,7 @@ public class MobileUnit : Unit
     private void UpdateAttackMovement(GameTime gameTime)
     {
         Vector2? targetPosition = null;
-        MobileUnit? targetUnit = null;
-        if (AttackTargetId is Guid targetId)
-        {
-            targetUnit = Globals.World.Units.FindById(targetId);
-            if (targetUnit is null)
-                return;
-            targetPosition = new(targetUnit.Position.X, targetUnit.Position.Z);
-        }
-        else if (AttackGroundTarget is Vector3 groundTarget)
+        if (AttackGroundTarget is Vector3 groundTarget)
         {
             targetPosition = new(groundTarget.X, groundTarget.Z);
         }
@@ -376,18 +373,6 @@ public class MobileUnit : Unit
             return;
 
         Vector2 approachTarget = target;
-        if (targetUnit is not null)
-        {
-            Vector2 away = position - target;
-            if (away.LengthSquared() <= 0.001f)
-                away = Vector2.UnitX;
-            else
-                away.Normalize();
-            float distance = MathF.Max(AttackRange * 0.75f,
-                MathF.Max(targetUnit.Length, targetUnit.Width) * 0.5f +
-                MathF.Max(Length, Width) * 0.5f + 1.0f);
-            approachTarget = target + away * distance;
-        }
 
         bool needsReplan = CurrentCommand is null ||
             _lastAttackApproachTarget is null ||
@@ -399,6 +384,54 @@ public class MobileUnit : Unit
                 _lastAttackApproachTarget = approachTarget;
         }
         _nextAttackReplanTime = gameTime.TotalGameTime.TotalSeconds + 0.5;
+    }
+
+    private void UpdateFollowMovement(GameTime gameTime)
+    {
+        if (FollowUnitId is not Guid followId)
+            return;
+
+        MobileUnit? followUnit = Globals.World.Units.FindById(followId);
+        if (followUnit is null || followUnit == this)
+        {
+            ClearFollowUnit();
+            if (_followPathActive)
+                ClearCommand();
+            _followPathActive = false;
+            return;
+        }
+
+        Vector2 position = new(Position.X, Position.Z);
+        Vector2 target = new(followUnit.Position.X, followUnit.Position.Z);
+        float followDistance = FollowDistance;
+        if (Vector2.DistanceSquared(position, target) <= followDistance * followDistance)
+        {
+            if (_followPathActive)
+                ClearCommand();
+            _followPathActive = false;
+            _lastFollowApproachTarget = null;
+            return;
+        }
+
+        if (gameTime.TotalGameTime.TotalSeconds < _nextFollowReplanTime)
+            return;
+
+        Vector2 away = position - target;
+        if (away.LengthSquared() <= 0.001f)
+            away = Vector2.UnitX;
+        else
+            away.Normalize();
+        Vector2 approachTarget = target + away * followDistance;
+        bool needsReplan = !_followPathActive || CurrentCommand is null ||
+            _lastFollowApproachTarget is null ||
+            Vector2.DistanceSquared(approachTarget, _lastFollowApproachTarget.Value) > 4.0f;
+        if (needsReplan && TryReceiveGotoCommand(Globals.World, new GotoCommand(approachTarget)))
+        {
+            _followPathActive = true;
+            _lastFollowApproachTarget = approachTarget;
+            PathDebug($"follow replan target=({approachTarget.X:0.0},{approachTarget.Y:0.0}) distance={followDistance:0.0}");
+        }
+        _nextFollowReplanTime = gameTime.TotalGameTime.TotalSeconds + 0.5;
     }
 
     private Vector3 SnapDirectionToHeading(Vector3 direction)

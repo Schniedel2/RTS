@@ -32,6 +32,10 @@ public abstract class Unit : WorldObject
     public float AttackCooldown { get; set; } = 0.75f; // in seconds
     public Guid? AttackTargetId { get; private set; }
     public Vector3? AttackGroundTarget { get; private set; }
+    /// <summary>Unit to keep within <see cref="FollowDistance"/> world units of.</summary>
+    public Guid? FollowUnitId { get; private set; }
+    /// <summary>Desired horizontal spacing to <see cref="FollowUnitId"/>.</summary>
+    public float FollowDistance { get; private set; }
     public UnitBehavior Behavior { get; set; } = UnitBehavior.Aggressive;
 
     // -----------------------------------------------------------------------
@@ -127,6 +131,7 @@ public abstract class Unit : WorldObject
         ClearCommand();
         AttackTargetId = null;
         AttackGroundTarget = null;
+        ClearFollowUnit();
         ClearTarget();
     }
 
@@ -153,6 +158,7 @@ public abstract class Unit : WorldObject
         AttackTargetId = targetId;
         AttackGroundTarget = null;
         SetTargetUnit(targetId);
+        SetFollowUnitInternal(targetId, AttackRange);
     }
 
     /// <summary>Starts a continuous attack against a terrain position.</summary>
@@ -160,7 +166,38 @@ public abstract class Unit : WorldObject
     {
         AttackGroundTarget = target;
         AttackTargetId = null;
+        ClearFollowUnit();
         SetTargetTerrain(target);
+    }
+
+    /// <summary>
+    /// Starts a non-attacking follow order. The spacing is captured when the
+    /// host command is applied, so the unit preserves the player's formation.
+    /// </summary>
+    public bool SetFollowUnit(Guid targetId)
+    {
+        MobileUnit? target = Globals.World.Units.FindById(targetId);
+        if (target is null || target == this)
+            return false;
+
+        Vector2 offset = new(target.Position.X - Position.X, target.Position.Z - Position.Z);
+        AttackTargetId = null;
+        AttackGroundTarget = null;
+        ClearTarget();
+        SetFollowUnitInternal(targetId, offset.Length());
+        return true;
+    }
+
+    public void ClearFollowUnit()
+    {
+        FollowUnitId = null;
+        FollowDistance = 0.0f;
+    }
+
+    private void SetFollowUnitInternal(Guid targetId, float distance)
+    {
+        FollowUnitId = targetId;
+        FollowDistance = Math.Max(0.0f, distance);
     }
 
     public void SetTargetUnit(Guid targetId)
@@ -217,7 +254,7 @@ public abstract class Unit : WorldObject
         TargetTerrainCell is not null;
 
     /// <summary>Central extension point for team, visibility and priority rules.</summary>
-    public virtual bool IsEnemy(Unit other)
+    public bool IsEnemy(Unit other)
     {
         if (other == this || other.CreatorPlayerId == CreatorPlayerId)
             return false;
@@ -225,6 +262,30 @@ public abstract class Unit : WorldObject
         Player? owner = Globals.Game.Players.FirstOrDefault(player => player.Id == CreatorPlayerId);
         Player? otherOwner = Globals.Game.Players.FirstOrDefault(player => player.Id == other.CreatorPlayerId);
         return owner is not null && otherOwner is not null && owner.TeamId != otherOwner.TeamId;
+    }
+
+    public bool IsAlly(Unit other)
+    {
+        return (IsSameTeam(other));
+    }
+
+    public bool IsSamePlayer(Unit other)
+    {
+        return other == this || other.CreatorPlayerId == CreatorPlayerId;
+    }
+
+    public bool IsLocalPlayer()
+    {
+        return CreatorPlayerId == Globals.Game.Network.LocalPeerId;
+    }
+
+    public bool IsSameTeam(Unit other)
+    {
+        if (other == this || other.CreatorPlayerId == CreatorPlayerId)
+            return true;
+        Player? owner = Globals.Game.Players.FirstOrDefault(player => player.Id == CreatorPlayerId);
+        Player? otherOwner = Globals.Game.Players.FirstOrDefault(player => player.Id == other.CreatorPlayerId);
+        return owner is not null && otherOwner is not null && owner.TeamId == otherOwner.TeamId;
     }
 
     /// <summary>Central extension point evaluated by the host before a defensive target is assigned.</summary>
