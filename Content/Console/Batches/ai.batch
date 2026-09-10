@@ -1,0 +1,11 @@
+ai-create NodAI 1
+ai-status NodAI Active
+ai-spawn NodAI tank 10 20
+ai-spawn NodAI jeep 10 25
+
+ai-create GdiAI 2
+ai-status GdiAI Active
+ai-spawn GdiAI tank 50 20
+ai-spawn GdiAI jeep 50 25
+
+ai-list

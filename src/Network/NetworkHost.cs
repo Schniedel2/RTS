@@ -150,6 +150,8 @@ public sealed class NetworkHost
 
             foreach (Unit unit in _world.Units.Units.OfType<Unit>())
             {
+                if (!unit.IsReadyToShoot(_hostTime))
+                    continue;
                 if (!unit.TryQueueShot(_hostTime, out MobileUnit? target) || target is null)
                     continue;
                 _requestQueue.Enqueue(NetworkCommands.CreateAttackRequest(
@@ -160,6 +162,8 @@ public sealed class NetworkHost
 
             foreach (Unit unit in _world.Units.Units.OfType<Unit>())
             {
+                if (!unit.IsReadyToShoot(_hostTime))
+                    continue;
                 if (!unit.TryQueueGroundShot(_hostTime, out Vector3 target))
                     continue;
                 _requestQueue.Enqueue(NetworkCommands.CreateAttackRequest(

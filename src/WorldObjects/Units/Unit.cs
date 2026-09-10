@@ -22,7 +22,7 @@ public abstract class Unit : WorldObject
     ];
     public override string StateTypeId => "unit";
     public float AttackRange { get; set; } = 12.0f;
-    public float AttackCooldown { get; set; } = 0.75f;
+    public float AttackCooldown { get; set; } = 0.75f; // in seconds
     public Guid? AttackTargetId { get; private set; }
     public Vector3? AttackGroundTarget { get; private set; }
 
@@ -235,6 +235,20 @@ public abstract class Unit : WorldObject
 
         return MathF.Abs(WrapAngleDegrees(desiredAngleDegrees - TargetAngleDegrees)) <=
             toleranceDegrees;
+    }
+
+    public bool IsReadyToShoot(double hostTime) // this is a host function
+    {
+        if (hostTime < _nextShotTime)
+            return false;
+
+        if (GetTargetPosition() is not Vector3 target)
+            return false;
+
+        if (!IsTargetAimed())
+            return false;
+
+        return true;
     }
 
     private Vector3? GetTargetPosition()

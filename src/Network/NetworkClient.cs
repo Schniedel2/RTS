@@ -89,6 +89,26 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
 
+    /// <summary>Host-side tooling entry point for spawning a unit owned by another player, such as an AI.</summary>
+    public Task RequestSpawnForPlayerAsync(
+        Guid playerId,
+        string unitTypeId,
+        float x,
+        float y,
+        float z,
+        CancellationToken cancellationToken = default)
+    {
+        NetworkMessage request = new(
+            NetworkMessageType.SpawnRequest,
+            _networkHandler.LocalPeerId,
+            PlayerId: playerId,
+            UnitTypeId: unitTypeId,
+            X: x,
+            Y: y,
+            Z: z);
+        return _networkHandler.SendToHostAsync(request, cancellationToken);
+    }
+
     public Task RequestAttackAsync(IEnumerable<MobileUnit> units, Vector3 target)
     {
         NetworkMessage request = NetworkCommands.CreateAttackGroundRequest(

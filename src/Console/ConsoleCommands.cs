@@ -82,6 +82,18 @@ public class ConsoleCommands
         _console.RegisterCommand(
             "map-list",
             ListMap);
+        _console.RegisterAsyncCommand(
+            "ai-create",
+            CreateAIPlayerAsync);
+        _console.RegisterAsyncCommand(
+            "ai-spawn",
+            SpawnForAIPlayerAsync);
+        _console.RegisterCommand(
+            "ai-status",
+            SetAIPlayerStatus);
+        _console.RegisterCommand(
+            "ai-list",
+            ListAIPlayers);
     }
 
     public async System.Threading.Tasks.Task CallBatch(string[] args)
@@ -450,26 +462,148 @@ public class ConsoleCommands
         return false;
     }
 
+    private async System.Threading.Tasks.Task CreateAIPlayerAsync(string[] args)
+    {
+        if (!_rtsGame.Network.IsHost)
+        {
+            _console.Print("AI players can only be created by the host.");
+            return;
+        }
+        if (args.Length is < 1 or > 2)
+        {
+            _console.Print("Usage: ai-create <name> [teamId]");
+            return;
+        }
+
+        int teamId = 0;
+        if (args.Length == 2 && !int.TryParse(args[1], out teamId))
+        {
+            _console.Print("teamId must be an integer.");
+            return;
+        }
+
+        try
+        {
+            AIPlayer aiPlayer = _rtsGame.CreateAIPlayer(args[0], teamId);
+            await aiPlayer.Player.RequestUpdateAsync(_rtsGame.NetworkClient);
+            _console.Print($"Created AI '{aiPlayer.Name}' id={aiPlayer.Id.ToString("N")[..8]} team={teamId} status={aiPlayer.Status}.");
+        }
+        catch (Exception ex)
+        {
+            _console.Print($"Could not create AI: {ex.Message}");
+        }
+    }
+
+    private async System.Threading.Tasks.Task SpawnForAIPlayerAsync(string[] args)
+    {
+        if (!_rtsGame.Network.IsHost)
+        {
+            _console.Print("AI units can only be spawned by the host.");
+            return;
+        }
+        if (args.Length is < 2 or > 5)
+        {
+            _console.Print("Usage: ai-spawn <ai-name|id> <unit> [x [z [y]]]");
+            return;
+        }
+
+        AIPlayer? aiPlayer = _rtsGame.FindAIPlayer(args[0]);
+        if (aiPlayer is null)
+        {
+            _console.Print($"AI player not found: {args[0]}");
+            return;
+        }
+
+        Vector3 target = _localPlayer.MouseWorldPosition;
+        float x = target.X;
+        float y = target.Y;
+        float z = target.Z;
+        if (args.Length > 2 && !float.TryParse(args[2], out x) ||
+            args.Length > 3 && !float.TryParse(args[3], out z) ||
+            args.Length > 4 && !float.TryParse(args[4], out y))
+        {
+            _console.Print("Coordinates must be numbers.");
+            return;
+        }
+
+        try
+        {
+            await _rtsGame.NetworkClient.RequestSpawnForPlayerAsync(
+                aiPlayer.Id, args[1].ToLowerInvariant(), x, y, z);
+            _console.Print($"Spawn request sent: {args[1]} for AI '{aiPlayer.Name}'.");
+        }
+        catch (Exception ex)
+        {
+            _console.Print($"Network error: {ex.Message}");
+        }
+    }
+
+    private void SetAIPlayerStatus(string[] args)
+    {
+        if (!_rtsGame.Network.IsHost)
+        {
+            _console.Print("AI status can only be changed by the host.");
+            return;
+        }
+        if (args.Length is < 1 or > 2)
+        {
+            _console.Print("Usage: ai-status <ai-name|id> [Idle|Active|Building|Gathering]");
+            return;
+        }
+
+        AIPlayer? aiPlayer = _rtsGame.FindAIPlayer(args[0]);
+        if (aiPlayer is null)
+        {
+            _console.Print($"AI player not found: {args[0]}");
+            return;
+        }
+        if (args.Length == 1)
+        {
+            _console.Print($"AI '{aiPlayer.Name}' status={aiPlayer.Status}.");
+            return;
+        }
+        if (!Enum.TryParse(args[1], ignoreCase: true, out AIPlayerStatus status))
+        {
+            _console.Print("Unknown AI status. Use Idle, Active, Building, or Gathering.");
+            return;
+        }
+
+        aiPlayer.SetStatus(status);
+        _console.Print($"AI '{aiPlayer.Name}' status={status}.");
+    }
+
+    private void ListAIPlayers(string[] args)
+    {
+        if (_rtsGame.AIPlayers.Count == 0)
+        {
+            _console.Print("No AI players.");
+            return;
+        }
+
+        foreach (AIPlayer aiPlayer in _rtsGame.AIPlayers)
+            _console.Print($"AI {aiPlayer.Name} id={aiPlayer.Id.ToString("N")[..8]} team={aiPlayer.Player.TeamId} status={aiPlayer.Status}");
+    }
+
     private void Spawn(string[] args)
     {
         if (args.Length < 1)
         {
-            _console.Print("Usage: spawn <unit> [x [y [z]]]");
+            _console.Print("Usage: spawn <unit> [x [z [y]]]");
             return;
         }
 
         string unitTypeId = args[0].ToLowerInvariant();
         Vector3 target = _localPlayer.MouseWorldPosition;
         float x = target.X;
-        float y = target.Z;
-        float z = target.Y;
+        float y = target.Y;
+        float z = target.Z;
 
         if (args.Length > 1)
             float.TryParse(args[1], out x);
         if (args.Length > 2)
-            float.TryParse(args[2], out y);
+            float.TryParse(args[2], out z);
         if (args.Length > 3)
-            float.TryParse(args[3], out z);
+            float.TryParse(args[3], out y);
 
         if (!_rtsGame.Network.IsConnected)
         {

@@ -51,6 +51,7 @@ public sealed class Particle : WorldObject
 
     public override void Draw(Effect effect)
     {        
+        effect.Parameters["World"]?.SetValue(GetWorldMatrix());
         RenderHelper.DrawMesh(effect, MeshVertices, MeshIndices);        
     }
 }

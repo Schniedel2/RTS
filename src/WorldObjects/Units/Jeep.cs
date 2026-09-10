@@ -32,6 +32,8 @@ public class Jeep : Car
     
         TargetAngleMinimumDegrees = -120.0f;
         TargetAngleMaximumDegrees = 120.0f;
+
+        AttackCooldown = 2.0f;
     }
 
     public override void Draw(Effect effect)

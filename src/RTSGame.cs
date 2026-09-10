@@ -25,6 +25,8 @@ public class RTSGame
     public ActionPanel? ActionPanel { get; }
     private readonly List<Player> _players = [];
     public IReadOnlyList<Player> Players => _players;
+    private readonly Dictionary<Guid, AIPlayer> _aiPlayers = [];
+    public IReadOnlyCollection<AIPlayer> AIPlayers => _aiPlayers.Values;
 
     public RTSGame(
         int terrainWidth,
@@ -93,6 +95,38 @@ public class RTSGame
         Player? player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
         if (player is not null)
             _players.Remove(player);
+        _aiPlayers.Remove(playerId);
+    }
+
+    /// <summary>Creates an AI identity on the host. Call PublishPlayerAsync afterwards.</summary>
+    public AIPlayer CreateAIPlayer(string name, int teamId = 0)
+    {
+        if (!Network.IsHost)
+            throw new InvalidOperationException("AI players can only be created by the host.");
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("An AI player needs a name.", nameof(name));
+        if (_players.Any(player => string.Equals(player.Name, name, StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException($"A player named '{name}' already exists.", nameof(name));
+
+        Color color = Player.ColorPalette.FirstOrDefault(candidate =>
+            _players.All(player => player.Color.PackedValue != candidate.PackedValue));
+        if (color == default)
+            color = Player.ColorPalette[0];
+
+        Player player = new(Guid.NewGuid(), name.Trim(), teamId, color);
+        _players.Add(player);
+        AIPlayer aiPlayer = new(player);
+        _aiPlayers.Add(player.Id, aiPlayer);
+        return aiPlayer;
+    }
+
+    public AIPlayer? FindAIPlayer(string idOrName)
+    {
+        if (Guid.TryParse(idOrName, out Guid id) && _aiPlayers.TryGetValue(id, out AIPlayer? byId))
+            return byId;
+
+        return _aiPlayers.Values.FirstOrDefault(ai =>
+            string.Equals(ai.Name, idOrName, StringComparison.OrdinalIgnoreCase));
     }
 
     private void UpdateConsole(GameTime gameTime)

@@ -59,7 +59,13 @@ public class UnitHandler
     public void Draw(Effect effect)
     {
         foreach (MobileUnit unit in _units)
+        {
+            Player? owner = Globals.Game.Players.FirstOrDefault(
+                player => player.Id == unit.CreatorPlayerId);
+            Color playerColor = owner?.Color ?? Color.White;
+            effect.Parameters["PlayerColor"]?.SetValue(playerColor.ToVector3());
             unit.Draw(effect);
+        }
     }
 
     public bool Destroy(Guid unitId)

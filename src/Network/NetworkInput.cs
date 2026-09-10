@@ -168,7 +168,7 @@ public sealed class NetworkInput
 
     private void SpawnUnitLocally(string unitTypeId, Guid playerId, Guid unitId, float x, float y, float z)
     {
-        Vector3 target = new(x, z, y);
+        Vector3 target = new(x, y, z);
         Globals.World.Units.SpawnUnit(unitTypeId, target, unitId, playerId);
 
         string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);
