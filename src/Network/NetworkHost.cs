@@ -148,6 +148,8 @@ public sealed class NetworkHost
                 unit.UpdateHost(gameTime);
             }
 
+            UpdateDefensiveTargets();
+
             foreach (Unit unit in _world.Units.Units.OfType<Unit>())
             {
                 if (!unit.IsReadyToShoot(_hostTime))
@@ -190,6 +192,67 @@ public sealed class NetworkHost
             constructionSite.MarkNetworkStateSent(_hostTime, StateHeartbeatInterval);
             sentUpdates++;
         }
+    }
+
+    private void UpdateDefensiveTargets()
+    {
+        Unit[] units = _world.Units.Units.OfType<Unit>().ToArray();
+        foreach (Unit defender in units)
+        {
+            // Player-issued targets always win over automatic defense.
+            if (defender.HasExplicitTarget || defender.Behavior == UnitBehavior.Passive)
+            {
+                if (defender.ClearTemporaryTarget())
+                    PublishTemporaryTarget(defender, null);
+                continue;
+            }
+
+            Unit? currentTarget = defender.TemporaryTargetUnitId is Guid currentTargetId
+                ? _world.Units.FindById(currentTargetId)
+                : null;
+            if (currentTarget is not null &&
+                defender.ShouldAttack(currentTarget) &&
+                IsWithinAttackRange(defender, currentTarget))
+            {
+                continue;
+            }
+
+            Unit? newTarget = units
+                .Where(candidate => defender.ShouldAttack(candidate))
+                .Where(candidate => IsWithinAttackRange(defender, candidate))
+                .OrderBy(candidate => HorizontalDistanceSquared(defender, candidate))
+                .FirstOrDefault();
+
+            if (newTarget is not null)
+            {
+                if (defender.SetTemporaryTarget(newTarget.UnitId))
+                    PublishTemporaryTarget(defender, newTarget.UnitId);
+            }
+            else if (defender.ClearTemporaryTarget())
+            {
+                PublishTemporaryTarget(defender, null);
+            }
+        }
+    }
+
+    private static bool IsWithinAttackRange(Unit attacker, Unit target) =>
+        HorizontalDistanceSquared(attacker, target) <= attacker.AttackRange * attacker.AttackRange;
+
+    private static float HorizontalDistanceSquared(Unit first, Unit second)
+    {
+        float x = first.Position.X - second.Position.X;
+        float z = first.Position.Z - second.Position.Z;
+        return x * x + z * z;
+    }
+
+    private void PublishTemporaryTarget(Unit unit, Guid? targetId)
+    {
+        NetworkMessage command = NetworkCommands.CreateTemporaryTargetCommand(
+            _networkHandler.LocalPeerId,
+            unit.UnitId,
+            targetId);
+        _networkHandler.EnqueueLocalMessage(command);
+        _ = _networkHandler.BroadcastAsync(command, CancellationToken.None);
     }
 
     private async Task ResolveGroundAttackAsync(NetworkMessage request)

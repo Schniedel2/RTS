@@ -249,6 +249,19 @@ public static class NetworkCommands
             UnitIds: request.UnitIds, X: request.X, Y: request.Y, Z: request.Z);
     }
 
+    /// <summary>Host-only replication of automatic defensive targeting.</summary>
+    public static NetworkMessage CreateTemporaryTargetCommand(
+        Guid hostId,
+        Guid unitId,
+        Guid? targetId)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.TemporaryTargetCommand,
+            hostId,
+            TargetId: targetId,
+            UnitIds: [unitId]);
+    }
+
     public static NetworkMessage CreateUnitHitCommand(
         Guid hostId,
         Guid targetUnitId,

@@ -2,8 +2,15 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace RTS;
+
+public enum UnitBehavior
+{
+    Aggressive,
+    Passive
+}
 
 public abstract class Unit : WorldObject
 {
@@ -25,6 +32,7 @@ public abstract class Unit : WorldObject
     public float AttackCooldown { get; set; } = 0.75f; // in seconds
     public Guid? AttackTargetId { get; private set; }
     public Vector3? AttackGroundTarget { get; private set; }
+    public UnitBehavior Behavior { get; set; } = UnitBehavior.Aggressive;
 
     // -----------------------------------------------------------------------
     // Visual targeting / aiming model
@@ -50,6 +58,11 @@ public abstract class Unit : WorldObject
 
     /// <summary>The unit currently being visually targeted, if any.</summary>
     public Guid? TargetUnitId { get; private set; }
+    /// <summary>
+    /// Host-assigned defensive target. It is used for aiming and shooting but
+    /// intentionally never feeds MobileUnit's attack-movement/chase logic.
+    /// </summary>
+    public Guid? TemporaryTargetUnitId { get; private set; }
     /// <summary>The terrain cell currently being visually targeted, if any.</summary>
     public Point? TargetTerrainCell { get; private set; }
     /// <summary>
@@ -155,6 +168,7 @@ public abstract class Unit : WorldObject
         TargetUnitId = targetId;
         TargetTerrainCell = null;
         _targetTerrainPosition = null;
+        ClearTemporaryTarget();
     }
 
     public void SetTargetTerrainCell(Point targetCell)
@@ -174,7 +188,48 @@ public abstract class Unit : WorldObject
         TargetUnitId = null;
         TargetTerrainCell = null;
         _targetTerrainPosition = null;
+        ClearTemporaryTarget();
     }
+
+    /// <summary>Only the host assigns temporary targets, then replicates them to clients.</summary>
+    public bool SetTemporaryTarget(Guid targetId)
+    {
+        if (HasExplicitTarget || TemporaryTargetUnitId == targetId)
+            return false;
+
+        TemporaryTargetUnitId = targetId;
+        return true;
+    }
+
+    public bool ClearTemporaryTarget()
+    {
+        if (TemporaryTargetUnitId is null)
+            return false;
+
+        TemporaryTargetUnitId = null;
+        return true;
+    }
+
+    public bool HasExplicitTarget =>
+        AttackTargetId is not null ||
+        AttackGroundTarget is not null ||
+        TargetUnitId is not null ||
+        TargetTerrainCell is not null;
+
+    /// <summary>Central extension point for team, visibility and priority rules.</summary>
+    public virtual bool IsEnemy(Unit other)
+    {
+        if (other == this || other.CreatorPlayerId == CreatorPlayerId)
+            return false;
+
+        Player? owner = Globals.Game.Players.FirstOrDefault(player => player.Id == CreatorPlayerId);
+        Player? otherOwner = Globals.Game.Players.FirstOrDefault(player => player.Id == other.CreatorPlayerId);
+        return owner is not null && otherOwner is not null && owner.TeamId != otherOwner.TeamId;
+    }
+
+    /// <summary>Central extension point evaluated by the host before a defensive target is assigned.</summary>
+    public virtual bool ShouldAttack(Unit candidate) =>
+        Behavior == UnitBehavior.Aggressive && IsEnemy(candidate);
 
     /// <summary>
     /// Advances the local mesh angle towards the current target. Call this
@@ -263,6 +318,15 @@ public abstract class Unit : WorldObject
             return null;
         }
 
+        if (TemporaryTargetUnitId is Guid temporaryTargetId)
+        {
+            MobileUnit? temporaryTarget = Globals.World.Units.FindById(temporaryTargetId);
+            if (temporaryTarget is not null)
+                return temporaryTarget.Position;
+
+            TemporaryTargetUnitId = null;
+        }
+
         return _targetTerrainPosition;
     }
 
@@ -346,10 +410,14 @@ public abstract class Unit : WorldObject
 
     public bool TryQueueShot(double hostTime, out MobileUnit? target)
     {
-        target = AttackTargetId is Guid targetId ? Globals.World.Units.FindById(targetId) : null;
+        Guid? targetId = AttackTargetId ?? TemporaryTargetUnitId;
+        target = targetId is Guid id ? Globals.World.Units.FindById(id) : null;
         if (target is null)
         {
-            AttackTargetId = null;
+            if (AttackTargetId is not null)
+                AttackTargetId = null;
+            else
+                TemporaryTargetUnitId = null;
             return false;
         }
 

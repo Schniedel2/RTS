@@ -135,6 +135,12 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type == NetworkMessageType.TemporaryTargetCommand)
+        {
+            ExecuteTemporaryTarget(message);
+            return;
+        }
+
         if (message.Type == NetworkMessageType.UnitHitCommand)
         {
             ApplyHit(message);
@@ -225,6 +231,21 @@ public sealed class NetworkInput
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
             if (Globals.World.Units.FindById(unitId) is MobileUnit unit)
                 unit.SetAttackGroundTarget(target);
+    }
+
+    private void ExecuteTemporaryTarget(NetworkMessage message)
+    {
+        foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
+        {
+            Unit? unit = Globals.World.Units.FindById(unitId);
+            if (unit is null)
+                continue;
+
+            if (message.TargetId is Guid targetId)
+                unit.SetTemporaryTarget(targetId);
+            else
+                unit.ClearTemporaryTarget();
+        }
     }
 
     private void ApplyHit(NetworkMessage message)
