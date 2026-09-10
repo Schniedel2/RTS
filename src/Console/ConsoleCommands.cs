@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Globalization;
 using RTS.Network;
 
 namespace RTS;
@@ -82,6 +83,27 @@ public class ConsoleCommands
         _console.RegisterCommand(
             "map-list",
             ListMap);
+        _console.RegisterAsyncCommand(
+            "map-publish",
+            PublishMapAsync);
+        _console.RegisterAsyncCommand(
+            "map-pull",
+            PullMapAsync);
+        _console.RegisterCommand(
+            "terrain-hills",
+            AddHills);
+        _console.RegisterCommand(
+            "terrain-mountain",
+            AddMountain);
+        _console.RegisterCommand(
+            "terrain-river",
+            AddRiver);
+        _console.RegisterCommand(
+            "terrain-smooth",
+            SmoothTerrain);
+        _console.RegisterCommand(
+            "terrain-symmetry",
+            ImproveTerrainSymmetry);
         _console.RegisterAsyncCommand(
             "ai-create",
             CreateAIPlayerAsync);
@@ -784,4 +806,126 @@ public class ConsoleCommands
         foreach (string fileName in mapDirectories)
             _console.Print($"  {fileName}");
    }
+
+    private async System.Threading.Tasks.Task PublishMapAsync(string[] args)
+    {
+        if (!_rtsGame.Network.IsHost)
+        {
+            _console.Print("Only the session host can publish a map.");
+            return;
+        }
+
+        try
+        {
+            NetworkMessage map = NetworkCommands.CreateWorldData(
+                _rtsGame.Network.LocalPeerId, _world.Terrain.GetWorldData());
+            await _rtsGame.Network.BroadcastAsync(map);
+            _console.Print("Map published to all connected clients.");
+        }
+        catch (Exception ex)
+        {
+            _console.Print($"Map publish error: {ex.Message}");
+        }
+    }
+
+    private async System.Threading.Tasks.Task PullMapAsync(string[] args)
+    {
+        if (_rtsGame.Network.IsHost)
+        {
+            _console.Print("The host already owns the current map.");
+            return;
+        }
+        if (!_rtsGame.Network.IsConnected)
+        {
+            _console.Print("No active network session.");
+            return;
+        }
+
+        try
+        {
+            await _rtsGame.NetworkClient.RequestWorldDataAsync();
+            _console.Print("Map requested from host.");
+        }
+        catch (Exception ex)
+        {
+            _console.Print($"Map pull error: {ex.Message}");
+        }
+    }
+
+    private void AddHills(string[] args)
+    {
+        int seed = Environment.TickCount;
+        if (args.Length is < 3 or > 4 ||
+            !TryParseInt(args[0], out int count) ||
+            !TryParseFloat(args[1], out float radius) ||
+            !TryParseFloat(args[2], out float height) ||
+            (args.Length == 4 && !TryParseInt(args[3], out seed)))
+        {
+            _console.Print("Usage: terrain-hills <count> <radius> <height> [seed]");
+            return;
+        }
+
+        TerrainGenerator.AddHills(_world.Terrain, count, radius, height, seed);
+        _console.Print($"Added {count} hills (seed {seed}).");
+    }
+
+    private void AddMountain(string[] args)
+    {
+        if (args.Length != 4 || !TryParseFloat(args[0], out float x) ||
+            !TryParseFloat(args[1], out float z) || !TryParseFloat(args[2], out float radius) ||
+            !TryParseFloat(args[3], out float height))
+        {
+            _console.Print("Usage: terrain-mountain <x> <z> <radius> <height>");
+            return;
+        }
+
+        TerrainGenerator.AddMountain(_world.Terrain, x, z, radius, height);
+        _console.Print("Mountain added.");
+    }
+
+    private void AddRiver(string[] args)
+    {
+        if (args.Length != 6 || !TryParseFloat(args[0], out float startX) ||
+            !TryParseFloat(args[1], out float startZ) || !TryParseFloat(args[2], out float endX) ||
+            !TryParseFloat(args[3], out float endZ) || !TryParseFloat(args[4], out float width) ||
+            !TryParseFloat(args[5], out float depth))
+        {
+            _console.Print("Usage: terrain-river <startX> <startZ> <endX> <endZ> <width> <depth>");
+            return;
+        }
+
+        TerrainGenerator.AddRiver(_world.Terrain, new Vector2(startX, startZ), new Vector2(endX, endZ), width, depth);
+        _console.Print("River added.");
+    }
+
+    private void SmoothTerrain(string[] args)
+    {
+        if (args.Length != 1 || !TryParseFloat(args[0], out float blend))
+        {
+            _console.Print("Usage: terrain-smooth <blend 0..1>");
+            return;
+        }
+
+        TerrainGenerator.Smooth(_world.Terrain, blend);
+        _console.Print("Terrain smoothed.");
+    }
+
+    private void ImproveTerrainSymmetry(string[] args)
+    {
+        if (args.Length != 2 || !TryParseFloat(args[1], out float blend) ||
+            (args[0] != "horizontal" && args[0] != "vertical"))
+        {
+            _console.Print("Usage: terrain-symmetry <horizontal|vertical> <blend 0..1>");
+            return;
+        }
+
+        TerrainGenerator.ImproveSymmetry(_world.Terrain, args[0] == "horizontal", blend);
+        _console.Print($"{args[0]} terrain symmetry improved.");
+    }
+
+    private static bool TryParseFloat(string value, out float result) =>
+        float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result);
+
+    private static bool TryParseInt(string value, out int result) =>
+        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
 }

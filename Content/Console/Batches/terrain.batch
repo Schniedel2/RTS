@@ -1,0 +1,5 @@
+terrain-hills 12 14 6 12345
+terrain-mountain 80 80 25 18
+terrain-river 10 20 150 120 5 4
+terrain-smooth 0.35
+terrain-symmetry vertical 0.65
