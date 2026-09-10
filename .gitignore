@@ -1,6 +1,7 @@
 # Build output
 [Bb]in/
 [Oo]bj/
+buildtmp/
 
 # Visual Studio and VS Code workspace state
 .vs/
