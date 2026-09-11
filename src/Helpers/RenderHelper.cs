@@ -96,7 +96,7 @@ public class RenderHelper
         VertexPositionColorNormalTexture[] vertices,
         int[] indices)
     {
-        effect.Parameters["TextureStrength"]?.SetValue(0.5f);
+        effect.Parameters["TextureStrength"]?.SetValue(1.0f);
 
         foreach (EffectPass pass in effect.CurrentTechnique.Passes)
         {

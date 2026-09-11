@@ -5,8 +5,6 @@ namespace RTS;
 
 public abstract class WorldObject
 {
-    protected virtual bool IsTextured => false;
-
     public Matrix Transform { get; protected set; }
     public Vector3 Position => Transform.Translation;
     public virtual string StateTypeId => "unit";

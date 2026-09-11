@@ -24,15 +24,31 @@ public class MeshHandler
         Meshes["reaktor"] = BBModelLoader.Load(Path.Combine(diretory, "reaktor.bbmodel"), Color.White);
         Meshes["gdi-base"] = BBModelLoader.Load(Path.Combine(diretory, "gdi-base.bbmodel"), Color.White);
 
-        CubeMapping.Apply(Meshes["jeep"], new CubeTileMapping(32, 0, 0, 2048, 2048));
-        CubeMapping.Apply(Meshes["reaktor"], new CubeTileMapping(32, 0, 0, 2048, 2048));
-        CubeMapping.Apply(Meshes["gdi-base"], new CubeTileMapping(32, 0, 0, 2048, 2048));
+        int tileSize = 64;
+        int tx = tileSize*3+8;
+        int ty = tileSize*2+8;
 
-        //  apply textures to submeshes
-        CubeMapping.Apply("*/t:wheel", new CubeTileMapping(32, (32 * 3 + 4) * 1, 0, 2048, 2048));
+        var Camuflage1 = new CubeTileMapping(tileSize, tx*0, ty*0, 2048, 2048);
+        var Camuflage2 = new CubeTileMapping(tileSize, tx*1, ty*0, 2048, 2048);
+        var Camuflage3 = new CubeTileMapping(tileSize, tx*2, ty*0, 2048, 2048);
+        var Wheels1 = new CubeTileMapping(tileSize, tx*0, ty*1, 2048, 2048);
+        var Barrel1 = new CubeTileMapping(tileSize, tx*1, ty*1, 2048, 2048);
 
-        CubeMapping.Apply("*/t:concrete", new CubeTileMapping(32, (32 * 3 + 4) * 0, 0, 2048, 2048));
-        CubeMapping.Apply("*/t:house", new CubeTileMapping(32, (32 * 3 + 4) * 1, 0, 2048, 2048));
+        var Concrete1 = new CubeTileMapping(tileSize, tx*0, ty*0, 2048, 2048);
+        var Bricks1 = new CubeTileMapping(tileSize, tx*1, ty*0, 2048, 2048);
+
+        //  apply textures to meshes
+        CubeMapping.Apply(Meshes["jeep"], Camuflage3);
+        CubeMapping.Apply("jeep/t:turret", Camuflage2);
+        CubeMapping.Apply(Meshes["reaktor"], Concrete1);
+        CubeMapping.Apply(Meshes["gdi-base"], Bricks1);
+
+        //  apply textures to submeshesw
+        CubeMapping.Apply("*/t:wheel", Wheels1);
+        CubeMapping.Apply("*/t:barrel", Barrel1);
+
+        CubeMapping.Apply("*/t:concrete", Concrete1);
+        CubeMapping.Apply("*/t:house", Bricks1);
     }
 
     public void DrawMesh(Effect effect, string meshName, Matrix baseWorld)
