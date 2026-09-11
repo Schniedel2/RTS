@@ -110,6 +110,9 @@ public class GameWorld
         unitEffect.Parameters["UnitTexture"].SetValue(Globals.BuildingsTexture);
         Units.DrawBuildings(unitEffect);
 
+        // Markers, projectiles and particles do not own atlas variants.
+        unitEffect.Parameters["UnitTextureUVOffset"]?.SetValue(Vector2.Zero);
+        unitEffect.Parameters["MaterialMaskUVOffset"]?.SetValue(Vector2.Zero);
 
         Markers.Draw(unitEffect);
         Projectiles.Draw(unitEffect);

@@ -74,6 +74,8 @@ public class UnitHandler
                 player => player.Id == unit.CreatorPlayerId);
             Color playerColor = owner?.Color ?? Color.White;
             effect.Parameters["PlayerColor"]?.SetValue(playerColor.ToVector3());
+            effect.Parameters["UnitTextureUVOffset"]?.SetValue(unit.UnitTextureUVOffset);
+            effect.Parameters["MaterialMaskUVOffset"]?.SetValue(unit.MaterialMaskUVOffset);
             unit.Draw(effect);
         }
     }
@@ -86,6 +88,8 @@ public class UnitHandler
                 player => player.Id == unit.CreatorPlayerId);
             Color playerColor = owner?.Color ?? Color.White;
             effect.Parameters["PlayerColor"]?.SetValue(playerColor.ToVector3());
+            effect.Parameters["UnitTextureUVOffset"]?.SetValue(unit.UnitTextureUVOffset);
+            effect.Parameters["MaterialMaskUVOffset"]?.SetValue(unit.MaterialMaskUVOffset);
             unit.Draw(effect);
         }
     }

@@ -16,6 +16,11 @@ texture UnitTexture;
 // A = Reserved
 texture MaterialMaskTexture;
 
+// Per-unit offsets into the respective texture atlases. They are intentionally
+// independent: a mesh variant may use a different material-mask layout.
+float2 UnitTextureUVOffset;
+float2 MaterialMaskUVOffset;
+
 float3 PlayerColor;
 float  PlayerColorStrength;
 
@@ -150,10 +155,13 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
     // Unit texture
     // -------------------------------------------------
 
+    float2 unitTextureUv = input.TexCoord + UnitTextureUVOffset;
+    float2 materialMaskUv = input.TexCoord + MaterialMaskUVOffset;
+
     float4 texColor =
         lerp(
             float4(1.0, 1.0, 1.0, 1.0),
-            tex2D(UnitTextureSampler, input.TexCoord),
+            tex2D(UnitTextureSampler, unitTextureUv),
             TextureStrength);
 
 
@@ -162,7 +170,7 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
     // -------------------------------------------------
 
     float4 materialMask =
-        tex2D(MaterialMaskSampler, input.TexCoord) * TextureStrength;
+        tex2D(MaterialMaskSampler, materialMaskUv) * TextureStrength;
 
     float playerMask =
         materialMask.r;
