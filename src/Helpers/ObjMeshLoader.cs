@@ -5,22 +5,16 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using RTS.Mapping;
 
 namespace RTS;
-
-/// <summary>Layout of the six cube faces inside a texture atlas, in pixels.</summary>
-/// <remarks>
-/// Left (X, Y), Top (X + TileSize, Y), Right (X + 2 * TileSize, Y),
-/// Front (X, Y + TileSize), Bottom (X + TileSize, Y + TileSize), Back (X + 2 * TileSize, Y + TileSize).
-/// </remarks>
-public sealed record CubeTileMapping(int TileSize, int X, int Y, int TextureWidth, int TextureHeight);
 
 public static class ObjMeshLoader
 {
     /// <summary>Sub-mesh of an OBJ model that acts as the rotatable turret.</summary>
     private const string TurretObjectName = "obj_1";
 
-    public static Mesh Load(string path, Color? color = null, CubeTileMapping? cubeMapping = null)
+    public static Mesh Load(string path, Color? color = null, UVMapping? cubeMapping = null)
     {        
         List<Vector3> positions = [];
         Dictionary<string, List<VertexPositionColorNormalTexture>> vertices = [];
@@ -96,8 +90,7 @@ public static class ObjMeshLoader
             // Nur für Cube-Texture-Mapping normalisieren
             if (cubeMapping is not null)
             {
-                Vector3 normalizedPosition =
-                    (vertex.Position - min) / size;
+                Vector3 normalizedPosition = cubeMapping.Normalize(vertex.Position, min, max);
 
                 vertex.TextureCoordinate =
                     GetCubeTextureCoordinate(
@@ -134,7 +127,7 @@ public static class ObjMeshLoader
     }
 
     /// <summary>Projects a normalized (0..1) model position onto the atlas tile of the cube face its normal points to.</summary>
-    private static Vector2 GetCubeTextureCoordinate(Vector3 position, Vector3 normal, CubeTileMapping mapping)
+    private static Vector2 GetCubeTextureCoordinate(Vector3 position, Vector3 normal, UVMapping mapping)
     {
         float absoluteX = Math.Abs(normal.X);
         float absoluteY = Math.Abs(normal.Y);
@@ -166,6 +159,7 @@ public static class ObjMeshLoader
             face = new(isBack ? 1.0f - position.X : position.X, 1.0f - position.Y);
         }
 
+        face = mapping.RepeatFace(face);
         float pixelX = mapping.X + (tileColumn + face.X) * mapping.TileSize;
         float pixelY = mapping.Y + (tileRow + face.Y) * mapping.TileSize;
         return new(pixelX / mapping.TextureWidth, pixelY / mapping.TextureHeight);

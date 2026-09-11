@@ -1,6 +1,7 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System.Collections.Generic;
+using RTS.Mapping;
 
 namespace RTS;
 
@@ -28,7 +29,7 @@ public sealed class SubMesh(string name, VertexPositionColorNormalTexture[] vert
     /// Replaces this sub-mesh's UV coordinates using its own bounds and the
     /// supplied cube texture-atlas layout.
     /// </summary>
-    public void ApplyCubeMapping(CubeTileMapping mapping) =>
+    public void ApplyCubeMapping(RTS.Mapping.UVMapping mapping) =>
         CubeMapping.Apply(this, mapping);
 }
 
@@ -152,7 +153,7 @@ public class Mesh
     /// bounds. Use <see cref="SubMesh.ApplyCubeMapping"/> for independent UV
     /// projection per individual part.
     /// </summary>
-    public void ApplyCubeMapping(CubeTileMapping mapping) =>
+    public void ApplyCubeMapping(UVMapping mapping) =>
         CubeMapping.Apply(this, mapping);
 
     public void Draw(Effect effect, Matrix world) => Root.Draw(effect, world, parameters);

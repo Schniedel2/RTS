@@ -5,6 +5,8 @@ using Microsoft.Xna.Framework.Graphics;
 using System.Runtime.CompilerServices;
 using System.Collections.Generic;
 
+using RTS.Mapping;
+
 namespace RTS;
 
 public class MeshHandler
@@ -18,8 +20,8 @@ public class MeshHandler
 
     public void LoadMeshes(string diretory)
     {
-        Meshes["default"] = ObjMeshLoader.Load(Path.Combine(diretory, "default.obj"), Color.White, new CubeTileMapping(32, 0, 0, 2048, 2048));
-        Meshes["tank"] = ObjMeshLoader.Load(Path.Combine(diretory, "tank.obj"), Color.White, new CubeTileMapping(32, 0, 0, 2048, 2048));
+        Meshes["default"] = ObjMeshLoader.Load(Path.Combine(diretory, "default.obj"), Color.White);
+        Meshes["tank"] = ObjMeshLoader.Load(Path.Combine(diretory, "tank.obj"), Color.White);
         Meshes["jeep"] = BBModelLoader.Load(Path.Combine(diretory, "jeep.bbmodel"), Color.White);
         Meshes["reaktor"] = BBModelLoader.Load(Path.Combine(diretory, "reaktor.bbmodel"), Color.White);
         Meshes["gdi-base"] = BBModelLoader.Load(Path.Combine(diretory, "gdi-base.bbmodel"), Color.White);
@@ -30,15 +32,19 @@ public class MeshHandler
 
         var Camuflage1 = new CubeTileMapping(tileSize, tx*0, ty*0, 2048, 2048);
         var Camuflage2 = new CubeTileMapping(tileSize, tx*1, ty*0, 2048, 2048);
-        var Camuflage3 = new CubeTileMapping(tileSize, tx*2, ty*0, 2048, 2048);
+        var Camuflage3 = new CubeProportionalTileMapping(tileSize, tx*2, ty*0, 2048, 2048, TileRepeat: 2);
         var Wheels1 = new CubeTileMapping(tileSize, tx*0, ty*1, 2048, 2048);
         var Barrel1 = new CubeTileMapping(tileSize, tx*1, ty*1, 2048, 2048);
 
-        var Concrete1 = new CubeTileMapping(tileSize, tx*0, ty*0, 2048, 2048);
-        var Bricks1 = new CubeTileMapping(tileSize, tx*1, ty*0, 2048, 2048);
+        var Concrete1 = new CubeProportionalTileMapping(tileSize, tx*0, ty*0, 2048, 2048);
+        var Bricks1 = new CubeProportionalTileMapping(tileSize, tx*1, ty*0, 2048, 2048);
 
         //  apply textures to meshes
-        CubeMapping.Apply(Meshes["jeep"], Camuflage3);
+        CubeMapping.Apply(Meshes["tank"], Camuflage1);
+        CubeMapping.Apply(Meshes["default"], Camuflage3);
+        CubeMapping.Apply("default/*", Camuflage2);
+
+        CubeMapping.Apply(Meshes["jeep"], Camuflage2);
         CubeMapping.Apply("jeep/t:turret", Camuflage2);
         CubeMapping.Apply(Meshes["reaktor"], Concrete1);
         CubeMapping.Apply(Meshes["gdi-base"], Bricks1);
