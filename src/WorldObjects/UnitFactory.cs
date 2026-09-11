@@ -5,13 +5,13 @@ namespace RTS;
 
 public static class UnitFactory
 {
-    public static MobileUnit SpawnUnit(
+    public static MobileUnit? SpawnUnit(
         string unitTypeName,
         Vector3 position,
         Guid unitId,
         Guid creatorPlayerId)
     {
-        MobileUnit unit;            
+        MobileUnit? unit;            
         switch (unitTypeName.ToLower())
         {
             case "soldier":
@@ -32,8 +32,8 @@ public static class UnitFactory
             case "gdi-bulldozer":
                 unit = new GDIBulldozer(position, unitId);
                 break;
-            default:
-                throw new ArgumentException($"Unknown unit type: {unitTypeName}");
+            default:            
+                return null;
         }
         unit.SetCreatorPlayer(creatorPlayerId);
         return unit;

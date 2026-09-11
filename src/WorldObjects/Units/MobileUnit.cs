@@ -25,7 +25,7 @@ public class MobileUnit : Unit
     public float WheelRadius { get; set; } = 0.35f;
     public virtual float BuildRate => 0.0f;
     public IMovementProfile MovementProfile { get; }
-    public Guid? CurrentConstructionSiteId { get; private set; }
+    public Guid? TargetBuildingId { get; private set; }
     public bool IsBuilding { get; private set; }
     public IReadOnlyList<Point> PlannedPath => _plannedPath;
     public override IReadOnlyList<UnitAction> Actions =>
@@ -189,7 +189,7 @@ public class MobileUnit : Unit
 
         if (_plannedPath.Count == 0)
         {
-            if (CurrentConstructionSiteId is not null)
+            if (TargetBuildingId is not null)
             {
                 IsBuilding = true;
                 PathDebug("arrived at construction site; building starts");
@@ -273,7 +273,7 @@ public class MobileUnit : Unit
         GameWorld map,
         GotoCommand command)
     {
-        CurrentConstructionSiteId = null;
+        TargetBuildingId = null;
         IsBuilding = false;
         CurrentCommand = command;
 
@@ -291,7 +291,7 @@ public class MobileUnit : Unit
 
     public virtual bool TryReceiveBuildConstructionCommand(
         GameWorld map,
-        ConstructionSite constructionSite)
+        Building constructionSite)
     {
         Vector3 sitePosition = constructionSite.Position;
         float approachDistance = Math.Max(constructionSite.Length, constructionSite.Width) * 0.5f +
@@ -314,7 +314,7 @@ public class MobileUnit : Unit
 
             bool accepted = TryReceiveGotoCommand(map, new GotoCommand(target));
             if (accepted)
-                CurrentConstructionSiteId = constructionSite.UnitId;
+                TargetBuildingId = constructionSite.UnitId;
 
             return accepted;
         }
@@ -334,7 +334,7 @@ public class MobileUnit : Unit
         if (CurrentCommand is not null || _plannedPath.Count > 0)
             PathDebug($"command cleared remainingWaypoints={_plannedPath.Count}");
         _plannedPath.Clear();
-        CurrentConstructionSiteId = null;
+        TargetBuildingId = null;
         IsBuilding = false;
         base.ClearCommand();
     }
@@ -391,7 +391,7 @@ public class MobileUnit : Unit
         if (FollowUnitId is not Guid followId)
             return;
 
-        MobileUnit? followUnit = Globals.World.Units.FindById(followId);
+        Unit? followUnit = Globals.World.Units.FindById(followId);
         if (followUnit is null || followUnit == this)
         {
             ClearFollowUnit();

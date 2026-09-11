@@ -15,7 +15,7 @@ public enum UnitBehavior
 public abstract class Unit : WorldObject
 {
     public Guid UnitId { get; }
-    public float HitPoints { get; private set; }
+    public float HitPoints { get; set; }
     public float MaxHitPoints { get; }
     public Guid CreatorPlayerId { get; private set; }
     public int Length { get; protected set; }
@@ -84,6 +84,7 @@ public abstract class Unit : WorldObject
     public float TargetAngleMaximumDegrees { get; set; } = 360.0f;
     private double _nextShotTime;
     private Vector3? _targetTerrainPosition;
+    public bool IsDamaged => HitPoints < MaxHitPoints;
 
     public Unit(
         Vector3 position,
@@ -176,7 +177,7 @@ public abstract class Unit : WorldObject
     /// </summary>
     public bool SetFollowUnit(Guid targetId)
     {
-        MobileUnit? target = Globals.World.Units.FindById(targetId);
+        Unit? target = Globals.World.Units.FindById(targetId);
         if (target is null || target == this)
             return false;
 
@@ -371,7 +372,7 @@ public abstract class Unit : WorldObject
     {
         if (TargetUnitId is Guid targetUnitId)
         {
-            MobileUnit? targetUnit = Globals.World.Units.FindById(targetUnitId);
+            Unit? targetUnit = Globals.World.Units.FindById(targetUnitId);
             if (targetUnit is not null)
                 return targetUnit.Position;
 
@@ -381,7 +382,7 @@ public abstract class Unit : WorldObject
 
         if (TemporaryTargetUnitId is Guid temporaryTargetId)
         {
-            MobileUnit? temporaryTarget = Globals.World.Units.FindById(temporaryTargetId);
+            Unit? temporaryTarget = Globals.World.Units.FindById(temporaryTargetId);
             if (temporaryTarget is not null)
                 return temporaryTarget.Position;
 
@@ -469,7 +470,7 @@ public abstract class Unit : WorldObject
             maximumStepDegrees);
     }
 
-    public bool TryQueueShot(double hostTime, out MobileUnit? target)
+    public bool TryQueueShot(double hostTime, out Unit? target)
     {
         Guid? targetId = AttackTargetId ?? TemporaryTargetUnitId;
         target = targetId is Guid id ? Globals.World.Units.FindById(id) : null;

@@ -97,15 +97,20 @@ public class GameWorld
         unitEffect.Parameters["ShadowTexture"]?.SetValue(shadowTexture);
         unitEffect.Parameters["LightDirection"]?.SetValue(lightDirection);
 
-        unitEffect.Parameters["UnitTexture"].SetValue(Globals.UnitsTexture);
-        unitEffect.Parameters["MaterialMaskTexture"].SetValue(Globals.UnitsMaterialMask);
         Vector3 playerColor = Globals.Game.Players.Count > 0
             ? Globals.Game.Players[0].Color.ToVector3()
             : Color.Red.ToVector3();
         unitEffect.Parameters["PlayerColor"].SetValue(playerColor);
         unitEffect.Parameters["PlayerColorStrength"].SetValue(1.0f);
 
-        Units.Draw(unitEffect);
+        unitEffect.Parameters["UnitTexture"].SetValue(Globals.UnitsTexture);
+        unitEffect.Parameters["MaterialMaskTexture"].SetValue(Globals.UnitsMaterialMask);
+        Units.DrawMobileUnits(unitEffect);
+
+        unitEffect.Parameters["UnitTexture"].SetValue(Globals.BuildingsTexture);
+        Units.DrawBuildings(unitEffect);
+
+
         Markers.Draw(unitEffect);
         Projectiles.Draw(unitEffect);
         Particles.Draw(unitEffect);

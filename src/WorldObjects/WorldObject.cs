@@ -56,6 +56,10 @@ public abstract class WorldObject
         DrawMesh(effect, Vertices, Indices);
     }
     */
+    public virtual void Draw2D(SpriteBatch spriteBatch, Camera camera, Viewport viewport)
+    {
+        
+    }
 
     public abstract void Update(GameTime gameTime);
     public virtual void UpdateHost(GameTime gameTime)

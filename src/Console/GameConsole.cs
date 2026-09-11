@@ -284,12 +284,15 @@ public class GameConsole
             int stop = _autoCompleteIndex;
             do
             {            
-                _autoCompleteIndex++;
-                _autoCompleteIndex %= _commands.Count;
+                List<string> commands = _commands.Keys.ToList();
+                commands.AddRange(_asyncCommands.Keys.ToList());
 
-                if (_commands.Keys.ElementAt(_autoCompleteIndex).StartsWith(_autoCompleteText, StringComparison.InvariantCultureIgnoreCase))
+                _autoCompleteIndex++;
+                _autoCompleteIndex %= commands.Count;
+
+                if (commands[_autoCompleteIndex].StartsWith(_autoCompleteText, StringComparison.InvariantCultureIgnoreCase))
                 {
-                    _input = _commands.Keys.ElementAt(_autoCompleteIndex);
+                    _input = commands[_autoCompleteIndex];
                     _cursorPosition = _input.Length;
                     return;
                 }

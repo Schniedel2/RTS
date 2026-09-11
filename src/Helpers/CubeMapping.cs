@@ -17,6 +17,32 @@ public static class CubeMapping
             Apply(subMesh, mapping, min, max);
     }
 
+    static bool NameMacthes(string name, string pattern)
+    {
+        if (pattern.EndsWith("*"))
+        {
+            string prefix = pattern.TrimEnd('*');
+            return name.StartsWith(prefix);
+        }
+        return name == pattern;
+    }
+
+    public static void Apply(string meshNamePath, CubeTileMapping mapping)
+    {
+        string meshName = meshNamePath.Split("/")[0]; // Get the file name from the path
+        string submeshPath = meshNamePath.Substring(meshName.Length + 1);
+
+        foreach (string name in Globals.MeshHandler.Meshes.Keys)
+        {
+            if (NameMacthes(name, meshName))
+            foreach (SubMesh subMesh in Globals.MeshHandler.Meshes[name].SubMeshes)            
+                {
+                    if (NameMacthes(subMesh.Name, submeshPath))                    
+                        Apply(subMesh, mapping);
+                }
+        }
+    }
+
     /// <summary>Maps one part against its own bounds.</summary>
     public static void Apply(SubMesh subMesh, CubeTileMapping mapping)
     {

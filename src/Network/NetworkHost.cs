@@ -156,7 +156,7 @@ public sealed class NetworkHost
             {
                 if (!unit.IsReadyToShoot(_hostTime))
                     continue;
-                if (!unit.TryQueueShot(_hostTime, out MobileUnit? target) || target is null)
+                if (!unit.TryQueueShot(_hostTime, out Unit? target) || target is null)
                     continue;
                 _requestQueue.Enqueue(NetworkCommands.CreateAttackRequest(
                     _networkHandler.LocalPeerId,
@@ -176,11 +176,11 @@ public sealed class NetworkHost
         }
 
         int sentUpdates = 0;
-        foreach (ConstructionSite constructionSite in _world.Units.Units
-            .OfType<ConstructionSite>()
+        foreach (Building constructionSite in _world.Units.Units
+            .OfType<Building>()
             .Where(site => site.NetworkStateDirty)
             .Concat(_world.Units.Units
-                .OfType<ConstructionSite>()
+                .OfType<Building>()
                 .Where(site => !site.NetworkStateDirty && site.IsNetworkUpdateDue(_hostTime))))
         {
             if (sentUpdates >= MaximumStateUpdatesPerTick)
@@ -268,7 +268,7 @@ public sealed class NetworkHost
             if (_world.Units.FindById(attackerId) is not Unit)
                 continue;
 
-            MobileUnit? target = _world.Units.Units.FirstOrDefault(unit =>
+            Unit? target = _world.Units.Units.FirstOrDefault(unit =>
             {
                 Vector2 offset = new(
                     unit.Position.X - impactPosition.X,

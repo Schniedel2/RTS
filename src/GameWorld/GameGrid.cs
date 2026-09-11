@@ -5,22 +5,22 @@ namespace RTS;
 
 public class GameGrid
 {
-    private readonly MobileUnit?[,] _occupants;
+    private readonly Unit?[,] _occupants;
 
     public int Width { get; }
     public int Height { get; }
     public int CellSize { get; }
-    private readonly Dictionary<MobileUnit, Point> _positions = [];
+    private readonly Dictionary<Unit, Point> _positions = [];
 
     public GameGrid(int width, int height, int cellSize)
     {
         Width = width;
         Height = height;
         CellSize = cellSize;
-        _occupants = new MobileUnit[width, height];
+        _occupants = new Unit[width, height];
     }
 
-    private void Clear(MobileUnit unit)
+    private void Clear(Unit unit)
     {
         if (!_positions.TryGetValue(unit, out Point centerCell))
             return;
@@ -45,7 +45,7 @@ public class GameGrid
         _positions.Remove(unit);
     }
 
-    public bool CanPlace(MobileUnit unit, Point centerCell)
+    public bool CanPlace(Unit unit, Point centerCell)
     {
         GetFootprintBounds(unit, centerCell, out int left, out int top, out int right, out int bottom);
 
@@ -56,7 +56,7 @@ public class GameGrid
         {
             for (int x = left; x <= right; x++)
             {
-                MobileUnit? occupant = _occupants[x, y];
+                Unit? occupant = _occupants[x, y];
 
                 if (occupant != null && occupant != unit)
                     return false;
@@ -88,7 +88,7 @@ public class GameGrid
         return _occupants[x, y] != null;
     }
 
-    public void Remove(MobileUnit unit)
+    public void Remove(Unit unit)
     {
         Clear(unit);
     }
@@ -108,7 +108,7 @@ public class GameGrid
             (centerCell.Y + 0.5f) * CellSize);
     }
 
-    private void Occupy(MobileUnit unit, Point centerCell)
+    private void Occupy(Unit unit, Point centerCell)
     {
         GetFootprintBounds(
             unit,
@@ -128,7 +128,7 @@ public class GameGrid
     }
 
     private static void GetFootprintBounds(
-        MobileUnit unit,
+        Unit unit,
         Point centerCell,
         out int left,
         out int top,

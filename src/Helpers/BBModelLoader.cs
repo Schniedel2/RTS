@@ -99,6 +99,9 @@ public static class BBModelLoader
     /// <summary>Wheel groups roll around their local X axis.</summary>
     private static void ApplyRotationParameter(MeshNode node, bool isGroup)
     {
+        node.RotationParameter = node.Name;
+        node.RotationAxis = Vector3.Up;
+
         if (node.Name.Contains("turret", StringComparison.OrdinalIgnoreCase))
         {
             node.RotationParameter = Mesh.TurretAngle;

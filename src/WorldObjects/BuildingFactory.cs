@@ -5,7 +5,7 @@ namespace RTS;
 
 public static class BuildingFactory
 {
-    public static Building SpawnBuilding(
+    public static Building? SpawnBuilding(
         string buildingTypeName,
         Vector3 position,
         Guid unitId,
@@ -15,13 +15,16 @@ public static class BuildingFactory
         switch (buildingTypeName.ToLower())
         {
             case "gdi-barracks":
-                building = new ConstructionSite(position, unitId, buildingTypeName, 10000);
+                building = new GDIBarracks(position, unitId);
                 break;
             case "gdi-base":
-                building = new ConstructionSite(position, unitId, buildingTypeName, 30000);
+                building = new GDIBase(position, unitId);
+                break;
+            case "reaktor":
+                building = new Reaktor(position, unitId);
                 break;
             default:
-                throw new ArgumentException($"Unknown building type: {buildingTypeName}");
+                return null;
         }
         building.SetCreatorPlayer(creatorPlayerId);
         return (Building)building;

@@ -18,11 +18,11 @@ public class PlayerHandler
 {    
     private readonly GameWorld _map;
     private readonly MarkerHandler _markerHandler;
-    private readonly List<MobileUnit> _selectedUnits = [];
+    private readonly List<Unit> _selectedUnits = [];
     private MouseState _previousMouseState;
     private Point _selectionStart;
 
-    public IReadOnlyList<MobileUnit> SelectedUnits => _selectedUnits;
+    public IReadOnlyList<Unit> SelectedUnits => _selectedUnits;
     public UnitAction? ActiveAction { get; private set; }
     private Rectangle _currentSelectionRect;
     private bool _isSelectingUnits;
@@ -178,7 +178,7 @@ public class PlayerHandler
         _previousMouseState = mouse;
     }
 
-    UnitActionType SuggestAction(List<MobileUnit> selectedUnits, Vector3 mouseWorldPosition, out Unit? targetUnit)
+    UnitActionType SuggestAction(List<Unit> selectedUnits, Vector3 mouseWorldPosition, out Unit? targetUnit)
     {
         targetUnit = null;
         if (selectedUnits.Count == 0)
@@ -209,9 +209,15 @@ public class PlayerHandler
         if (targetUnit.IsEnemy(selectedUnits.First()))
             return UnitActionType.Attack;
 
-        if (targetUnit.IsSamePlayer(selectedUnits.First()) && (targetUnit is ConstructionSite))
+        if (targetUnit.IsSamePlayer(selectedUnits.First()) && (targetUnit is Building))
         {
-            return UnitActionType.BuildConstruction;
+            Building b = (targetUnit as Building)!;
+            if (!b.IsCompleted)
+                return UnitActionType.BuildConstruction;
+
+            if (!b.IsDamaged)
+                return UnitActionType.Repair;
+            return UnitActionType.None;
         }
 
         if (keyboardState.IsKeyDown(Keys.LeftControl) || keyboardState.IsKeyDown(Keys.RightControl))
@@ -226,7 +232,7 @@ public class PlayerHandler
         return UnitActionType.None;
     }
 
-    bool PerformClickAction(List<MobileUnit> selectedUnits, Vector3 mouseWorldPosition)
+    bool PerformClickAction(List<Unit> selectedUnits, Vector3 mouseWorldPosition)
     {
         if (ActiveAction == null)
             return false;
@@ -244,7 +250,7 @@ public class PlayerHandler
 
     void ClearSelection()
     {
-        foreach (MobileUnit unit in _selectedUnits)
+        foreach (Unit unit in _selectedUnits)
             unit.Select(false);
         _selectedUnits.Clear();
         ActiveAction = null;
@@ -254,7 +260,7 @@ public class PlayerHandler
     {
         ClearSelection();
 
-        foreach (MobileUnit unit in _map.Units.Units)
+        foreach (Unit unit in _map.Units.Units)
         {
             Rectangle unitBounds = unit.GetScreenBounds(
                 camera.View,
@@ -373,7 +379,7 @@ public class PlayerHandler
             }
         }
 
-        private void RequestBuildConstruction(ConstructionSite constructionSite)
+        private void RequestBuildConstruction(Building constructionSite)
         {
             if (_selectedUnits.Count == 0)
                 return;
@@ -383,23 +389,17 @@ public class PlayerHandler
                 constructionSite.UnitId);
         }
 
-        private ConstructionSite? FindConstructionSiteAt(
+        private Building? FindBuildingAt(
             Camera camera,
             Viewport viewport,
             Point screenPosition)
         {
             return _map.Units.Units
-                .OfType<ConstructionSite>()
+                .OfType<Building>()
                 .FirstOrDefault(site => site.GetScreenBounds(
                     camera.View,
                     camera.Projection,
                     viewport).Contains(screenPosition));
-        }
-
-        private MobileUnit? FindMobileUnitAt(Camera camera, Viewport viewport, Point screenPosition)
-        {
-            return _map.Units.Units.FirstOrDefault(unit => unit.GetScreenBounds(
-                camera.View, camera.Projection, viewport).Contains(screenPosition));
         }
 
         private Unit? FindUnitAt(Camera camera, Viewport viewport, Point screenPosition)
@@ -486,7 +486,7 @@ public class PlayerHandler
         Camera camera,
         Viewport viewport)
     {                
-        foreach (MobileUnit unit in _selectedUnits)
+        foreach (Unit unit in _selectedUnits)
         {
             Rectangle unitBounds = unit.GetScreenBounds(
                 camera.View,

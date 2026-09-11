@@ -9,6 +9,7 @@ public enum UnitActionType
     Build,
     BuildConstruction,
     Follow,
+    TrainUnit,
     EnterBuilding,
     LeaveBuilding,
     Repair,

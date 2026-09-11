@@ -47,7 +47,7 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
     
-    public Task RequestGotoAsync(List<MobileUnit> units, Vector3 position)
+    public Task RequestGotoAsync(List<Unit> units, Vector3 position)
     {
         Guid[] unitIds = units.Select(unit => unit.UnitId).ToArray();
         return RequestGotoAsync(unitIds, position.X, position.Y, position.Z, CancellationToken.None);
@@ -70,14 +70,14 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, CancellationToken.None);
     }
 
-    public Task RequestStopAsync(IEnumerable<MobileUnit> units)
+    public Task RequestStopAsync(IEnumerable<Unit> units)
     {
         return _networkHandler.SendToHostAsync(NetworkCommands.CreateStopRequest(
             _networkHandler.LocalPeerId, units.Select(unit => unit.UnitId).ToArray()));
     }
 
     public Task RequestBuildConstructionAsync(
-        IEnumerable<MobileUnit> units,
+        IEnumerable<Unit> units,
         Guid constructionSiteId,
         CancellationToken cancellationToken = default)
     {
@@ -109,7 +109,7 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
 
-    public Task RequestAttackTerrainAsync(IEnumerable<MobileUnit> units, Vector3 target)
+    public Task RequestAttackTerrainAsync(IEnumerable<Unit> units, Vector3 target)
     {
         NetworkMessage request = NetworkCommands.CreateAttackGroundRequest(
             _networkHandler.LocalPeerId,
@@ -118,7 +118,7 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, CancellationToken.None);
     }
 
-    public Task RequestAttackTargetAsync(IEnumerable<MobileUnit> units, Guid targetId)
+    public Task RequestAttackTargetAsync(IEnumerable<Unit> units, Guid targetId)
     {
         NetworkMessage request = NetworkCommands.CreateAttackTargetRequest(
             _networkHandler.LocalPeerId,
@@ -127,7 +127,7 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, CancellationToken.None);
     }
 
-    public Task RequestFollowAsync(IEnumerable<MobileUnit> units, Guid targetId)
+    public Task RequestFollowAsync(IEnumerable<Unit> units, Guid targetId)
     {
         NetworkMessage request = NetworkCommands.CreateFollowRequest(
             _networkHandler.LocalPeerId, units.Select(unit => unit.UnitId).ToArray(), targetId);

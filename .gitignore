@@ -3,6 +3,8 @@
 [Oo]bj/
 buildtmp/
 
+_Art/
+
 # Visual Studio and VS Code workspace state
 .vs/
 .vscode/

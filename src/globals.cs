@@ -35,6 +35,7 @@ public static class Globals
     public static MeshHandler MeshHandler = null!;
     public static Texture2D ActionIcons = null!;
     public static Texture2D UnitsTexture = null!;
+    public static Texture2D BuildingsTexture = null!;
     public static Texture2D UnitsMaterialMask = null!;
     public static RTSGame Game = null!;
     public static GameWorld World = null!;

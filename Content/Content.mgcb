@@ -42,6 +42,11 @@
 /processor:TextureProcessor
 /build:unitsTexture.png
 
+#begin buildingsTexture.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/build:buildingsTexture.png
+
 #begin unitsMaterialMask.png
 /importer:TextureImporter
 /processor:TextureProcessor

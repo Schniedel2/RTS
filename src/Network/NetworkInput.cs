@@ -202,7 +202,7 @@ public sealed class NetworkInput
 
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
         {
-            MobileUnit? unit = Globals.World.Units.FindById(unitId);
+            MobileUnit? unit = Globals.World.Units.FindMobileUnitById(unitId);
             unit?.ClearFollowUnit();
             unit?.TryReceiveGotoCommand(Globals.World, command);
         }
@@ -228,7 +228,7 @@ public sealed class NetworkInput
         if (message.TargetId is not Guid targetId)
             return;
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
-            if (Globals.World.Units.FindById(unitId) is MobileUnit unit)
+            if (Globals.World.Units.FindById(unitId) is Unit unit)
                 unit.SetAttackTarget(targetId);
     }
 
@@ -236,7 +236,7 @@ public sealed class NetworkInput
     {
         Vector3 target = new(message.X, message.Y, message.Z);
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
-            if (Globals.World.Units.FindById(unitId) is MobileUnit unit)
+            if (Globals.World.Units.FindById(unitId) is Unit unit)
                 unit.SetAttackGroundTarget(target);
     }
 
@@ -245,7 +245,7 @@ public sealed class NetworkInput
         if (message.TargetId is not Guid targetId)
             return;
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
-            if (Globals.World.Units.FindById(unitId) is MobileUnit unit)
+            if (Globals.World.Units.FindById(unitId) is Unit unit)
                 unit.SetFollowUnit(targetId);
     }
 
@@ -267,7 +267,7 @@ public sealed class NetworkInput
     private void ApplyHit(NetworkMessage message)
     {
         if (message.UnitId is not Guid unitId ||
-            Globals.World.Units.FindById(unitId) is not MobileUnit unit)
+            Globals.World.Units.FindById(unitId) is not Unit unit)
             return;
 
         unit.ApplyHitPoints(message.HitPoints);
@@ -276,7 +276,7 @@ public sealed class NetworkInput
     private void DestroyUnit(NetworkMessage message)
     {
         if (message.UnitId is not Guid unitId ||
-            Globals.World.Units.FindById(unitId) is not MobileUnit unit)
+            Globals.World.Units.FindById(unitId) is not Unit unit)
             return;
 
         Globals.World.Particles.EmitExplosion(unit.Position + Vector3.Up);
@@ -286,14 +286,15 @@ public sealed class NetworkInput
     private void ExecuteBuildConstruction(NetworkMessage message)
     {
         if (message.ConstructionSiteId is not Guid constructionSiteId ||
-            Globals.World.Units.FindById(constructionSiteId) is not ConstructionSite constructionSite)
+            Globals.World.Units.FindById(constructionSiteId) is not Building constructionSite)
             return;
 
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
         {
-            MobileUnit? unit = Globals.World.Units.FindById(unitId);
+            Unit? unit = Globals.World.Units.FindById(unitId);
             unit?.ClearFollowUnit();
-            unit?.TryReceiveBuildConstructionCommand(Globals.World, constructionSite);
+            Unit? genericUnit = unit as Unit;
+            (genericUnit as MobileUnit)?.TryReceiveBuildConstructionCommand(Globals.World, constructionSite);
         }
     }
 

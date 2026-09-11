@@ -13,6 +13,7 @@ public class GDIBulldozer : Car
     [
         new(UnitActionType.Goto, "Goto", 0, 1),
         new(UnitActionType.Follow, "Follow", 6, 1),
+        new(UnitActionType.Build, "Build Reaktor", 1, 4, "Reaktor"),
         new(UnitActionType.Build, "Build Base", 1, 4, "GDI-Base"),
         new(UnitActionType.Build, "Build Barracks", 2, 4, "GDI-Barracks"),
         new(UnitActionType.BuildConstruction, "Build construction site", 0, 4),
@@ -43,13 +44,13 @@ public class GDIBulldozer : Car
     {
         if (IsBuilding)
         {
-            if (CurrentConstructionSiteId.HasValue)
+            if (TargetBuildingId.HasValue)
             {
-                Unit? CurrentConstructionSite = Globals.World.Units.FindById(CurrentConstructionSiteId.Value);
-                ConstructionSite? constructionSite = (CurrentConstructionSite is ConstructionSite site) ? site : null;
-                if (constructionSite != null)
+                Unit? CurrentBuilding = Globals.World.Units.FindById(TargetBuildingId.Value);
+                Building? building = (CurrentBuilding is Building site) ? site : null;
+                if (building != null)
                 {
-                    constructionSite.AdvanceConstruction(BuildRate * (float)gameTime.ElapsedGameTime.TotalSeconds);
+                    building.AdvanceConstruction(BuildRate * (float)gameTime.ElapsedGameTime.TotalSeconds);
                 }
             }
         }

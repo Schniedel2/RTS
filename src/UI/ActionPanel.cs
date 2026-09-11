@@ -30,7 +30,7 @@ public sealed class ActionPanel
         _pixel.SetData([Color.White]);
     }
 
-    public bool Update(IReadOnlyList<MobileUnit> selectedUnits, Viewport viewport)
+    public bool Update(IReadOnlyList<Unit> selectedUnits, Viewport viewport)
     {
         _tooltipText = "";
         _isMouseOnPanel = false;

@@ -39,9 +39,6 @@ public class ConsoleCommands
             "WhoAmI",
             WhoAmI);
         _console.RegisterCommand(
-            "Set",
-            Set);
-        _console.RegisterCommand(
             "telemetry",
             Telemetry);
         _console.RegisterCommand(
@@ -83,6 +80,12 @@ public class ConsoleCommands
         _console.RegisterCommand(
             "map-list",
             ListMap);
+        _console.RegisterCommand(
+            "set-player-displayname",
+            SetPlayerDisplayName);
+        _console.RegisterAsyncCommand(
+            "set-player-color",
+            SetPlayerColorAsync);
         _console.RegisterAsyncCommand(
             "map-publish",
             PublishMapAsync);
@@ -761,24 +764,18 @@ public class ConsoleCommands
         _console.Print($"You are: {_rtsGame.Network.DisplayName}");
     }
 
-    private void Set(string[] args)
+    private void SetPlayerDisplayName(string[] args)
     {
         if (args.Length == 0)
         {
             _console.Print("current settings: ");
             _console.Print("- DisplayName: " + _rtsGame.Network.DisplayName);                        
-        }
-
-        if (args.Length < 2)
-        {
-            _console.Print("Usage: set displayname <newname>");
+            _console.Print("");
+            _console.Print("Usage: set-player-displayname <newname>");
             return;
         }
 
-        string varName = args[0].ToLowerInvariant();
-
-        if (varName == "displayname")
-            _rtsGame.Network.DisplayName = args[1];
+        _rtsGame.Network.DisplayName = args[1];
     }
 
     private void SaveMap(string[] args)
@@ -806,6 +803,33 @@ public class ConsoleCommands
         foreach (string fileName in mapDirectories)
             _console.Print($"  {fileName}");
    }
+
+    private async System.Threading.Tasks.Task SetPlayerColorAsync(string[] args)
+    {
+        if (!TryParsePlayerColor(args, out Color color))
+        {
+            _console.Print("Usage: set-player-color <red|blue|green|yellow|orange|purple|cyan|white|#RRGGBB> or <r> <g> <b>");
+            return;
+        }
+
+        Player? localPlayer = _rtsGame.Players.FirstOrDefault(player =>
+            player.Id == _rtsGame.Network.LocalPeerId);
+        if (localPlayer is null)
+        {
+            _console.Print("Local player was not found.");
+            return;
+        }
+
+        try
+        {
+            await localPlayer.RequestColorAsync(_rtsGame.NetworkClient, color);
+            _console.Print($"Requested player color #{color.R:X2}{color.G:X2}{color.B:X2}.");
+        }
+        catch (Exception ex)
+        {
+            _console.Print($"Player color error: {ex.Message}");
+        }
+    }
 
     private async System.Threading.Tasks.Task PublishMapAsync(string[] args)
     {
@@ -928,4 +952,51 @@ public class ConsoleCommands
 
     private static bool TryParseInt(string value, out int result) =>
         int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+
+    private static bool TryParsePlayerColor(string[] args, out Color color)
+    {
+        color = Color.White;
+        if (args.Length == 1)
+        {
+            if (TryParseHexColor(args[0], out color))
+                return true;
+
+            return args[0].ToLowerInvariant() switch
+            {
+                "red" or "rot" => AssignColor(Color.Red, out color),
+                "blue" or "blau" => AssignColor(Color.RoyalBlue, out color),
+                "green" or "gruen" or "grün" => AssignColor(Color.LimeGreen, out color),
+                "yellow" or "gelb" => AssignColor(Color.Yellow, out color),
+                "orange" => AssignColor(Color.Orange, out color),
+                "purple" or "lila" => AssignColor(Color.MediumPurple, out color),
+                "cyan" or "tuerkis" or "türkis" => AssignColor(Color.Cyan, out color),
+                "white" or "weiss" or "weiß" => AssignColor(Color.White, out color),
+                _ => false
+            };
+        }
+
+        if (args.Length != 3 || !byte.TryParse(args[0], out byte red) ||
+            !byte.TryParse(args[1], out byte green) || !byte.TryParse(args[2], out byte blue))
+            return false;
+
+        color = new Color(red, green, blue);
+        return true;
+    }
+
+    private static bool TryParseHexColor(string value, out Color color)
+    {
+        color = Color.White;
+        string hex = value.StartsWith('#') ? value[1..] : value;
+        if (hex.Length != 6 || !uint.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint rgb))
+            return false;
+
+        color = new Color((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
+        return true;
+    }
+
+    private static bool AssignColor(Color value, out Color color)
+    {
+        color = value;
+        return true;
+    }
 }
