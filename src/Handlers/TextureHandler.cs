@@ -104,7 +104,6 @@ public sealed class TextureHandler : IDisposable
         _padding = padding;
     }
 
-
     public void LoadMeshTextures()
     {
         LoadMeshTextures(Globals.ModelsDirectory);
@@ -115,6 +114,7 @@ public sealed class TextureHandler : IDisposable
         AddTexture(Path.Combine(directory, "TankBody-1.png"));
         AddTexture(Path.Combine(directory, "TankTurret-1.png"));
         AddTexture(Path.Combine(directory, "TankBarrel-1.png"));
+        NextTexture();
     }
 
     /// <summary>

@@ -112,6 +112,7 @@ public class GameWorld
         unitEffect.Parameters["ShadowTexelSize"]?.SetValue(
             new Vector2(1.0f / shadowTexture.Width, 1.0f / shadowTexture.Height));
         unitEffect.Parameters["LightDirection"]?.SetValue(lightDirection);
+        unitEffect.Parameters["Unlit"]?.SetValue(0.0f);
 
         Vector3 playerColor = Globals.Game.Players.Count > 0
             ? Globals.Game.Players[0].Color.ToVector3()

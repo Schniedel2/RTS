@@ -18,6 +18,7 @@ public class Tank : MobileUnit
     public Vector3 BarrelRecoilOnShot { get; set; } = new(0.0f, 0.0f, 0.3f);
     /// <summary>Fraction of remaining barrel recoil recovered per nominal 60 FPS frame.</summary>
     public float BarrelRecoilRecoveryFactor { get; set; } = 0.05f;
+    public SmokeEmissionSettings CannonSmokeSettings { get; set; } = SmokeEmissionPresets.TankCannon();
     private string? _lastMovementMode;
 
     public override IReadOnlyList<UnitAction> Actions =>
@@ -117,6 +118,14 @@ public class Tank : MobileUnit
     {
         BarrelRecoilOffset = BarrelRecoilOnShot;
         TriggerVisualRecoil(new Vector3(0.0f, 0.0f, 0.0f), -5.0f);
+        if (TryGetMuzzleWorldPosition(out Vector3 muzzlePosition))
+        {
+            Vector3 localBarrelDirection = Vector3.TransformNormal(
+                Vector3.Forward,
+                Matrix.CreateRotationY(MathHelper.ToRadians(TargetAngleDegrees)));
+            Vector3 barrelDirection = Vector3.TransformNormal(localBarrelDirection, Transform);
+            Globals.World.Particles.EmitCannonSmoke(muzzlePosition, barrelDirection, CannonSmokeSettings);
+        }
     }
 
     private void LogMovementMode(string mode, float distance, float directionDot)

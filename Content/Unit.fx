@@ -27,6 +27,8 @@ float  PlayerColorStrength;
 
 // 0 == untextured (vertex color only), 1 == fully textured
 float TextureStrength;
+// 1 == render textured sprites without directional light or shadow sampling.
+float Unlit;
 
 int DebugMode; // 1 == ignore shadowmap, 2 == full lighting
 
@@ -230,6 +232,8 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
 
     float lighting =
         0.15 + diffuse * shadow;
+
+    lighting = lerp(lighting, 1.0, saturate(Unlit));
 
     if (DebugMode == 2)
         lighting = 1.0;

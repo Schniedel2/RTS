@@ -39,5 +39,7 @@
       <None Update="Content\Models\**\*">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
-  </ItemGroup>    
+      <None Update="Content\Sprites\**\*">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>  </ItemGroup>    
 </Project>

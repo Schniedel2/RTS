@@ -29,11 +29,13 @@ public static class Globals
 {
     public static string MapsDirectory = "c:\\temp\\Maps";
     public static string ModelsDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Models");
+    public static string SpritesDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Sprites");
     public static GraphicsDeviceManager Graphics = null!;
     public static GraphicsDevice GraphicsDevice = null!;
     public static PlayerHandler LocalPlayer = null!;
     public static MeshHandler MeshHandler = null!;
     public static TextureHandler TextureHandler = null!;
+    public static TilemapHandler TilemapHandler = null!;
     public static Texture2D ActionIcons = null!;
     public static Texture2D UnitsTexture = null!;
     public static Texture2D BuildingsTexture = null!;
