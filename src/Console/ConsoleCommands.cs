@@ -107,6 +107,15 @@ public class ConsoleCommands
         _console.RegisterCommand(
             "terrain-symmetry",
             ImproveTerrainSymmetry);
+        _console.RegisterCommand(
+            "set-clock",
+            SetClock);
+        _console.RegisterCommand(
+            "set-wind",
+            SetWind);
+        _console.RegisterCommand(
+            "spawn-smokeemitter",
+            SpawnSmokeEmitter);
         _console.RegisterAsyncCommand(
             "ai-create",
             CreateAIPlayerAsync);
@@ -945,6 +954,87 @@ public class ConsoleCommands
 
         TerrainGenerator.ImproveSymmetry(_world.Terrain, args[0] == "horizontal", blend);
         _console.Print($"{args[0]} terrain symmetry improved.");
+    }
+
+    private void SetClock(string[] args)
+    {
+        if (args.Length != 1 || !TryParseFloat(args[0], out float hours))
+        {
+            _console.Print("Usage: set-clock <hours>");
+            return;
+        }
+
+        _world.Weather.SetClock(hours);
+        _console.Print($"Clock set to {_world.Weather.ClockHours:0.##}:00.");
+    }
+
+    private void SetWind(string[] args)
+    {
+        if (args.Length != 2 ||
+            !TryParseFloat(args[0], out float angleDegrees) ||
+            !TryParseFloat(args[1], out float speed))
+        {
+            _console.Print("Usage: set-wind <angle-degrees> <speed>");
+            return;
+        }
+
+        Vector3 direction = Vector3.TransformNormal(
+            Vector3.Forward,
+            Matrix.CreateRotationY(MathHelper.ToRadians(angleDegrees)));
+        Vector3 windVelocity = direction * speed;
+        _world.Weather.SetWind(windVelocity);
+        _console.Print(
+            $"Wind set to {angleDegrees:0.##} degrees at {speed:0.##} " +
+            $"(X={windVelocity.X:0.##}, Z={windVelocity.Z:0.##}).");
+    }
+
+    /// <summary>Creates a local-only visual smoke emitter; it is not replicated over the network.</summary>
+    private void SpawnSmokeEmitter(string[] args)
+    {
+        if (args.Length is < 2 or > 5 ||
+            !TryParseFloat(args[0], out float x) ||
+            !TryParseFloat(args[1], out float z))
+        {
+            _console.Print("Usage: spawn-smokeemitter <x> <z> [y] [lifetime-seconds] [emissions-per-second]");
+            return;
+        }
+
+        float y = 0.0f;
+        float parsedLifetime = 0.0f;
+        float? lifetime = null;
+        float emissionsPerSecond = 3.0f;
+        if ((args.Length >= 3 && !TryParseFloat(args[2], out y)) ||
+            (args.Length >= 4 && !TryParseFloat(args[3], out parsedLifetime)) ||
+            (args.Length == 5 && !TryParseFloat(args[4], out emissionsPerSecond)))
+        {
+            _console.Print("Smoke emitter parameters must be numbers.");
+            return;
+        }
+
+        if (args.Length >= 4)
+        {
+            if (parsedLifetime < 0.0f)
+            {
+                _console.Print("Lifetime must be zero or greater; omit it for an endless emitter.");
+                return;
+            }
+            lifetime = parsedLifetime;
+        }
+
+        SmokeEmissionSettings settings = SmokeEmissionPresets.HeavyCannon() with
+        {
+            ParticleCount = 1,
+            Intensity = 0.75f,
+            WindInfluence = 1.0f
+        };
+        _world.SmokeEmitters.Create(
+            new Vector3(x, y, z),
+            settings,
+            emissionsPerSecond,
+            lifetime,
+            Vector3.Up);
+        string duration = lifetime is float seconds ? $"{seconds:0.##} seconds" : "endless";
+        _console.Print($"Local smoke emitter spawned at {x:0.##}, {y:0.##}, {z:0.##} ({duration}).");
     }
 
     private static bool TryParseFloat(string value, out float result) =>

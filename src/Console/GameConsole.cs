@@ -56,6 +56,7 @@ public class GameConsole
     public void Toggle()
     {
         IsOpen = !IsOpen;
+        _cursorPosition = 0;
 
         if (IsOpen)
         {
@@ -370,7 +371,7 @@ public class GameConsole
         string inputLine = "> " + _input;
         char cursorChar = 'W';
         if (_cursorPosition < _input.Length)
-        cursorChar = _input[_cursorPosition];
+            cursorChar = _input[_cursorPosition];
 
         spriteBatch.DrawString(
             Font,

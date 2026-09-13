@@ -14,6 +14,8 @@ public class GameWorld
     public MarkerHandler Markers { get; }
     public ProjectileHandler Projectiles { get; }
     public ParticleSystem Particles { get; }
+    public SmokeEmitterHandler SmokeEmitters { get; }
+    public WeatherHandler Weather { get; }
     public GameGrid GameGrid { get; }
     public PathfindingManager PathfindingManager { get; }
     public Vector3 Center => new Vector3(_terrain.Width * 0.5f, 0.0f, _terrain.Height * 0.5f);
@@ -36,6 +38,8 @@ public class GameWorld
         Markers = new MarkerHandler();
         Projectiles = new ProjectileHandler();
         Particles = new ParticleSystem();
+        SmokeEmitters = new SmokeEmitterHandler();
+        Weather = new WeatherHandler(terrainWidth, terrainHeight);
         PathfindingManager = new PathfindingManager(this);
     }
 
@@ -143,11 +147,13 @@ public class GameWorld
 
     public void Update(GameTime gameTime)
     {
+        Weather.Update(gameTime);
         PathfindingManager.Update();
         _terrain.Update(gameTime);
         Units.Update(gameTime);
         Markers.Update(gameTime);
         Projectiles.Update(gameTime);
+        SmokeEmitters.Update(gameTime);
         Particles.Update(gameTime);
     }
 
@@ -160,6 +166,7 @@ public class GameWorld
     {
         string mapDirectory = Path.Combine(Globals.MapsDirectory, mapName);
         _terrain = new Terrain(mapDirectory);
+        Weather.ResizeWindMap(_terrain.Width, _terrain.Height);
     }
 
     public void Save(string mapName)

@@ -148,13 +148,18 @@ public sealed class TilemapHandler
 
     public void LoadTilemaps()
     {
-        LoadTilemaps(Globals.SpritesDirectory);
+        LoadTilemaps(Globals.EffetcsDirectory);
     }
 
     public void LoadTilemaps(string directory)
     {
         // Example tilemap registration
-        TextureHandler.TextureRegion smokeRegion = Globals.TextureHandler.AddTexture(Path.Combine(directory, "Smoke.png"));
-        Globals.TilemapHandler.Register("Smoke", smokeRegion, new Point(64, 64));
+        //TextureHandler.TextureRegion smokeRegion = Globals.TextureHandler.AddTexture(Path.Combine(directory, "smoke-256x256.png"));
+        //TextureHandler.TextureRegion explosionRegion = Globals.TextureHandler.AddTexture(Path.Combine(directory, "Explosion.png"));
+        //TextureHandler.TextureRegion sparksRegion = Globals.TextureHandler.AddTexture(Path.Combine(directory, "sparks-256x256.png"));
+
+        Globals.TilemapHandler.Register("Smoke", Globals.TextureHandler.AddTexture(Path.Combine(directory, "smoke-256x256.png")), new Point(256, 256));
+        Globals.TilemapHandler.Register("Sparks", Globals.TextureHandler.AddTexture(Path.Combine(directory, "sparks-256x256.png")), new Point(256, 256));
+        Globals.TilemapHandler.Register("Explosion", Globals.TextureHandler.AddTexture(Path.Combine(directory, "explosions-256x256.png")), new Point(256, 256));
     }
 }

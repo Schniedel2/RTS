@@ -118,14 +118,24 @@ public class Tank : MobileUnit
     {
         BarrelRecoilOffset = BarrelRecoilOnShot;
         TriggerVisualRecoil(new Vector3(0.0f, 0.0f, 0.0f), -5.0f);
-        if (TryGetMuzzleWorldPosition(out Vector3 muzzlePosition))
-        {
-            Vector3 localBarrelDirection = Vector3.TransformNormal(
-                Vector3.Forward,
-                Matrix.CreateRotationY(MathHelper.ToRadians(TargetAngleDegrees)));
-            Vector3 barrelDirection = Vector3.TransformNormal(localBarrelDirection, Transform);
-            Globals.World.Particles.EmitCannonSmoke(muzzlePosition, barrelDirection, CannonSmokeSettings);
-        }
+        Vector3 localBarrelDirection = Vector3.TransformNormal(
+            Vector3.Forward,
+            Matrix.CreateRotationY(MathHelper.ToRadians(TargetAngleDegrees)));
+        Vector3 barrelDirection = Vector3.TransformNormal(localBarrelDirection, Transform);
+        barrelDirection = barrelDirection.LengthSquared() > 0.0001f
+            ? Vector3.Normalize(barrelDirection)
+            : Vector3.Forward;
+
+        // A projectile already has this kind of fallback in NetworkInput.  Do
+        // the same for the local smoke effect: a temporarily missing or
+        // renamed pivot must not make a perfectly valid host shot look silent.
+        // The fallback is close to the front of the hull until the BBModel
+        // contains a usable "pivot:muzzle" again.
+        if (!TryGetMuzzleWorldPosition(out Vector3 muzzlePosition))
+            muzzlePosition = Position + Vector3.Up * (Height * 0.75f) +
+                barrelDirection * (Length * 0.52f);
+
+        Globals.World.Particles.EmitCannonSmoke(muzzlePosition, barrelDirection, CannonSmokeSettings);
     }
 
     private void LogMovementMode(string mode, float distance, float directionDot)

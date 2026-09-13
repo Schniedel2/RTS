@@ -11,7 +11,6 @@ namespace RTS;
 
 public class RTSGame
 {
-    private float _sunAngle = 0.0f;
     public GameWorld World { get; }
     public PlayerHandler LocalPlayer => Globals.LocalPlayer;
     private KeyboardState _previousKeyboardState;
@@ -33,8 +32,6 @@ public class RTSGame
         int terrainHeight)
     {
         Globals.ModelsDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Models");
-        Globals.SpritesDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Sprites");
-
 
         Globals.TextureHandler = new TextureHandler(Globals.GraphicsDevice);        
         Globals.TextureHandler.LoadMeshTextures();
@@ -216,7 +213,6 @@ public class RTSGame
 
         float deltaTime =
             (float)gameTime.ElapsedGameTime.TotalSeconds;
-        //_sunAngle += deltaTime * 0.1f;
 
         camera.UpdateMouse(gameTime);
         if (!Globals.Console.IsOpen)
@@ -234,14 +230,14 @@ public class RTSGame
                 camera,
                 viewport,
                 World.Terrain,
-                _sunAngle))
+                World.Weather.SunAngleRadians))
         {
             // The camera can temporarily point outside the map. Keep the
             // previous global behavior as a safe fallback in that situation.
             ShadowMap.Update(
                 World.Center,
                 World.Terrain.Width * 1.42f,
-                _sunAngle);
+                World.Weather.SunAngleRadians);
         }
 
     }

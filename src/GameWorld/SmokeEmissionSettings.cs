@@ -24,6 +24,8 @@ public sealed record SmokeEmissionSettings
     public float LifetimeVariation { get; init; } = 0.20f;
     public Color Color { get; init; } = new(184, 184, 184);
     public float Opacity { get; init; } = 0.62f;
+    /// <summary>0 ignores wind; 1 drifts with the complete world wind velocity.</summary>
+    public float WindInfluence { get; init; } = 0.85f;
 }
 
 /// <summary>Factories return new settings so callers can safely customize them.</summary>

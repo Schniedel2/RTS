@@ -22,6 +22,8 @@ public sealed class Projectile : WorldObject
     private float _trailElapsed;
 
     public bool IsExpired => _elapsed >= _duration;
+    /// <summary>Projectiles are deliberately influenced far less by wind than smoke.</summary>
+    public float WindInfluence { get; set; } = 0.02f;
 
     public Projectile(Vector3 start, Vector3 target, float duration = 0.35f)
         : base(start)
@@ -39,6 +41,7 @@ public sealed class Projectile : WorldObject
         float progress = MathHelper.Clamp(_elapsed / _duration, 0.0f, 1.0f);
         Vector3 position = Vector3.Lerp(_start, _target, progress);
         position.Y += MathF.Sin(progress * MathHelper.Pi) * 1.5f;
+        position += Globals.World.Weather.GetWind(position) * WindInfluence * _elapsed;
         SetPosition(position);
 
         while (_trailElapsed >= 0.04f)
