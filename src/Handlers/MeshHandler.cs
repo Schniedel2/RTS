@@ -26,6 +26,12 @@ public class MeshHandler
         Meshes["reaktor"] = BBModelLoader.Load(Path.Combine(diretory, "reaktor.bbmodel"), Color.White);
         Meshes["gdi-base"] = BBModelLoader.Load(Path.Combine(diretory, "gdi-base.bbmodel"), Color.White);
 
+        Meshes["TankBody-1"] = BBModelLoader.Load(Path.Combine(diretory, "TankBody-1.bbmodel"), Color.White);
+        Meshes["TankTurret-1"] = BBModelLoader.Load(Path.Combine(diretory, "TankTurret-1.bbmodel"), Color.White);
+        Meshes["TankBarrel-1"] = BBModelLoader.Load(Path.Combine(diretory, "TankBarrel-1.bbmodel"), Color.White);
+
+        Meshes["TankBarrel-1"].LocalTransform = Matrix.CreateScale(0.4f);
+
         int tileSize = 64;
         int tx = tileSize*3+8;
         int ty = tileSize*2+8;

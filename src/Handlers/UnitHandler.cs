@@ -70,6 +70,9 @@ public class UnitHandler
     {
         foreach (Building unit in _units.OfType<Building>())
         {
+            // Restore the normal building atlas before a BBModel sub-mesh
+            // optionally selects its own TextureHandler atlas.
+            effect.Parameters["UnitTexture"]?.SetValue(Globals.BuildingsTexture);
             Player? owner = Globals.Game.Players.FirstOrDefault(
                 player => player.Id == unit.CreatorPlayerId);
             Color playerColor = owner?.Color ?? Color.White;
@@ -84,6 +87,9 @@ public class UnitHandler
     {
         foreach (MobileUnit unit in _units.OfType<MobileUnit>())
         {
+            // Restore the normal unit atlas before a BBModel sub-mesh
+            // optionally selects its own TextureHandler atlas.
+            effect.Parameters["UnitTexture"]?.SetValue(Globals.UnitsTexture);
             Player? owner = Globals.Game.Players.FirstOrDefault(
                 player => player.Id == unit.CreatorPlayerId);
             Color playerColor = owner?.Color ?? Color.White;

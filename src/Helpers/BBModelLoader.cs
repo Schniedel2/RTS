@@ -18,6 +18,7 @@ public static class BBModelLoader
         JsonElement root = document.RootElement;
         Color vertexColor = color ?? Color.SteelBlue;
         (float Width, float Height) resolution = ReadResolution(root);
+        Dictionary<int, TextureHandler.TextureRegion> textureRegions = ReadTextureRegions(root, path);
 
         Dictionary<string, SubMesh> elementsByUuid = [];
         if (root.TryGetProperty("elements", out JsonElement elements))
@@ -26,7 +27,8 @@ public static class BBModelLoader
             {
                 if (!element.TryGetProperty("type", out JsonElement type) || type.GetString() != "mesh")
                     continue;
-                elementsByUuid[element.GetProperty("uuid").GetString()!] = LoadMeshElement(element, vertexColor, resolution);
+                elementsByUuid[element.GetProperty("uuid").GetString()!] = LoadMeshElement(
+                    element, vertexColor, resolution, textureRegions);
             }
         }
 
@@ -127,7 +129,11 @@ public static class BBModelLoader
         return (32f, 32f);
     }
 
-    private static SubMesh LoadMeshElement(JsonElement element, Color vertexColor, (float Width, float Height) resolution)
+    private static SubMesh LoadMeshElement(
+        JsonElement element,
+        Color vertexColor,
+        (float Width, float Height) resolution,
+        IReadOnlyDictionary<int, TextureHandler.TextureRegion> textureRegions)
     {
         string name = element.TryGetProperty("name", out JsonElement nameElement) ? nameElement.GetString() ?? "mesh" : "mesh";
         // The element's "origin" is the pivot point Blockbench rotates/animates this part around.
@@ -142,6 +148,7 @@ public static class BBModelLoader
 
         List<VertexPositionColorNormalTexture> vertices = [];
         List<int> indices = [];
+        int? textureAtlasIndex = null;
 
         foreach (JsonProperty face in element.GetProperty("faces").EnumerateObject())
         {
@@ -151,7 +158,16 @@ public static class BBModelLoader
                 continue;
 
             Vector3[] facePositions = faceVertexKeys.Select(key => positions[key]).ToArray();
-            Vector2[] faceUvs = ReadFaceUv(face.Value, faceVertexKeys, resolution);
+            TextureHandler.TextureRegion? textureRegion = ReadFaceTextureRegion(face.Value, textureRegions);
+            if (textureRegion is not null)
+            {
+                if (textureAtlasIndex is int existingAtlas && existingAtlas != textureRegion.AtlasIndex)
+                    throw new InvalidDataException(
+                        $"Mesh element '{name}' uses textures from multiple atlases. " +
+                        "Split it into separate Blockbench mesh elements.");
+                textureAtlasIndex = textureRegion.AtlasIndex;
+            }
+            Vector2[] faceUvs = ReadFaceUv(face.Value, faceVertexKeys, resolution, textureRegion);
 
             for (int index = 1; index < facePositions.Length - 1; index++)
             {
@@ -167,11 +183,16 @@ public static class BBModelLoader
             }
         }
 
-        SubMesh submesh = new SubMesh(name, vertices.ToArray(), indices.ToArray(), pivot);
+        SubMesh submesh = new SubMesh(
+            name, vertices.ToArray(), indices.ToArray(), pivot, textureAtlasIndex);
         return submesh;
     }
 
-    private static Vector2[] ReadFaceUv(JsonElement face, string[] faceVertexKeys, (float Width, float Height) resolution)
+    private static Vector2[] ReadFaceUv(
+        JsonElement face,
+        string[] faceVertexKeys,
+        (float Width, float Height) resolution,
+        TextureHandler.TextureRegion? textureRegion)
     {
         if (!face.TryGetProperty("uv", out JsonElement uv))
             return faceVertexKeys.Select(_ => Vector2.Zero).ToArray();
@@ -182,8 +203,65 @@ public static class BBModelLoader
                 return Vector2.Zero;
             float u = uvValue[0].GetSingle();
             float v = uvValue[1].GetSingle();
-            return new Vector2(u / resolution.Width, v / resolution.Height);
+            Vector2 sourceUv = new(u / resolution.Width, v / resolution.Height);
+            return textureRegion?.RemapUV(sourceUv) ?? sourceUv;
         }).ToArray();
+    }
+
+    private static Dictionary<int, TextureHandler.TextureRegion> ReadTextureRegions(JsonElement root, string modelPath)
+    {
+        Dictionary<int, TextureHandler.TextureRegion> regions = [];
+        if (!root.TryGetProperty("textures", out JsonElement textures))
+            return regions;
+
+        string modelDirectory = Path.GetDirectoryName(Path.GetFullPath(modelPath))!;
+        int index = 0;
+        foreach (JsonElement texture in textures.EnumerateArray())
+        {
+            string? relativePath = texture.TryGetProperty("relative_path", out JsonElement relativePathElement)
+                ? relativePathElement.GetString()
+                : null;
+            string? name = texture.TryGetProperty("name", out JsonElement nameElement)
+                ? nameElement.GetString()
+                : null;
+            string? textureFileName = string.IsNullOrWhiteSpace(relativePath) ? name : relativePath;
+            if (string.IsNullOrWhiteSpace(textureFileName))
+            {
+                index++;
+                continue;
+            }
+
+            string texturePath = Path.GetFullPath(Path.Combine(modelDirectory, textureFileName));
+            if (!File.Exists(texturePath))
+                throw new FileNotFoundException(
+                    $"BBModel texture '{textureFileName}' was not found next to '{Path.GetFileName(modelPath)}'.",
+                    texturePath);
+
+            TextureHandler.TextureRegion region = Globals.TextureHandler.TryGetTextureRegion(texturePath, out TextureHandler.TextureRegion existing)
+                ? existing
+                : Globals.TextureHandler.AddTexture(texturePath);
+            regions[index] = region;
+
+            if (texture.TryGetProperty("id", out JsonElement idElement) &&
+                int.TryParse(idElement.GetString(), out int id))
+                regions[id] = region;
+            index++;
+        }
+        return regions;
+    }
+
+    private static TextureHandler.TextureRegion? ReadFaceTextureRegion(
+        JsonElement face,
+        IReadOnlyDictionary<int, TextureHandler.TextureRegion> textureRegions)
+    {
+        if (!face.TryGetProperty("texture", out JsonElement texture) ||
+            texture.ValueKind != JsonValueKind.Number ||
+            !texture.TryGetInt32(out int textureIndex))
+            return null;
+
+        return textureRegions.TryGetValue(textureIndex, out TextureHandler.TextureRegion? region)
+            ? region
+            : null;
     }
 
     private static Vector3 ReadVector3(JsonElement array)

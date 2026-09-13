@@ -1,17 +1,25 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using System;
 using System.Collections.Generic;
 using RTS.Mapping;
 
 namespace RTS;
 
 /// <summary>Geometry of a single named part of a <see cref="Mesh"/>.</summary>
-public sealed class SubMesh(string name, VertexPositionColorNormalTexture[] vertices, int[] indices, Vector3 pivot)
+public sealed class SubMesh(
+    string name,
+    VertexPositionColorNormalTexture[] vertices,
+    int[] indices,
+    Vector3 pivot,
+    int? textureAtlasIndex = null)
 {
     public string Name { get; } = name;
     public VertexPositionColorNormalTexture[] Vertices { get; } = vertices;
     public int[] Indices { get; } = indices;
     public Vector3 Pivot { get; } = pivot;
+    /// <summary>Optional TextureHandler atlas used by UVs imported from a BBModel texture.</summary>
+    public int? TextureAtlasIndex { get; } = textureAtlasIndex;
 
     public (Vector3 Min, Vector3 Max) GetBounds()
     {
@@ -52,16 +60,39 @@ public sealed class MeshNode(string name, Vector3 pivot)
         return Matrix.CreateTranslation(-Pivot) * Matrix.CreateFromAxisAngle(RotationAxis, angle) * Matrix.CreateTranslation(Pivot);
     }
 
-    public void Draw(Effect effect, Matrix parentWorld, IReadOnlyDictionary<string, float> parameters)
+    public void Draw(
+        Effect effect,
+        Matrix parentWorld,
+        IReadOnlyDictionary<string, float> parameters,
+        Action<string, Matrix>? drawAttachments = null)
     {
         Matrix world = GetLocalTransform(parameters) * parentWorld;
         foreach (SubMesh subMesh in SubMeshes)
         {
             effect.Parameters["World"]?.SetValue(world);
+            if (subMesh.TextureAtlasIndex is int atlasIndex)
+                effect.Parameters["UnitTexture"]?.SetValue(Globals.TextureHandler.GetAtlas(atlasIndex));
             RenderHelper.DrawMesh(effect, subMesh.Vertices, subMesh.Indices);
         }
+        drawAttachments?.Invoke(Name, GetAttachmentWorld(parentWorld, parameters));
         foreach (MeshNode child in Children)
-            child.Draw(effect, world, parameters);
+            child.Draw(effect, world, parameters, drawAttachments);
+    }
+
+    /// <summary>
+    /// Returns the world matrix for a separately authored mesh whose local
+    /// origin should be placed at this node's pivot. Unlike child geometry of
+    /// the original BBModel, an attachment starts around local coordinate 0.
+    /// </summary>
+    private Matrix GetAttachmentWorld(
+        Matrix parentWorld,
+        IReadOnlyDictionary<string, float> parameters)
+    {
+        if (RotationParameter is null || !parameters.TryGetValue(RotationParameter, out float angle) || angle == 0.0f)
+            return Matrix.CreateTranslation(Pivot) * parentWorld;
+
+        return Matrix.CreateFromAxisAngle(RotationAxis, angle) *
+            Matrix.CreateTranslation(Pivot) * parentWorld;
     }
 
     public MeshNode? FindNode(string nodeName)
@@ -113,12 +144,24 @@ public class Mesh
     public string Name { get; }
     public MeshNode Root { get; }
     public IReadOnlyList<SubMesh> SubMeshes { get; }
+    /// <summary>
+    /// Permanent local correction applied before the Unit or attachment world
+    /// transform. Use it for import-time scale, rotation or origin tuning.
+    /// It also affects all placeholder pivots and nested MeshSet attachments.
+    /// </summary>
+    public Matrix LocalTransform { get; set; } = Matrix.Identity;
 
     public void SetParameter(string parameterName, float value) => parameters[parameterName] = value;
 
     public float GetParameter(string parameterName) => parameters.TryGetValue(parameterName, out float value) ? value : 0.0f;
 
     public void ClearParameters() => parameters.Clear();
+
+    public void SetLocalScale(float uniformScale) =>
+        LocalTransform = Matrix.CreateScale(uniformScale);
+
+    public void SetLocalScale(Vector3 scale) =>
+        LocalTransform = Matrix.CreateScale(scale);
 
     public MeshNode? FindNode(string nodeName) => Root.FindNode(nodeName);
 
@@ -156,7 +199,19 @@ public class Mesh
     public void ApplyCubeMapping(UVMapping mapping) =>
         CubeMapping.Apply(this, mapping);
 
-    public void Draw(Effect effect, Matrix world) => Root.Draw(effect, world, parameters);
+    public void Draw(Effect effect, Matrix world) => Draw(effect, world, parameters);
+
+    /// <summary>
+    /// Draws with externally owned parameters and placeholder callbacks. This
+    /// keeps shared imported meshes immutable while each Unit can own its own
+    /// composition and animation state through a MeshSet.
+    /// </summary>
+    public void Draw(
+        Effect effect,
+        Matrix world,
+        IReadOnlyDictionary<string, float> drawParameters,
+        Action<string, Matrix>? drawAttachments = null) =>
+        Root.Draw(effect, LocalTransform * world, drawParameters, drawAttachments);
 
     private static MeshNode CreateFlatRoot(string name, IReadOnlyList<SubMesh> subMeshes)
     {
