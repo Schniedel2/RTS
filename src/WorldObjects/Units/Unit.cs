@@ -43,6 +43,49 @@ public abstract class Unit : WorldObject
     public UnitBehavior Behavior { get; set; } = UnitBehavior.Aggressive;
     protected MeshSet? _meshSet;
 
+    /// <summary>Local visual offset applied to the rendered model only.</summary>
+    public Vector3 VisualRecoilOffset { get; private set; }
+    /// <summary>Local pitch applied to the rendered model only.</summary>
+    public float VisualRecoilPitchDegrees { get; private set; }
+    /// <summary>
+    /// Local ground-level point around which the model nicks during recoil.
+    /// It is normally below the turret, so the tracks appear planted.
+    /// </summary>
+    public Vector3 VisualRecoilPivot { get; set; } = Vector3.Zero;
+    /// <summary>
+    /// Fraction of the remaining recoil recovered per nominal 60 FPS frame.
+    /// A value of 0.05 moves five percent towards the resting pose each frame.
+    /// </summary>
+    public float VisualRecoilRecoveryFactor { get; set; } = 0.05f;
+    /// <summary>
+    /// Uses the current local target/turret angle to orient the body recoil.
+    /// Set this to false for weapons that are rigidly mounted facing forward.
+    /// </summary>
+    public bool VisualRecoilFollowsTargetAngle { get; set; } = true;
+    public Matrix VisualRecoilTransform
+    {
+        get
+        {
+            float aimAngleRadians = VisualRecoilFollowsTargetAngle
+                ? MathHelper.ToRadians(TargetAngleDegrees)
+                : 0.0f;
+            Matrix aimRotation = Matrix.CreateRotationY(aimAngleRadians);
+
+            // X is the pitch axis of a forward-facing barrel. Rotate it into
+            // the turret's current local direction before tilting the hull.
+            Vector3 pitchAxis = Vector3.TransformNormal(Vector3.Right, aimRotation);
+            Vector3 offset = Vector3.TransformNormal(VisualRecoilOffset, aimRotation);
+            Matrix rotationAtGroundPivot =
+                Matrix.CreateTranslation(-VisualRecoilPivot) *
+                Matrix.CreateFromAxisAngle(
+                    pitchAxis,
+                    MathHelper.ToRadians(VisualRecoilPitchDegrees)) *
+                Matrix.CreateTranslation(VisualRecoilPivot);
+            return rotationAtGroundPivot *
+                Matrix.CreateTranslation(offset);
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Visual targeting / aiming model
     // -----------------------------------------------------------------------
@@ -161,6 +204,16 @@ public abstract class Unit : WorldObject
     /// <summary>Runs local visual/audio feedback when the host replicated a shot.</summary>
     public virtual void PlayShotEffects()
     {
+    }
+
+    /// <summary>
+    /// Applies a local-only body recoil. It intentionally does not affect the
+    /// unit transform, movement, collision or replicated game state.
+    /// </summary>
+    public void TriggerVisualRecoil(Vector3 localOffset, float pitchDegrees)
+    {
+        VisualRecoilOffset = localOffset;
+        VisualRecoilPitchDegrees = -pitchDegrees;
     }
 
     /// <summary>Starts a continuous attack against another unit.</summary>
@@ -548,6 +601,20 @@ public abstract class Unit : WorldObject
             maximum.Y - minimum.Y + 1);
     }
 
+    public override void Update(GameTime gameTime)
+    {
+        // Exponential easing: at 60 FPS this is exactly the configured share
+        // of the remaining difference, while other frame rates feel the same.
+        float recovery = 1.0f - MathF.Pow(
+            1.0f - Math.Clamp(VisualRecoilRecoveryFactor, 0.0f, 1.0f),
+            (float)gameTime.ElapsedGameTime.TotalSeconds * 60.0f);
+        VisualRecoilOffset = Vector3.Lerp(VisualRecoilOffset, Vector3.Zero, recovery);
+        VisualRecoilPitchDegrees = MathHelper.Lerp(VisualRecoilPitchDegrees, 0.0f, recovery);
+        UpdateTargetAngle(gameTime);
+    }
+
+    protected Matrix GetVisualWorldMatrix() => VisualRecoilTransform * GetWorldMatrix();
+
     protected override Matrix GetWorldMatrix()
     {
         return Matrix.CreateScale(1.0f) * Transform;
@@ -561,7 +628,7 @@ public abstract class Unit : WorldObject
 
     public override void Draw(Effect effect)
     {
-        Globals.MeshHandler.DrawMesh(effect, Globals.MeshHandler.Meshes["default"], GetWorldMatrix());
+        Globals.MeshHandler.DrawMesh(effect, Globals.MeshHandler.Meshes["default"], GetVisualWorldMatrix());
     }
 
     public override void DrawShadow(Effect effect)
@@ -574,7 +641,7 @@ public abstract class Unit : WorldObject
     {
         return _meshSet?.TryGetPivotWorldPosition(
             "pivot:muzzle",
-            GetWorldMatrix(),
+            GetVisualWorldMatrix(),
             out position) ?? SetMissingMuzzlePosition(out position);
     }
 

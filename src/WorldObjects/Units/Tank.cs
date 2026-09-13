@@ -16,7 +16,8 @@ public class Tank : MobileUnit
     /// <summary>Current local barrel displacement, used for visual recoil.</summary>
     public Vector3 BarrelRecoilOffset { get; private set; }
     public Vector3 BarrelRecoilOnShot { get; set; } = new(0.0f, 0.0f, 0.3f);
-    public float BarrelRecoilReturnSpeed { get; set; } = 0.5f;
+    /// <summary>Fraction of remaining barrel recoil recovered per nominal 60 FPS frame.</summary>
+    public float BarrelRecoilRecoveryFactor { get; set; } = 0.05f;
     private string? _lastMovementMode;
 
     public override IReadOnlyList<UnitAction> Actions =>
@@ -36,6 +37,10 @@ public class Tank : MobileUnit
         CanOnlyMoveForward = true;
         CanTurnInPlace = true;
         TargetAngleDegreesPerSecond = 50.0f;
+        // pivot:turret in TankBody-1 is (0, 0.8, -0.2). For hull recoil we
+        // deliberately use its X/Z location at ground level, preserving the
+        // impression that the tracks remain planted.
+        VisualRecoilPivot = new Vector3(0.0f, 0.0f, -0.2f);
 
         _meshSet = new MeshSet(Globals.MeshHandler.Meshes["TankBody-1"]);
         _meshSet.SetAttachment("pivot:turret", Globals.MeshHandler.Meshes["TankTurret-1"]);
@@ -102,15 +107,16 @@ public class Tank : MobileUnit
     public override void Update(GameTime gameTime)
     {
         base.Update(gameTime);
-        BarrelRecoilOffset = MoveTowards(
-            BarrelRecoilOffset,
-            Vector3.Zero,
-            BarrelRecoilReturnSpeed * (float)gameTime.ElapsedGameTime.TotalSeconds);
+        float recovery = 1.0f - MathF.Pow(
+            1.0f - Math.Clamp(BarrelRecoilRecoveryFactor, 0.0f, 1.0f),
+            (float)gameTime.ElapsedGameTime.TotalSeconds * 60.0f);
+        BarrelRecoilOffset = Vector3.Lerp(BarrelRecoilOffset, Vector3.Zero, recovery);
     }
 
     public override void PlayShotEffects()
     {
         BarrelRecoilOffset = BarrelRecoilOnShot;
+        TriggerVisualRecoil(new Vector3(0.0f, 0.0f, 0.0f), -5.0f);
     }
 
     private void LogMovementMode(string mode, float distance, float directionDot)
@@ -131,15 +137,7 @@ public class Tank : MobileUnit
         _meshSet.SetAttachmentLocalTransform(
             "pivot:turret/pivot:barrel",
             Matrix.CreateTranslation(BarrelRecoilOffset));
-        _meshSet.Draw(effect, GetWorldMatrix());
+        _meshSet.Draw(effect, GetVisualWorldMatrix());
     }
 
-    private static Vector3 MoveTowards(Vector3 current, Vector3 target, float maximumDistance)
-    {
-        Vector3 offset = target - current;
-        float distance = offset.Length();
-        if (distance <= maximumDistance || distance <= 0.0001f)
-            return target;
-        return current + offset / distance * maximumDistance;
-    }
 }

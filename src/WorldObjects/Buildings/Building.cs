@@ -123,6 +123,6 @@ public class Building : Unit
 
     public override void Update(GameTime gameTime)
     {
-        UpdateTargetAngle(gameTime);
+        base.Update(gameTime);
     }
 }
