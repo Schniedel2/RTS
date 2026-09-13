@@ -157,6 +157,11 @@ public abstract class Unit : WorldObject
     {
     }
 
+    /// <summary>Runs local visual/audio feedback when the host replicated a shot.</summary>
+    public virtual void PlayShotEffects()
+    {
+    }
+
     /// <summary>Starts a continuous attack against another unit.</summary>
     public void SetAttackTarget(Guid targetId)
     {

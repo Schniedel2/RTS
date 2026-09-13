@@ -13,6 +13,10 @@ public class Tank : MobileUnit
     public float ReverseSpeed { get; set; } = 1.4f;
     public float ReverseWithoutTurningDistance { get; set; } = 6.0f;
     public float TurnInPlaceDotThreshold { get; set; } = 0.5f;
+    /// <summary>Current local barrel displacement, used for visual recoil.</summary>
+    public Vector3 BarrelRecoilOffset { get; private set; }
+    public Vector3 BarrelRecoilOnShot { get; set; } = new(0.0f, 0.0f, 0.3f);
+    public float BarrelRecoilReturnSpeed { get; set; } = 0.5f;
     private string? _lastMovementMode;
     private MeshSet? _meshSet;
     public override IReadOnlyList<UnitAction> Actions =>
@@ -90,6 +94,20 @@ public class Tank : MobileUnit
         TryMoveTo(Position + forward * speed * deltaTime);
     }
 
+    public override void Update(GameTime gameTime)
+    {
+        base.Update(gameTime);
+        BarrelRecoilOffset = MoveTowards(
+            BarrelRecoilOffset,
+            Vector3.Zero,
+            BarrelRecoilReturnSpeed * (float)gameTime.ElapsedGameTime.TotalSeconds);
+    }
+
+    public override void PlayShotEffects()
+    {
+        BarrelRecoilOffset = BarrelRecoilOnShot;
+    }
+
     private void LogMovementMode(string mode, float distance, float directionDot)
     {
         if (_lastMovementMode == mode)
@@ -106,6 +124,9 @@ public class Tank : MobileUnit
             return;
 
         meshSet.SetParameter(Mesh.TurretAngle, MathHelper.ToRadians(TargetAngleDegrees));
+        meshSet.SetAttachmentLocalTransform(
+            "pivot:turret/pivot:barrel",
+            Matrix.CreateTranslation(BarrelRecoilOffset));
         meshSet.Draw(effect, GetWorldMatrix());
     }
 
@@ -133,18 +154,43 @@ public class Tank : MobileUnit
         return meshSet?.SetAttachmentPath("pivot:turret/pivot:barrel", barrelMesh) ?? false;
     }
 
+    /// <summary>Returns the projectile spawn position at an empty pivot:muzzle group.</summary>
+    public bool TryGetMuzzleWorldPosition(out Vector3 position)
+    {
+        MeshSet? meshSet = GetMeshSet();
+        return meshSet?.TryGetPivotWorldPosition(
+            "pivot:turret/pivot:barrel/pivot:muzzle",
+            GetWorldMatrix(),
+            out position) ?? SetMissingMuzzlePosition(out position);
+    }
+
     private MeshSet? GetMeshSet()
     {
         if (_meshSet is not null)
             return _meshSet;
         if (!Globals.MeshHandler.Meshes.TryGetValue("TankBody-1", out Mesh? bodyMesh) ||
             !Globals.MeshHandler.Meshes.TryGetValue("TankTurret-1", out Mesh? turretMesh) ||
-            !Globals.MeshHandler.Meshes.TryGetValue("TankBarrel-1", out Mesh? barrelMesh))
+            !Globals.MeshHandler.Meshes.TryGetValue("TankBarrel-2", out Mesh? barrelMesh))
             return null;
 
         _meshSet = new MeshSet(bodyMesh);
         _meshSet.SetAttachment("pivot:turret", turretMesh);
         _meshSet.SetAttachmentPath("pivot:turret/pivot:barrel", barrelMesh);
         return _meshSet;
+    }
+
+    private static Vector3 MoveTowards(Vector3 current, Vector3 target, float maximumDistance)
+    {
+        Vector3 offset = target - current;
+        float distance = offset.Length();
+        if (distance <= maximumDistance || distance <= 0.0001f)
+            return target;
+        return current + offset / distance * maximumDistance;
+    }
+
+    private static bool SetMissingMuzzlePosition(out Vector3 position)
+    {
+        position = Vector3.Zero;
+        return false;
     }
 }

@@ -108,6 +108,33 @@ public sealed class MeshNode(string name, Vector3 pivot)
         return null;
     }
 
+    /// <summary>
+    /// Finds a placeholder node and returns the transform that places an
+    /// attached mesh's local origin at that node's pivot.
+    /// </summary>
+    public bool TryGetAttachmentWorldTransform(
+        string nodeName,
+        Matrix parentWorld,
+        IReadOnlyDictionary<string, float> parameters,
+        out Matrix attachmentWorld)
+    {
+        Matrix world = GetLocalTransform(parameters) * parentWorld;
+        if (string.Equals(Name, nodeName, StringComparison.OrdinalIgnoreCase))
+        {
+            attachmentWorld = GetAttachmentWorld(parentWorld, parameters);
+            return true;
+        }
+
+        foreach (MeshNode child in Children)
+        {
+            if (child.TryGetAttachmentWorldTransform(nodeName, world, parameters, out attachmentWorld))
+                return true;
+        }
+
+        attachmentWorld = Matrix.Identity;
+        return false;
+    }
+
     public IEnumerable<SubMesh> EnumerateSubMeshes()
     {
         foreach (SubMesh subMesh in SubMeshes)
@@ -212,6 +239,17 @@ public class Mesh
         IReadOnlyDictionary<string, float> drawParameters,
         Action<string, Matrix>? drawAttachments = null) =>
         Root.Draw(effect, LocalTransform * world, drawParameters, drawAttachments);
+
+    public bool TryGetPivotWorldTransform(
+        string pivotName,
+        Matrix world,
+        IReadOnlyDictionary<string, float> drawParameters,
+        out Matrix pivotWorld) =>
+        Root.TryGetAttachmentWorldTransform(
+            pivotName,
+            LocalTransform * world,
+            drawParameters,
+            out pivotWorld);
 
     private static MeshNode CreateFlatRoot(string name, IReadOnlyList<SubMesh> subMeshes)
     {
