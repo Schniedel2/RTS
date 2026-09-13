@@ -55,7 +55,21 @@ public class GameWorld
 
         effect.Parameters["View"]?.SetValue(view);
         effect.Parameters["Projection"]?.SetValue(projection);
-        Units.DrawShadow(effect);
+        // Imported Blockbench meshes can contain faces with inconsistent
+        // winding. A shadow caster must be visible from the light on either
+        // side, otherwise a grounded model may disappear behind terrain that
+        // was written to the shadow map first.
+        GraphicsDevice graphicsDevice = Globals.GraphicsDevice;
+        RasterizerState previousRasterizerState = graphicsDevice.RasterizerState;
+        graphicsDevice.RasterizerState = RasterizerState.CullNone;
+        try
+        {
+            Units.DrawShadow(effect);
+        }
+        finally
+        {
+            graphicsDevice.RasterizerState = previousRasterizerState;
+        }
     }
 
     public void DrawTerrain(

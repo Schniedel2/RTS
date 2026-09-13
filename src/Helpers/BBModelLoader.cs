@@ -172,7 +172,11 @@ public static class BBModelLoader
             for (int index = 1; index < facePositions.Length - 1; index++)
             {
                 Vector3 a = facePositions[0], b = facePositions[index], c = facePositions[index + 1];
-                Vector3 normal = Vector3.Cross(b - a, c - a);
+                // Blockbench faces use the opposite winding direction to the
+                // one used by our renderer, therefore the submitted triangle
+                // is (b, a, c). Calculate its normal in that same order; the
+                // former code calculated (a, b, c) but submitted the reverse.
+                Vector3 normal = Vector3.Cross(a - b, c - b);
                 normal = normal.LengthSquared() > 0.0f ? Vector3.Normalize(normal) : Vector3.Up;
 
                 int first = vertices.Count;

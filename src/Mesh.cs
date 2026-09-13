@@ -95,6 +95,23 @@ public sealed class MeshNode(string name, Vector3 pivot)
             Matrix.CreateTranslation(Pivot) * parentWorld;
     }
 
+    internal static Matrix GetAttachmentWorldFromPath(
+        IReadOnlyList<MeshNode> nodePath,
+        Matrix meshWorld,
+        IReadOnlyDictionary<string, float> parameters)
+    {
+        Matrix parentWorld = meshWorld;
+        for (int index = 0; index < nodePath.Count; index++)
+        {
+            MeshNode node = nodePath[index];
+            if (index == nodePath.Count - 1)
+                return node.GetAttachmentWorld(parentWorld, parameters);
+            parentWorld = node.GetLocalTransform(parameters) * parentWorld;
+        }
+
+        return meshWorld;
+    }
+
     public MeshNode? FindNode(string nodeName)
     {
         if (Name == nodeName)
@@ -150,6 +167,7 @@ public sealed class MeshNode(string name, Vector3 pivot)
 /// <summary>A named, renderable model built from a <see cref="MeshNode"/> hierarchy and a set of render parameters.</summary>
 public class Mesh
 {
+    public sealed record Pivot(string Name, IReadOnlyList<MeshNode> NodePath);
     public const string TurretAngle = "TurretAngle";
     public const string WheelAngleY = "HullAngleY";
     public const string WheelAngle = "WheelAngle";
@@ -250,6 +268,31 @@ public class Mesh
             LocalTransform * world,
             drawParameters,
             out pivotWorld);
+
+    public IReadOnlyList<Pivot> GetPivots()
+    {
+        List<Pivot> pivots = [];
+        CollectPivots(Root, [], pivots);
+        return pivots;
+    }
+
+    internal Matrix GetPivotWorldTransform(
+        Pivot pivot,
+        Matrix world,
+        IReadOnlyDictionary<string, float> drawParameters) =>
+        MeshNode.GetAttachmentWorldFromPath(
+            pivot.NodePath,
+            LocalTransform * world,
+            drawParameters);
+
+    private static void CollectPivots(MeshNode node, List<MeshNode> ancestors, List<Pivot> pivots)
+    {
+        List<MeshNode> path = [.. ancestors, node];
+        if (node.Name.StartsWith("pivot:", StringComparison.OrdinalIgnoreCase))
+            pivots.Add(new Pivot(node.Name, path));
+        foreach (MeshNode child in node.Children)
+            CollectPivots(child, path, pivots);
+    }
 
     private static MeshNode CreateFlatRoot(string name, IReadOnlyList<SubMesh> subMeshes)
     {

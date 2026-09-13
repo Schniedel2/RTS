@@ -18,7 +18,7 @@ public class Tank : MobileUnit
     public Vector3 BarrelRecoilOnShot { get; set; } = new(0.0f, 0.0f, 0.3f);
     public float BarrelRecoilReturnSpeed { get; set; } = 0.5f;
     private string? _lastMovementMode;
-    private MeshSet? _meshSet;
+
     public override IReadOnlyList<UnitAction> Actions =>
     [
         new(UnitActionType.Goto, "Goto", 0, 1),
@@ -36,7 +36,12 @@ public class Tank : MobileUnit
         CanOnlyMoveForward = true;
         CanTurnInPlace = true;
         TargetAngleDegreesPerSecond = 50.0f;
+
+        _meshSet = new MeshSet(Globals.MeshHandler.Meshes["TankBody-1"]);
+        _meshSet.SetAttachment("pivot:turret", Globals.MeshHandler.Meshes["TankTurret-1"]);
+        _meshSet.SetAttachmentPath("pivot:turret/pivot:barrel", Globals.MeshHandler.Meshes["TankBarrel-2"]);
     }
+
 
     protected override void MoveAlongPath(GameTime gameTime)
     {
@@ -119,64 +124,14 @@ public class Tank : MobileUnit
 
     public override void Draw(Effect effect)
     {
-        MeshSet? meshSet = GetMeshSet();
-        if (meshSet is null)
+        if (_meshSet is null)
             return;
 
-        meshSet.SetParameter(Mesh.TurretAngle, MathHelper.ToRadians(TargetAngleDegrees));
-        meshSet.SetAttachmentLocalTransform(
+        _meshSet.SetParameter(Mesh.TurretAngle, MathHelper.ToRadians(TargetAngleDegrees));
+        _meshSet.SetAttachmentLocalTransform(
             "pivot:turret/pivot:barrel",
             Matrix.CreateTranslation(BarrelRecoilOffset));
-        meshSet.Draw(effect, GetWorldMatrix());
-    }
-
-    /// <summary>Changes this tank instance's turret without modifying shared mesh assets.</summary>
-    public bool SetTurretMesh(string meshName)
-    {
-        if (!Globals.MeshHandler.Meshes.TryGetValue(meshName, out Mesh? turretMesh))
-            return false;
-
-        MeshSet? meshSet = GetMeshSet();
-        if (meshSet is null)
-            return false;
-
-        meshSet.SetAttachment("pivot:turret", turretMesh);
-        return true;
-    }
-
-    /// <summary>Changes this tank instance's barrel below its currently attached turret.</summary>
-    public bool SetBarrelMesh(string meshName)
-    {
-        if (!Globals.MeshHandler.Meshes.TryGetValue(meshName, out Mesh? barrelMesh))
-            return false;
-
-        MeshSet? meshSet = GetMeshSet();
-        return meshSet?.SetAttachmentPath("pivot:turret/pivot:barrel", barrelMesh) ?? false;
-    }
-
-    /// <summary>Returns the projectile spawn position at an empty pivot:muzzle group.</summary>
-    public bool TryGetMuzzleWorldPosition(out Vector3 position)
-    {
-        MeshSet? meshSet = GetMeshSet();
-        return meshSet?.TryGetPivotWorldPosition(
-            "pivot:turret/pivot:barrel/pivot:muzzle",
-            GetWorldMatrix(),
-            out position) ?? SetMissingMuzzlePosition(out position);
-    }
-
-    private MeshSet? GetMeshSet()
-    {
-        if (_meshSet is not null)
-            return _meshSet;
-        if (!Globals.MeshHandler.Meshes.TryGetValue("TankBody-1", out Mesh? bodyMesh) ||
-            !Globals.MeshHandler.Meshes.TryGetValue("TankTurret-1", out Mesh? turretMesh) ||
-            !Globals.MeshHandler.Meshes.TryGetValue("TankBarrel-2", out Mesh? barrelMesh))
-            return null;
-
-        _meshSet = new MeshSet(bodyMesh);
-        _meshSet.SetAttachment("pivot:turret", turretMesh);
-        _meshSet.SetAttachmentPath("pivot:turret/pivot:barrel", barrelMesh);
-        return _meshSet;
+        _meshSet.Draw(effect, GetWorldMatrix());
     }
 
     private static Vector3 MoveTowards(Vector3 current, Vector3 target, float maximumDistance)
@@ -186,11 +141,5 @@ public class Tank : MobileUnit
         if (distance <= maximumDistance || distance <= 0.0001f)
             return target;
         return current + offset / distance * maximumDistance;
-    }
-
-    private static bool SetMissingMuzzlePosition(out Vector3 position)
-    {
-        position = Vector3.Zero;
-        return false;
     }
 }

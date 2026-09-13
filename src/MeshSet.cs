@@ -2,6 +2,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace RTS;
 
@@ -12,17 +13,42 @@ namespace RTS;
 /// </summary>
 public sealed class MeshSet
 {
+    public sealed record MeshSetPivot(string Name, string Path);
+
     private sealed class Attachment(MeshSet meshSet)
     {
         public MeshSet MeshSet { get; } = meshSet;
         public Matrix LocalTransform { get; set; } = Matrix.Identity;
+        
     }
+
+    private sealed record AttachmentStep(MeshSet Owner, Mesh.Pivot Pivot, Attachment Attachment);
+
+    private sealed record CachedPivot(
+        MeshSetPivot Description,
+        MeshSet Owner,
+        Mesh.Pivot Pivot,
+        IReadOnlyList<AttachmentStep> Steps);
 
     private readonly Dictionary<string, Attachment> _attachments =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, float> _parameters = [];
+    private readonly List<CachedPivot> _cachedPivots = [];
+    private readonly List<MeshSetPivot> _pivots = [];
+    private bool _isDirty = true;
 
     public Mesh RootMesh { get; }
+    /// <summary>True when the cached placeholder list must be rebuilt.</summary>
+    public bool IsDirty => _isDirty || _attachments.Values.Any(attachment => attachment.MeshSet.IsDirty);
+    /// <summary>All discovered pivot nodes, including pivots in nested attachments.</summary>
+    public IReadOnlyList<MeshSetPivot> Pivots
+    {
+        get
+        {
+            EnsurePivotCache();
+            return _pivots;
+        }
+    }
 
     public MeshSet(Mesh rootMesh)
     {
@@ -37,9 +63,16 @@ public sealed class MeshSet
         ArgumentException.ThrowIfNullOrWhiteSpace(placeholderName);
         ArgumentNullException.ThrowIfNull(meshSet);
         _attachments[placeholderName] = new Attachment(meshSet);
+        _isDirty = true;
     }
 
-    public bool RemoveAttachment(string placeholderName) => _attachments.Remove(placeholderName);
+    public bool RemoveAttachment(string placeholderName)
+    {
+        bool removed = _attachments.Remove(placeholderName);
+        if (removed)
+            _isDirty = true;
+        return removed;
+    }
 
     public bool TryGetAttachment(string placeholderName, out MeshSet meshSet) =>
         TryGetAttachmentSet(placeholderName, out meshSet!);
@@ -95,44 +128,37 @@ public sealed class MeshSet
     /// projectile and particle spawn points.
     /// </summary>
     public bool TryGetPivotWorldTransform(
-        string pivotPath,
+        string pivotName,
         Matrix world,
         out Matrix pivotWorld)
     {
         pivotWorld = Matrix.Identity;
-        if (string.IsNullOrWhiteSpace(pivotPath))
+        if (string.IsNullOrWhiteSpace(pivotName))
             return false;
 
-        string[] path = pivotPath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (path.Length == 0)
+        EnsurePivotCache();
+        CachedPivot? pivot = _cachedPivots.FirstOrDefault(candidate =>
+            string.Equals(candidate.Description.Name, pivotName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(candidate.Description.Path, pivotName, StringComparison.OrdinalIgnoreCase));
+        if (pivot is null)
             return false;
 
-        MeshSet current = this;
         Matrix currentWorld = world;
-        for (int index = 0; index < path.Length; index++)
+        foreach (AttachmentStep step in pivot.Steps)
         {
-            if (!current.RootMesh.TryGetPivotWorldTransform(
-                    path[index], currentWorld, current._parameters, out Matrix attachmentWorld))
-                return false;
-
-            if (index == path.Length - 1)
-            {
-                pivotWorld = attachmentWorld;
-                return true;
-            }
-
-            if (!current._attachments.TryGetValue(path[index], out Attachment? attachment))
-                return false;
-            currentWorld = attachment.LocalTransform * attachmentWorld;
-            current = attachment.MeshSet;
+            Matrix attachmentWorld = step.Owner.RootMesh.GetPivotWorldTransform(
+                step.Pivot, currentWorld, step.Owner._parameters);
+            currentWorld = step.Attachment.LocalTransform * attachmentWorld;
         }
 
-        return false;
+        pivotWorld = pivot.Owner.RootMesh.GetPivotWorldTransform(
+            pivot.Pivot, currentWorld, pivot.Owner._parameters);
+        return true;
     }
 
-    public bool TryGetPivotWorldPosition(string pivotPath, Matrix world, out Vector3 position)
+    public bool TryGetPivotWorldPosition(string pivotName, Matrix world, out Vector3 position)
     {
-        if (TryGetPivotWorldTransform(pivotPath, world, out Matrix pivotWorld))
+        if (TryGetPivotWorldTransform(pivotName, world, out Matrix pivotWorld))
         {
             position = pivotWorld.Translation;
             return true;
@@ -188,5 +214,53 @@ public sealed class MeshSet
         }
 
         return false;
+    }
+
+    private void EnsurePivotCache()
+    {
+        if (!IsDirty)
+            return;
+
+        _cachedPivots.Clear();
+        _pivots.Clear();
+        CollectPivots(this, [], "");
+        ClearDirtyRecursively();
+    }
+
+    private void CollectPivots(
+        MeshSet current,
+        IReadOnlyList<AttachmentStep> steps,
+        string pathPrefix)
+    {
+        foreach (Mesh.Pivot pivot in current.RootMesh.GetPivots())
+        {
+            string path = string.IsNullOrEmpty(pathPrefix)
+                ? pivot.Name
+                : $"{pathPrefix}/{pivot.Name}";
+            MeshSetPivot description = new(pivot.Name, path);
+            _pivots.Add(description);
+            _cachedPivots.Add(new CachedPivot(description, current, pivot, [.. steps]));
+        }
+
+        foreach ((string placeholderName, Attachment attachment) in current._attachments)
+        {
+            Mesh.Pivot? attachmentPivot = current.RootMesh.GetPivots().FirstOrDefault(pivot =>
+                string.Equals(pivot.Name, placeholderName, StringComparison.OrdinalIgnoreCase));
+            if (attachmentPivot is null)
+                continue;
+
+            AttachmentStep step = new(current, attachmentPivot, attachment);
+            CollectPivots(
+                attachment.MeshSet,
+                [.. steps, step],
+                string.IsNullOrEmpty(pathPrefix) ? placeholderName : $"{pathPrefix}/{placeholderName}");
+        }
+    }
+
+    private void ClearDirtyRecursively()
+    {
+        _isDirty = false;
+        foreach (Attachment attachment in _attachments.Values)
+            attachment.MeshSet.ClearDirtyRecursively();
     }
 }

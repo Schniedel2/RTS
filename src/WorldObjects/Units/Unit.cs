@@ -41,6 +41,7 @@ public abstract class Unit : WorldObject
     /// <summary>Normalized atlas offset used when sampling the material mask texture.</summary>
     public Vector2 MaterialMaskUVOffset { get; set; } = Vector2.Zero;
     public UnitBehavior Behavior { get; set; } = UnitBehavior.Aggressive;
+    protected MeshSet? _meshSet;
 
     // -----------------------------------------------------------------------
     // Visual targeting / aiming model
@@ -566,5 +567,20 @@ public abstract class Unit : WorldObject
     public override void DrawShadow(Effect effect)
     {
         Draw(effect);
+    }
+
+    /// <summary>Returns the projectile spawn position at an empty pivot:muzzle group.</summary>
+    public bool TryGetMuzzleWorldPosition(out Vector3 position)
+    {
+        return _meshSet?.TryGetPivotWorldPosition(
+            "pivot:muzzle",
+            GetWorldMatrix(),
+            out position) ?? SetMissingMuzzlePosition(out position);
+    }
+
+    private static bool SetMissingMuzzlePosition(out Vector3 position)
+    {
+        position = Vector3.Zero;
+        return false;
     }
 }

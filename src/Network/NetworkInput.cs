@@ -219,7 +219,8 @@ public sealed class NetworkInput
                 continue;
 
             attacker.PlayShotEffects();
-            Vector3 start = attacker.Position + Vector3.Up * (attacker.Height * 0.75f);
+            if (!attacker.TryGetMuzzleWorldPosition(out Vector3 start))
+                start = attacker.Position + Vector3.Up * (attacker.Height * 0.75f);
             Globals.World.Projectiles.Fire(start, target);
         }
     }
