@@ -3,6 +3,7 @@ float4x4 View;
 float4x4 Projection;
 float4x4 LightView;
 float4x4 LightProjection;
+float2 ShadowTexelSize;
 float3 LightDirection;
 texture ShadowTexture;
 texture TerrainTilesTexture;
@@ -35,8 +36,8 @@ sampler TileMapSampler = sampler_state
 {
     Texture = <TileMapTexture>;
 
-    MinFilter = Point;
-    MagFilter = Point;
+    MinFilter = Linear;
+    MagFilter = Linear;
     MipFilter = None;
 
     AddressU = Clamp;
@@ -93,6 +94,20 @@ float4 SampleMaterial(float tileId, float2 uv)
     return tex2D(
         TerrainTilesSampler,
         terrainUV);
+}
+
+float CalculateShadow(float2 shadowUV, float currentDepth, float bias)
+{
+    float litSamples = 0.0;
+    for (int y = -1; y <= 1; y++)
+    {
+        for (int x = -1; x <= 1; x++)
+        {
+            float sampledDepth = tex2D(ShadowSampler, shadowUV + float2(x, y) * ShadowTexelSize).r;
+            litSamples += currentDepth - bias <= sampledDepth ? 1.0 : 0.0;
+        }
+    }
+    return litSamples / 9.0;
 }
 
 VertexShaderOutput VertexShaderFunction(
@@ -376,24 +391,7 @@ float4 PixelShaderFunction(
     // ShadowMap
     // ============================================================
 
-    float shadowDepth =
-        tex2D(
-            ShadowSampler,
-            shadowUV).r;
-
-    float currentDepth =
-        shadowPosition.z;
-
-    float bias =
-        0.001;
-
-    float shadow =
-        1.0;
-
-    if (currentDepth - bias > shadowDepth)
-    {
-        shadow = 0.0;
-    }
+    float shadow = CalculateShadow(shadowUV, shadowPosition.z, 0.001);
 
 
     // ============================================================

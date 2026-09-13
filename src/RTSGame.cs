@@ -48,7 +48,7 @@ public class RTSGame
         World = new GameWorld(terrainWidth, terrainHeight, 1);
         Globals.World = World;
         Globals.LocalPlayer = new PlayerHandler(World, World.Markers);
-        _shadowMap = new ShadowMap();
+        _shadowMap = new ShadowMap(4096);
         Globals.Console = new GameConsole();
 
         ActionPanel = new ActionPanel(Globals.ActionIcons);
@@ -225,10 +225,19 @@ public class RTSGame
         _ = NetworkHost.UpdateAsync(gameTime);
         UpdateConsole(gameTime);
 
-        ShadowMap.Update(
-            World.Center,
-            World.Terrain.Width * 1.42f,
-            _sunAngle);
+        if (!ShadowMap.UpdateForCamera(
+                camera,
+                viewport,
+                World.Terrain,
+                _sunAngle))
+        {
+            // The camera can temporarily point outside the map. Keep the
+            // previous global behavior as a safe fallback in that situation.
+            ShadowMap.Update(
+                World.Center,
+                World.Terrain.Width * 1.42f,
+                _sunAngle);
+        }
 
     }
 

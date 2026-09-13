@@ -132,6 +132,8 @@ public class Terrain
         Globals._terrainEffect.Parameters["LightProjection"]?.SetValue(lightProjection);
 
         Globals._terrainEffect.Parameters["ShadowTexture"]?.SetValue(shadowMap);
+        Globals._terrainEffect.Parameters["ShadowTexelSize"]?.SetValue(
+            new Vector2(1.0f / shadowMap.Width, 1.0f / shadowMap.Height));
         Globals._terrainEffect.Parameters["LightDirection"]?.SetValue(lightDirection);
         Globals._terrainEffect.Parameters["TileMapTexture"]?.SetValue(_tileMapTexture);
         Globals._terrainEffect.Parameters["MapWidth"]?.SetValue(Width);

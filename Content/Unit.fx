@@ -3,6 +3,7 @@ float4x4 View;
 float4x4 Projection;
 float4x4 LightView;
 float4x4 LightProjection;
+float2 ShadowTexelSize;
 
 float3 LightDirection;
 
@@ -89,6 +90,20 @@ struct VertexShaderOutput
     float2 TexCoord      : TEXCOORD2;
 };
 
+float CalculateShadow(float2 shadowUV, float currentDepth, float bias)
+{
+    float litSamples = 0.0;
+    for (int y = -1; y <= 1; y++)
+    {
+        for (int x = -1; x <= 1; x++)
+        {
+            float sampledDepth = tex2D(ShadowSampler, shadowUV + float2(x, y) * ShadowTexelSize).r;
+            litSamples += currentDepth - bias <= sampledDepth ? 1.0 : 0.0;
+        }
+    }
+    return litSamples / 9.0;
+}
+
 
 VertexShaderOutput VertexShaderFunction(VertexShaderInput input)
 {
@@ -139,13 +154,7 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
     shadowUV.y =
         1.0 - shadowUV.y;
 
-    float shadowDepth =
-        tex2D(ShadowSampler, shadowUV).r;
-
-    float shadow = 1.0;
-
-    if (shadowPosition.z - 0.005 > shadowDepth)
-        shadow = 0.0;
+    float shadow = CalculateShadow(shadowUV, shadowPosition.z, 0.001);
 
     if (DebugMode == 1)
         shadow = 1.0;
