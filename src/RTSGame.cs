@@ -37,6 +37,8 @@ public class RTSGame
         Globals.TextureHandler.LoadMeshTextures();
 
         Globals.TilemapHandler = new TilemapHandler();
+        Globals.SkinHandler = new SkinHandler();
+        Globals.SkinHandler.LoadSkinTextures();
         Globals.TilemapHandler.LoadTilemaps();
 
         Globals.MeshHandler = new MeshHandler();
@@ -66,7 +68,7 @@ public class RTSGame
                     PlayerId: player.Id,
                     DisplayName: player.Name,
                     TeamId: player.TeamId),
-                player.Color.PackedValue)));
+                player.Skin)));
         Network.SetWorldDataProvider(() => NetworkCommands.CreateWorldData(
             Network.LocalPeerId,
             World.Terrain.GetWorldData()));
@@ -84,16 +86,16 @@ public class RTSGame
         _ = _consoleCommands.CallBatch(new[] { "autorun.batch" });
     }
 
-    public void UpdatePlayer(Guid playerId, string name, int teamId, Color color)
+    public void UpdatePlayer(Guid playerId, string name, int teamId, PlayerSkin skin)
     {
         Player? player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
         if (player is null)
         {
-            _players.Add(new Player(playerId, name, teamId, color));
+            _players.Add(new Player(playerId, name, teamId, skin));
             return;
         }
 
-        player.SetRequestedData(name, teamId, color);
+        player.SetRequestedData(name, teamId, skin);
     }
 
     public void RemovePlayer(Guid playerId)
@@ -114,12 +116,10 @@ public class RTSGame
         if (_players.Any(player => string.Equals(player.Name, name, StringComparison.OrdinalIgnoreCase)))
             throw new ArgumentException($"A player named '{name}' already exists.", nameof(name));
 
-        Color color = Player.ColorPalette.FirstOrDefault(candidate =>
-            _players.All(player => player.Color.PackedValue != candidate.PackedValue));
-        if (color == default)
-            color = Player.ColorPalette[0];
-
-        Player player = new(Guid.NewGuid(), name.Trim(), teamId, color);
+        PlayerSkin skin = Globals.SkinHandler.Skins
+            .Select(definition => definition.Skin)
+            .FirstOrDefault(candidate => _players.All(player => player.Skin != candidate));
+        Player player = new(Guid.NewGuid(), name.Trim(), teamId, skin);
         _players.Add(player);
         AIPlayer aiPlayer = new(player);
         _aiPlayers.Add(player.Id, aiPlayer);

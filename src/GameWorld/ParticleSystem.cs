@@ -201,7 +201,7 @@ public sealed class ParticleSystem
         graphicsDevice.BlendState = BlendState.NonPremultiplied;
         graphicsDevice.DepthStencilState = DepthStencilState.DepthRead;
         graphicsDevice.RasterizerState = RasterizerState.CullNone;
-        effect.Parameters["PlayerColorStrength"]?.SetValue(0.0f);
+        effect.Parameters["PlayerSkinStrength"]?.SetValue(0.0f);
         effect.Parameters["Unlit"]?.SetValue(1.0f);
         try
         {

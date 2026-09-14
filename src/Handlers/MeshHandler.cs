@@ -34,6 +34,10 @@ public class MeshHandler
         Meshes["TankBarrel-1"].LocalTransform = Matrix.CreateScale(0.4f);
         Meshes["TankBarrel-2"].LocalTransform = Matrix.CreateScale(0.4f, 0.4f, 0.6f);
 
+        // TankBody receives its matching mask automatically when imported;
+        // the turret is deliberately a complete player-skin surface.
+        Meshes["TankTurret-1"].SetFullSkinMaterialMask();
+
         int tileSize = 64;
         int tx = tileSize*3+8;
         int ty = tileSize*2+8;

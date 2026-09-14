@@ -84,8 +84,8 @@ public class ConsoleCommands
             "set-player-displayname",
             SetPlayerDisplayName);
         _console.RegisterAsyncCommand(
-            "set-player-color",
-            SetPlayerColorAsync);
+            "set-player-skin",
+            SetPlayerSkinAsync);
         _console.RegisterAsyncCommand(
             "map-publish",
             PublishMapAsync);
@@ -813,11 +813,11 @@ public class ConsoleCommands
             _console.Print($"  {fileName}");
    }
 
-    private async System.Threading.Tasks.Task SetPlayerColorAsync(string[] args)
+    private async System.Threading.Tasks.Task SetPlayerSkinAsync(string[] args)
     {
-        if (!TryParsePlayerColor(args, out Color color))
+        if (args.Length != 1 || !Globals.SkinHandler.TryParse(args[0], out PlayerSkin skin))
         {
-            _console.Print("Usage: set-player-color <red|blue|green|yellow|orange|purple|cyan|white|#RRGGBB> or <r> <g> <b>");
+            _console.Print("Usage: set-player-skin <Green|Blue|Gray|Yellow|Pink|Cyan|Violet|Red|Brown|Fancy|Yellow-Brown|Light-Green|Sand|Snow|Safari|Orange|Light-Pink|Light-Orange|Dark-Gray>");
             return;
         }
 
@@ -831,12 +831,12 @@ public class ConsoleCommands
 
         try
         {
-            await localPlayer.RequestColorAsync(_rtsGame.NetworkClient, color);
-            _console.Print($"Requested player color #{color.R:X2}{color.G:X2}{color.B:X2}.");
+            await localPlayer.RequestSkinAsync(_rtsGame.NetworkClient, skin);
+            _console.Print($"Requested player skin {Globals.SkinHandler.Get(skin).Name}.");
         }
         catch (Exception ex)
         {
-            _console.Print($"Player color error: {ex.Message}");
+            _console.Print($"Player skin error: {ex.Message}");
         }
     }
 

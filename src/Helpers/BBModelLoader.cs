@@ -11,6 +11,9 @@ namespace RTS;
 public static class BBModelLoader
 {
     private const float ModelScale = 0.1f;
+    private sealed record ImportedTexture(
+        TextureHandler.TextureRegion Visible,
+        TextureHandler.TextureRegion? MaterialMask);
 
     public static Mesh Load(string path, Color? color = null)
     {
@@ -18,7 +21,7 @@ public static class BBModelLoader
         JsonElement root = document.RootElement;
         Color vertexColor = color ?? Color.SteelBlue;
         (float Width, float Height) resolution = ReadResolution(root);
-        Dictionary<int, TextureHandler.TextureRegion> textureRegions = ReadTextureRegions(root, path);
+        Dictionary<int, ImportedTexture> textureRegions = ReadTextureRegions(root, path);
 
         Dictionary<string, SubMesh> elementsByUuid = [];
         if (root.TryGetProperty("elements", out JsonElement elements))
@@ -133,7 +136,7 @@ public static class BBModelLoader
         JsonElement element,
         Color vertexColor,
         (float Width, float Height) resolution,
-        IReadOnlyDictionary<int, TextureHandler.TextureRegion> textureRegions)
+        IReadOnlyDictionary<int, ImportedTexture> textureRegions)
     {
         string name = element.TryGetProperty("name", out JsonElement nameElement) ? nameElement.GetString() ?? "mesh" : "mesh";
         // The element's "origin" is the pivot point Blockbench rotates/animates this part around.
@@ -149,6 +152,7 @@ public static class BBModelLoader
         List<VertexPositionColorNormalTexture> vertices = [];
         List<int> indices = [];
         int? textureAtlasIndex = null;
+        ImportedTexture? subMeshTexture = null;
 
         foreach (JsonProperty face in element.GetProperty("faces").EnumerateObject())
         {
@@ -158,7 +162,9 @@ public static class BBModelLoader
                 continue;
 
             Vector3[] facePositions = faceVertexKeys.Select(key => positions[key]).ToArray();
-            TextureHandler.TextureRegion? textureRegion = ReadFaceTextureRegion(face.Value, textureRegions);
+            ImportedTexture? importedTexture = ReadFaceTextureRegion(face.Value, textureRegions);
+            TextureHandler.TextureRegion? textureRegion = importedTexture?.Visible;
+            subMeshTexture ??= importedTexture;
             if (textureRegion is not null)
             {
                 if (textureAtlasIndex is int existingAtlas && existingAtlas != textureRegion.AtlasIndex)
@@ -187,7 +193,9 @@ public static class BBModelLoader
         }
 
         SubMesh submesh = new SubMesh(
-            name, vertices.ToArray(), indices.ToArray(), pivot, textureAtlasIndex);
+            name, vertices.ToArray(), indices.ToArray(), pivot, textureAtlasIndex,
+            textureRegion: subMeshTexture?.Visible,
+            materialMaskRegion: subMeshTexture?.MaterialMask);
         return submesh;
     }
 
@@ -211,9 +219,9 @@ public static class BBModelLoader
         }).ToArray();
     }
 
-    private static Dictionary<int, TextureHandler.TextureRegion> ReadTextureRegions(JsonElement root, string modelPath)
+    private static Dictionary<int, ImportedTexture> ReadTextureRegions(JsonElement root, string modelPath)
     {
-        Dictionary<int, TextureHandler.TextureRegion> regions = [];
+        Dictionary<int, ImportedTexture> regions = [];
         if (!root.TryGetProperty("textures", out JsonElement textures))
             return regions;
 
@@ -243,26 +251,35 @@ public static class BBModelLoader
             TextureHandler.TextureRegion region = Globals.TextureHandler.TryGetTextureRegion(texturePath, out TextureHandler.TextureRegion existing)
                 ? existing
                 : Globals.TextureHandler.AddTexture(texturePath);
-            regions[index] = region;
+            string maskPath = Path.Combine(
+                Path.GetDirectoryName(texturePath)!,
+                $"{Path.GetFileNameWithoutExtension(texturePath)}-MaterialMask.png");
+            TextureHandler.TextureRegion? mask = File.Exists(maskPath)
+                ? (Globals.TextureHandler.TryGetTextureRegion(maskPath, out TextureHandler.TextureRegion existingMask)
+                    ? existingMask
+                    : Globals.TextureHandler.AddTexture(maskPath))
+                : null;
+            ImportedTexture importedTexture = new(region, mask);
+            regions[index] = importedTexture;
 
             if (texture.TryGetProperty("id", out JsonElement idElement) &&
                 int.TryParse(idElement.GetString(), out int id))
-                regions[id] = region;
+                regions[id] = importedTexture;
             index++;
         }
         return regions;
     }
 
-    private static TextureHandler.TextureRegion? ReadFaceTextureRegion(
+    private static ImportedTexture? ReadFaceTextureRegion(
         JsonElement face,
-        IReadOnlyDictionary<int, TextureHandler.TextureRegion> textureRegions)
+        IReadOnlyDictionary<int, ImportedTexture> textureRegions)
     {
         if (!face.TryGetProperty("texture", out JsonElement texture) ||
             texture.ValueKind != JsonValueKind.Number ||
             !texture.TryGetInt32(out int textureIndex))
             return null;
 
-        return textureRegions.TryGetValue(textureIndex, out TextureHandler.TextureRegion? region)
+        return textureRegions.TryGetValue(textureIndex, out ImportedTexture? region)
             ? region
             : null;
     }

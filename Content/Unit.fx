@@ -9,6 +9,7 @@ float3 LightDirection;
 
 texture ShadowTexture;
 texture UnitTexture;
+texture PlayerSkinTexture;
 
 // MaterialMask:
 // R = PlayerColorMask
@@ -21,9 +22,15 @@ texture MaterialMaskTexture;
 // independent: a mesh variant may use a different material-mask layout.
 float2 UnitTextureUVOffset;
 float2 MaterialMaskUVOffset;
+float2 MaterialMaskSourceUVOffset;
+float2 MaterialMaskUVScale;
+float MaterialMaskUseTexture;
+float MaterialMaskDefaultPlayerMask;
 
-float3 PlayerColor;
-float  PlayerColorStrength;
+float2 PlayerSkinUVOffset;
+float2 PlayerSkinUVScale;
+float  PlayerSkinUVRepeat;
+float  PlayerSkinStrength;
 
 // 0 == untextured (vertex color only), 1 == fully textured
 float TextureStrength;
@@ -56,6 +63,16 @@ sampler UnitTextureSampler = sampler_state
     MagFilter = Linear;
     MipFilter = Linear;
 
+    AddressU = Wrap;
+    AddressV = Wrap;
+};
+
+sampler PlayerSkinSampler = sampler_state
+{
+    Texture = <PlayerSkinTexture>;
+    MinFilter = Linear;
+    MagFilter = Linear;
+    MipFilter = Linear;
     AddressU = Wrap;
     AddressV = Wrap;
 };
@@ -167,7 +184,10 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
     // -------------------------------------------------
 
     float2 unitTextureUv = input.TexCoord + UnitTextureUVOffset;
-    float2 materialMaskUv = input.TexCoord + MaterialMaskUVOffset;
+    float2 materialMaskUv = MaterialMaskUVOffset +
+        (input.TexCoord + UnitTextureUVOffset - MaterialMaskSourceUVOffset) * MaterialMaskUVScale;
+    float2 localSkinUv = frac(input.TexCoord * PlayerSkinUVRepeat);
+    float2 playerSkinUv = PlayerSkinUVOffset + localSkinUv * PlayerSkinUVScale;
 
     float4 texColor =
         lerp(
@@ -180,8 +200,11 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
     // Material mask
     // -------------------------------------------------
 
-    float4 materialMask =
-        tex2D(MaterialMaskSampler, materialMaskUv) * TextureStrength;
+    float4 materialMask = lerp(
+        float4(MaterialMaskDefaultPlayerMask, 0.0, 0.0, 1.0),
+        tex2D(MaterialMaskSampler, materialMaskUv),
+        MaterialMaskUseTexture) * TextureStrength;
+    float4 playerSkin = tex2D(PlayerSkinSampler, playerSkinUv);
 
     float playerMask =
         materialMask.r;
@@ -205,18 +228,8 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
     // Player color
     // -------------------------------------------------
 
-    float playerBlend =
-        saturate(
-            playerMask * PlayerColorStrength);
-
-    float3 playerColored =
-        baseColor.rgb * PlayerColor * 2.0;
-
-    baseColor.rgb =
-        lerp(
-            baseColor.rgb,
-            playerColored,
-            playerBlend);
+    float playerBlend = saturate(playerMask * PlayerSkinStrength);
+    baseColor.rgb = lerp(baseColor.rgb, playerSkin.rgb, playerBlend);
 
 
     // -------------------------------------------------

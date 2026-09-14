@@ -38,8 +38,6 @@ public abstract class Unit : WorldObject
     public float FollowDistance { get; private set; }
     /// <summary>Normalized atlas offset used when sampling the visible unit texture.</summary>
     public Vector2 UnitTextureUVOffset { get; set; } = Vector2.Zero;
-    /// <summary>Normalized atlas offset used when sampling the material mask texture.</summary>
-    public Vector2 MaterialMaskUVOffset { get; set; } = Vector2.Zero;
     public UnitBehavior Behavior { get; set; } = UnitBehavior.Aggressive;
     protected MeshSet? _meshSet;
 

@@ -94,7 +94,7 @@ public sealed class NetworkHost
                     NetworkMessageType.FollowRequest => NetworkCommands.CreateFollowCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.TextRequest => NetworkCommands.CreateTextCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.ToolActionRequest => NetworkCommands.CreateToolActionCommand(_networkHandler.LocalPeerId, request),
-                    NetworkMessageType.RequestPlayerUpdate => NetworkCommands.CreatePlayerUpdateCommand(_networkHandler.LocalPeerId, request, ConfirmPlayerColor(request)),
+                    NetworkMessageType.RequestPlayerUpdate => NetworkCommands.CreatePlayerUpdateCommand(_networkHandler.LocalPeerId, request, ConfirmPlayerSkin(request)),
                     NetworkMessageType.BuildRequest => NetworkCommands.CreateBuildCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.BuildConstructionRequest => NetworkCommands.CreateBuildConstructionCommand(_networkHandler.LocalPeerId, request),
                     _ => throw new InvalidOperationException($"Unsupported request type: {request.Type}")
@@ -113,25 +113,23 @@ public sealed class NetworkHost
         }
     }
 
-    /// <summary>Grants the requested color unless another player already owns it, otherwise picks the first free palette entry.</summary>
-    private static uint ConfirmPlayerColor(NetworkMessage request)
+    /// <summary>Grants the requested skin unless another player already owns it.</summary>
+    private static PlayerSkin ConfirmPlayerSkin(NetworkMessage request)
     {
         Guid playerId = request.PlayerId ?? request.SenderId;
         Player[] otherPlayers = Globals.Game.Players.Where(player => player.Id != playerId).ToArray();
+        PlayerSkin requested = (PlayerSkin)(request.PlayerSkin ?? (int)PlayerSkin.Green);
+        bool IsValid(PlayerSkin skin) => Enum.IsDefined(skin);
+        bool IsTaken(PlayerSkin skin) => otherPlayers.Any(player => player.Skin == skin);
 
-        bool IsTaken(uint packedColor) =>
-            otherPlayers.Any(player => player.Color.PackedValue == packedColor);
+        if (IsValid(requested) && !IsTaken(requested))
+            return requested;
 
-        if (request.PlayerColor is uint requestedColor && !IsTaken(requestedColor))
-            return requestedColor;
+        foreach (SkinHandler.SkinDefinition definition in Globals.SkinHandler.Skins)
+            if (!IsTaken(definition.Skin))
+                return definition.Skin;
 
-        foreach (Color paletteColor in Player.ColorPalette)
-        {
-            if (!IsTaken(paletteColor.PackedValue))
-                return paletteColor.PackedValue;
-        }
-
-        return Player.ColorPalette[0].PackedValue;
+        return PlayerSkin.Green;
     }
 
     private void UpdateHostSimulation(GameTime gameTime)    {

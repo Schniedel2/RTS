@@ -96,4 +96,4 @@ public sealed record NetworkMessage(
     TerrainTile? TerrainTile = null,
     WorldData? WorldData = null,
     int TeamId = 0,
-    uint? PlayerColor = null);
+    int? PlayerSkin = null);

@@ -112,6 +112,7 @@ public sealed class TextureHandler : IDisposable
     public void LoadMeshTextures(string directory)
     {
         AddTexture(Path.Combine(directory, "TankBody-1.png"));
+        AddTexture(Path.Combine(directory, "TankBody-1-MaterialMask.png"));
         AddTexture(Path.Combine(directory, "TankTurret-1.png"));
         AddTexture(Path.Combine(directory, "TankBarrel-1.png"));
         NextTexture();

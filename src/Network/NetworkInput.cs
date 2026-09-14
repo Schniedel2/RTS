@@ -58,7 +58,7 @@ public sealed class NetworkInput
                 updatedPlayerId,
                 message.DisplayName,
                 message.TeamId,
-                Player.ColorFromPacked(message.PlayerColor ?? Player.ColorPalette[0].PackedValue));
+                (PlayerSkin)(message.PlayerSkin ?? (int)PlayerSkin.Green));
             return;
         }
 

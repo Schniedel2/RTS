@@ -28,10 +28,10 @@ public static class NetworkCommands
             PlayerId: player.Id,
             DisplayName: player.Name,
             TeamId: player.TeamId,
-            PlayerColor: player.Color.PackedValue);
+            PlayerSkin: (int)player.Skin);
     }
 
-    public static NetworkMessage CreatePlayerUpdateCommand(Guid hostId, NetworkMessage request, uint confirmedColor)
+    public static NetworkMessage CreatePlayerUpdateCommand(Guid hostId, NetworkMessage request, PlayerSkin confirmedSkin)
     {
         return new NetworkMessage(
             NetworkMessageType.PlayerUpdate,
@@ -39,7 +39,7 @@ public static class NetworkCommands
             PlayerId: request.PlayerId ?? request.SenderId,
             DisplayName: request.DisplayName,
             TeamId: request.TeamId,
-            PlayerColor: confirmedColor);
+            PlayerSkin: (int)confirmedSkin);
     }
 
     public static NetworkMessage CreateBuildCommand(Guid hostId, NetworkMessage request)

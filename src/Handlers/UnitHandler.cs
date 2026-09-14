@@ -75,10 +75,8 @@ public class UnitHandler
             effect.Parameters["UnitTexture"]?.SetValue(Globals.BuildingsTexture);
             Player? owner = Globals.Game.Players.FirstOrDefault(
                 player => player.Id == unit.CreatorPlayerId);
-            Color playerColor = owner?.Color ?? Color.White;
-            effect.Parameters["PlayerColor"]?.SetValue(playerColor.ToVector3());
+            Globals.SkinHandler.ApplyToEffect(effect, owner?.Skin ?? PlayerSkin.Green);
             effect.Parameters["UnitTextureUVOffset"]?.SetValue(unit.UnitTextureUVOffset);
-            effect.Parameters["MaterialMaskUVOffset"]?.SetValue(unit.MaterialMaskUVOffset);
             unit.Draw(effect);
         }
     }
@@ -92,10 +90,8 @@ public class UnitHandler
             effect.Parameters["UnitTexture"]?.SetValue(Globals.UnitsTexture);
             Player? owner = Globals.Game.Players.FirstOrDefault(
                 player => player.Id == unit.CreatorPlayerId);
-            Color playerColor = owner?.Color ?? Color.White;
-            effect.Parameters["PlayerColor"]?.SetValue(playerColor.ToVector3());
+            Globals.SkinHandler.ApplyToEffect(effect, owner?.Skin ?? PlayerSkin.Green);
             effect.Parameters["UnitTextureUVOffset"]?.SetValue(unit.UnitTextureUVOffset);
-            effect.Parameters["MaterialMaskUVOffset"]?.SetValue(unit.MaterialMaskUVOffset);
             unit.Draw(effect);
         }
     }

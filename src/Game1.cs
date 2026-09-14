@@ -55,7 +55,6 @@ public class Game1 : Game
         Globals.ActionIcons = Content.Load<Texture2D>("actionIcons");
         Globals._terrainTileSheet = Content.Load<Texture2D>("terrainTileSheet");
         Globals.UnitsTexture = Content.Load<Texture2D>("unitsTexture");
-        Globals.UnitsMaterialMask = Content.Load<Texture2D>("unitsMaterialMask");
         Globals.BuildingsTexture = Content.Load<Texture2D>("buildingsTexture");
 
         Globals._terrainEffect.Parameters["TerrainTilesTexture"]?.SetValue(Globals._terrainTileSheet);

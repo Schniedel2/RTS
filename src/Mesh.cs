@@ -12,7 +12,9 @@ public sealed class SubMesh(
     VertexPositionColorNormalTexture[] vertices,
     int[] indices,
     Vector3 pivot,
-    int? textureAtlasIndex = null)
+    int? textureAtlasIndex = null,
+    TextureHandler.TextureRegion? textureRegion = null,
+    TextureHandler.TextureRegion? materialMaskRegion = null)
 {
     public string Name { get; } = name;
     public VertexPositionColorNormalTexture[] Vertices { get; } = vertices;
@@ -20,6 +22,21 @@ public sealed class SubMesh(
     public Vector3 Pivot { get; } = pivot;
     /// <summary>Optional TextureHandler atlas used by UVs imported from a BBModel texture.</summary>
     public int? TextureAtlasIndex { get; } = textureAtlasIndex;
+    public TextureHandler.TextureRegion? TextureRegion { get; } = textureRegion;
+    public TextureHandler.TextureRegion? MaterialMaskRegion { get; private set; } = materialMaskRegion;
+    public bool UsesFullSkinMask { get; private set; }
+
+    public void SetMaterialMask(TextureHandler.TextureRegion materialMaskRegion)
+    {
+        MaterialMaskRegion = materialMaskRegion;
+        UsesFullSkinMask = false;
+    }
+
+    public void SetFullSkinMask()
+    {
+        MaterialMaskRegion = null;
+        UsesFullSkinMask = true;
+    }
 
     public (Vector3 Min, Vector3 Max) GetBounds()
     {
@@ -72,11 +89,32 @@ public sealed class MeshNode(string name, Vector3 pivot)
             effect.Parameters["World"]?.SetValue(world);
             if (subMesh.TextureAtlasIndex is int atlasIndex)
                 effect.Parameters["UnitTexture"]?.SetValue(Globals.TextureHandler.GetAtlas(atlasIndex));
+            ApplyMaterialMask(effect, subMesh);
             RenderHelper.DrawMesh(effect, subMesh.Vertices, subMesh.Indices);
         }
         drawAttachments?.Invoke(Name, GetAttachmentWorld(parentWorld, parameters));
         foreach (MeshNode child in Children)
             child.Draw(effect, world, parameters, drawAttachments);
+    }
+
+    private static void ApplyMaterialMask(Effect effect, SubMesh subMesh)
+    {
+        if (subMesh.MaterialMaskRegion is not TextureHandler.TextureRegion mask ||
+            subMesh.TextureRegion is not TextureHandler.TextureRegion texture)
+        {
+            effect.Parameters["MaterialMaskUseTexture"]?.SetValue(0.0f);
+            effect.Parameters["MaterialMaskDefaultPlayerMask"]?.SetValue(subMesh.UsesFullSkinMask ? 1.0f : 0.0f);
+            return;
+        }
+
+        effect.Parameters["MaterialMaskTexture"]?.SetValue(Globals.TextureHandler.GetAtlas(mask.AtlasIndex));
+        effect.Parameters["MaterialMaskSourceUVOffset"]?.SetValue(texture.UVOffset);
+        effect.Parameters["MaterialMaskUVOffset"]?.SetValue(mask.UVOffset);
+        effect.Parameters["MaterialMaskUVScale"]?.SetValue(new Vector2(
+            mask.UVScale.X / texture.UVScale.X,
+            mask.UVScale.Y / texture.UVScale.Y));
+        effect.Parameters["MaterialMaskUseTexture"]?.SetValue(1.0f);
+        effect.Parameters["MaterialMaskDefaultPlayerMask"]?.SetValue(0.0f);
     }
 
     /// <summary>
@@ -207,6 +245,20 @@ public class Mesh
 
     public void SetLocalScale(Vector3 scale) =>
         LocalTransform = Matrix.CreateScale(scale);
+
+    /// <summary>Uses one authored material mask for every part of this mesh.</summary>
+    public void SetMaterialMask(TextureHandler.TextureRegion materialMaskRegion)
+    {
+        foreach (SubMesh subMesh in SubMeshes)
+            subMesh.SetMaterialMask(materialMaskRegion);
+    }
+
+    /// <summary>Marks all mesh parts as player-skin material without a PNG mask.</summary>
+    public void SetFullSkinMaterialMask()
+    {
+        foreach (SubMesh subMesh in SubMeshes)
+            subMesh.SetFullSkinMask();
+    }
 
     public MeshNode? FindNode(string nodeName) => Root.FindNode(nodeName);
 

@@ -34,12 +34,12 @@ public static class Globals
     public static GraphicsDevice GraphicsDevice = null!;
     public static PlayerHandler LocalPlayer = null!;
     public static MeshHandler MeshHandler = null!;
+    public static SkinHandler SkinHandler = null!;
     public static TextureHandler TextureHandler = null!;
     public static TilemapHandler TilemapHandler = null!;
     public static Texture2D ActionIcons = null!;
     public static Texture2D UnitsTexture = null!;
     public static Texture2D BuildingsTexture = null!;
-    public static Texture2D UnitsMaterialMask = null!;
     public static RTSGame Game = null!;
     public static GameWorld World = null!;
     public static RenderHelper RenderHelper = null!;

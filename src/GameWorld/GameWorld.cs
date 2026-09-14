@@ -117,15 +117,13 @@ public class GameWorld
             new Vector2(1.0f / shadowTexture.Width, 1.0f / shadowTexture.Height));
         unitEffect.Parameters["LightDirection"]?.SetValue(lightDirection);
         unitEffect.Parameters["Unlit"]?.SetValue(0.0f);
+        // Always bind a valid texture. Meshes without a dedicated mask use
+        // MaterialMaskUseTexture=0, but the shader still owns this sampler.
+        unitEffect.Parameters["MaterialMaskTexture"]?.SetValue(Globals._whiteTexture);
 
-        Vector3 playerColor = Globals.Game.Players.Count > 0
-            ? Globals.Game.Players[0].Color.ToVector3()
-            : Color.Red.ToVector3();
-        unitEffect.Parameters["PlayerColor"].SetValue(playerColor);
-        unitEffect.Parameters["PlayerColorStrength"].SetValue(1.0f);
+        Globals.SkinHandler.ApplyToEffect(unitEffect, PlayerSkin.Green);
 
         unitEffect.Parameters["UnitTexture"].SetValue(Globals.UnitsTexture);
-        unitEffect.Parameters["MaterialMaskTexture"].SetValue(Globals.UnitsMaterialMask);
         Units.DrawMobileUnits(unitEffect);
 
         unitEffect.Parameters["UnitTexture"].SetValue(Globals.BuildingsTexture);
@@ -134,6 +132,11 @@ public class GameWorld
         // Markers, projectiles and particles do not own atlas variants.
         unitEffect.Parameters["UnitTextureUVOffset"]?.SetValue(Vector2.Zero);
         unitEffect.Parameters["MaterialMaskUVOffset"]?.SetValue(Vector2.Zero);
+        unitEffect.Parameters["MaterialMaskSourceUVOffset"]?.SetValue(Vector2.Zero);
+        unitEffect.Parameters["MaterialMaskUVScale"]?.SetValue(Vector2.Zero);
+        unitEffect.Parameters["MaterialMaskUseTexture"]?.SetValue(0.0f);
+        unitEffect.Parameters["MaterialMaskDefaultPlayerMask"]?.SetValue(0.0f);
+        unitEffect.Parameters["PlayerSkinStrength"]?.SetValue(0.0f);
 
         Markers.Draw(unitEffect);
         Projectiles.Draw(unitEffect);
