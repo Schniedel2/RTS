@@ -40,7 +40,7 @@ public abstract class Unit : WorldObject
     public Vector2 UnitTextureUVOffset { get; set; } = Vector2.Zero;
     public UnitBehavior Behavior { get; set; } = UnitBehavior.Aggressive;
     protected MeshSet? _meshSet;
-    private readonly Dictionary<string, float> _exhaustElapsedByPivot = new(StringComparer.OrdinalIgnoreCase);
+    private float _exhaustElapsed;
 
     /// <summary>Local visual offset applied to the rendered model only.</summary>
     public Vector3 VisualRecoilOffset { get; private set; }
@@ -621,30 +621,18 @@ public abstract class Unit : WorldObject
     /// </summary>
     protected void UpdateExhaust(
         GameTime gameTime,
-        string pivotName = "pivot:exhaust",
         float emissionIntervalSeconds = 0.24f,
         SmokeEmissionSettings? settings = null)
     {
         if (_meshSet is null || emissionIntervalSeconds <= 0.0f)
             return;
 
-        float elapsed = _exhaustElapsedByPivot.GetValueOrDefault(pivotName) +
-            (float)gameTime.ElapsedGameTime.TotalSeconds;
-        if (elapsed < emissionIntervalSeconds)
-        {
-            _exhaustElapsedByPivot[pivotName] = elapsed;
+        _exhaustElapsed += (float)gameTime.ElapsedGameTime.TotalSeconds;
+        if (_exhaustElapsed < emissionIntervalSeconds)
             return;
-        }
 
-        _exhaustElapsedByPivot[pivotName] = elapsed % emissionIntervalSeconds;
-        bool foundPivot = _meshSet.TryGetPivotWorldPosition(
-            pivotName, GetVisualWorldMatrix(), out Vector3 exhaustPosition);
-        // Accept the historic "picot:" typo while existing models are being
-        // migrated. New BBModels should always use the documented pivot: form.
-        if (!foundPivot && pivotName.StartsWith("pivot:", StringComparison.OrdinalIgnoreCase))
-            foundPivot = _meshSet.TryGetPivotWorldPosition(
-                $"picot:{pivotName[6..]}", GetVisualWorldMatrix(), out exhaustPosition);
-        if (!foundPivot)
+        _exhaustElapsed %= emissionIntervalSeconds;
+        if (!_meshSet.TryGetExhaustWorldPosition(GetVisualWorldMatrix(), out Vector3 exhaustPosition))
             return;
 
         Globals.World.Particles.EmitSmoke(

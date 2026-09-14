@@ -58,7 +58,7 @@ public class GDIBulldozer : Car
     public override void Update(GameTime gameTime)
     {
         base.Update(gameTime);
-        UpdateExhaust(gameTime);
+        UpdateExhaust(gameTime, 0.1f);
     }
 
     public override void UpdateHost(GameTime gameTime)

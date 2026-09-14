@@ -76,20 +76,20 @@ public static class SmokeEmissionPresets
     public static SmokeEmissionSettings VehicleExhaust() => new()
     {
         ParticleCount = 1,
-        Intensity = 0.75f,
+        Intensity = 0.85f,
         EmissionLength = 0.08f,
         ForwardSpeed = 0.22f,
         ForwardSpeedVariation = 0.10f,
         SidewaysSpread = 0.12f,
-        UpwardSpeed = 0.55f,
+        UpwardSpeed = 0.35f,
         UpwardSpeedVariation = 0.18f,
-        StartSize = 0.14f,
+        StartSize = 0.30f,
         StartSizeVariation = 0.04f,
-        EndSize = 0.52f,
+        EndSize = 0.72f,
         EndSizeVariation = 0.14f,
-        Lifetime = 1.15f,
+        Lifetime = 1.45f,
         LifetimeVariation = 0.20f,
-        Opacity = 0.48f,
+        Opacity = 0.68f,
         Color = new Color(48, 48, 48),
         WindInfluence = 0.95f
     };

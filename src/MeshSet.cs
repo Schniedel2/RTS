@@ -35,6 +35,7 @@ public sealed class MeshSet
     private readonly Dictionary<string, float> _parameters = [];
     private readonly List<CachedPivot> _cachedPivots = [];
     private readonly List<MeshSetPivot> _pivots = [];
+    private CachedPivot? _exhaustPivot;
     private bool _isDirty = true;
 
     public Mesh RootMesh { get; }
@@ -168,6 +169,29 @@ public sealed class MeshSet
         return false;
     }
 
+    /// <summary>Gets the cached, single exhaust pivot without a name lookup per frame.</summary>
+    public bool TryGetExhaustWorldPosition(Matrix world, out Vector3 position)
+    {
+        EnsurePivotCache();
+        if (_exhaustPivot is null)
+        {
+            position = Vector3.Zero;
+            return false;
+        }
+
+        Matrix currentWorld = world;
+        foreach (AttachmentStep step in _exhaustPivot.Steps)
+        {
+            Matrix attachmentWorld = step.Owner.RootMesh.GetPivotWorldTransform(
+                step.Pivot, currentWorld, step.Owner._parameters);
+            currentWorld = step.Attachment.LocalTransform * attachmentWorld;
+        }
+
+        position = _exhaustPivot.Owner.RootMesh.GetPivotWorldTransform(
+            _exhaustPivot.Pivot, currentWorld, _exhaustPivot.Owner._parameters).Translation;
+        return true;
+    }
+
     public void Draw(Effect effect, Matrix world) =>
         RootMesh.Draw(effect, world, _parameters,
             (placeholderName, attachmentWorld) => DrawAttachment(effect, placeholderName, attachmentWorld));
@@ -223,7 +247,11 @@ public sealed class MeshSet
 
         _cachedPivots.Clear();
         _pivots.Clear();
+        _exhaustPivot = null;
         CollectPivots(this, [], "");
+        _exhaustPivot = _cachedPivots.FirstOrDefault(candidate =>
+            candidate.Description.Name.EndsWith(":exhaust", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(candidate.Description.Name, "exhaust", StringComparison.OrdinalIgnoreCase));
         ClearDirtyRecursively();
     }
 
