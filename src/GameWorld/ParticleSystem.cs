@@ -38,6 +38,7 @@ public sealed class ParticleSystem
     public void EmitExplosion(Vector3 position, ExplosionEmissionSettings? settings = null)
     {
         settings ??= ExplosionEmissionPresets.TankShell();
+        Globals.World.Decals.AddScorchMark(position, 1.9f * settings.Intensity);
         Globals.World.Weather.AddExplosionWind(
             position,
             settings.ShockwaveRadius,

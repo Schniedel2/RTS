@@ -38,6 +38,27 @@ public class GDIBulldozer : Car
         Length = 4;
         Width = 3;
         Height = 1.5f;
+
+        _meshSet = new MeshSet(Globals.MeshHandler.Meshes["bulldozer-1"]);
+    }
+
+    public override void Draw(Effect effect)
+    {
+        if (_meshSet is null)
+            return;
+
+        _meshSet.SetParameter(Mesh.TurretAngle, MathHelper.ToRadians(TargetAngleDegrees));
+        // BBModelLoader maps every group whose name contains "wheel" to this
+        // shared parameter. WheelRotationDegrees is advanced from travelled
+        // distance in MobileUnit, including reverse movement.
+        _meshSet.SetParameter(Mesh.WheelAngle, -MathHelper.ToRadians(WheelRotationDegrees));
+        _meshSet.Draw(effect, GetVisualWorldMatrix());
+    }
+
+    public override void Update(GameTime gameTime)
+    {
+        base.Update(gameTime);
+        UpdateExhaust(gameTime);
     }
 
     public override void UpdateHost(GameTime gameTime)

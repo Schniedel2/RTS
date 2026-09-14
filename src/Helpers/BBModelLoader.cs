@@ -113,7 +113,7 @@ public static class BBModelLoader
             node.RotationAxis = Vector3.Up;
             return;
         }
-        if (!isGroup || !node.Name.StartsWith("wheel", StringComparison.OrdinalIgnoreCase))
+        if (!isGroup || !node.Name.Contains("wheel", StringComparison.OrdinalIgnoreCase))
             return;
 
         node.RotationParameter = Mesh.WheelAngle;
@@ -122,6 +122,21 @@ public static class BBModelLoader
 
     private static (float Width, float Height) ReadResolution(JsonElement root)
     {
+        // Blockbench's root resolution is not always the UV canvas actually
+        // used by an embedded texture. Workshop models often retain 16x16
+        // here while their texture declares uv_width/uv_height = 128.
+        if (root.TryGetProperty("textures", out JsonElement textures))
+        {
+            foreach (JsonElement texture in textures.EnumerateArray())
+            {
+                if (texture.TryGetProperty("uv_width", out JsonElement uvWidth) &&
+                    texture.TryGetProperty("uv_height", out JsonElement uvHeight) &&
+                    uvWidth.TryGetSingle(out float width) && uvHeight.TryGetSingle(out float height) &&
+                    width > 0.0f && height > 0.0f)
+                    return (width, height);
+            }
+        }
+
         if (root.TryGetProperty("resolution", out JsonElement resolution))
         {
             float width = resolution.GetProperty("width").GetSingle();
@@ -243,14 +258,33 @@ public static class BBModelLoader
             }
 
             string texturePath = Path.GetFullPath(Path.Combine(modelDirectory, textureFileName));
-            if (!File.Exists(texturePath))
+            string? embeddedSource = texture.TryGetProperty("source", out JsonElement sourceElement)
+                ? sourceElement.GetString()
+                : null;
+            bool hasEmbeddedSource = !string.IsNullOrWhiteSpace(embeddedSource) &&
+                embeddedSource.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase);
+
+            if (!hasEmbeddedSource && !File.Exists(texturePath))
                 throw new FileNotFoundException(
-                    $"BBModel texture '{textureFileName}' was not found next to '{Path.GetFileName(modelPath)}'.",
+                    $"BBModel texture '{textureFileName}' is neither embedded nor found next to '{Path.GetFileName(modelPath)}'.",
                     texturePath);
 
-            TextureHandler.TextureRegion region = Globals.TextureHandler.TryGetTextureRegion(texturePath, out TextureHandler.TextureRegion existing)
-                ? existing
-                : Globals.TextureHandler.AddTexture(texturePath);
+            TextureHandler.TextureRegion region;
+            if (hasEmbeddedSource)
+            {
+                // A stable key prevents the same embedded image from occupying
+                // the atlas again when a BBModel is loaded more than once.
+                string embeddedKey = $"bbmodel:{Path.GetFullPath(modelPath)}:texture:{index}";
+                region = Globals.TextureHandler.TryGetTextureRegion(embeddedKey, out TextureHandler.TextureRegion existing)
+                    ? existing
+                    : Globals.TextureHandler.AddTextureFromDataUri(embeddedKey, embeddedSource!);
+            }
+            else
+            {
+                region = Globals.TextureHandler.TryGetTextureRegion(texturePath, out TextureHandler.TextureRegion existing)
+                    ? existing
+                    : Globals.TextureHandler.AddTexture(texturePath);
+            }
             string maskPath = Path.Combine(
                 Path.GetDirectoryName(texturePath)!,
                 $"{Path.GetFileNameWithoutExtension(texturePath)}-MaterialMask.png");

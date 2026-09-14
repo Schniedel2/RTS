@@ -14,6 +14,7 @@ public class GameWorld
     public MarkerHandler Markers { get; }
     public ProjectileHandler Projectiles { get; }
     public ParticleSystem Particles { get; }
+    public DecalHandler Decals { get; }
     public SmokeEmitterHandler SmokeEmitters { get; }
     public WeatherHandler Weather { get; }
     public GameGrid GameGrid { get; }
@@ -38,6 +39,7 @@ public class GameWorld
         Markers = new MarkerHandler();
         Projectiles = new ProjectileHandler();
         Particles = new ParticleSystem();
+        Decals = new DecalHandler();
         SmokeEmitters = new SmokeEmitterHandler();
         Weather = new WeatherHandler(terrainWidth, terrainHeight);
         PathfindingManager = new PathfindingManager(this);
@@ -123,6 +125,8 @@ public class GameWorld
 
         Globals.SkinHandler.ApplyToEffect(unitEffect, PlayerSkin.Green);
 
+        Decals.Draw(unitEffect);
+
         unitEffect.Parameters["UnitTexture"].SetValue(Globals.UnitsTexture);
         Units.DrawMobileUnits(unitEffect);
 
@@ -157,6 +161,7 @@ public class GameWorld
         Markers.Update(gameTime);
         Projectiles.Update(gameTime);
         SmokeEmitters.Update(gameTime);
+        Decals.Update(gameTime);
         Particles.Update(gameTime);
     }
 

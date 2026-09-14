@@ -104,20 +104,6 @@ public sealed class TextureHandler : IDisposable
         _padding = padding;
     }
 
-    public void LoadMeshTextures()
-    {
-        LoadMeshTextures(Globals.ModelsDirectory);
-    }
-
-    public void LoadMeshTextures(string directory)
-    {
-        AddTexture(Path.Combine(directory, "TankBody-1.png"));
-        AddTexture(Path.Combine(directory, "TankBody-1-MaterialMask.png"));
-        AddTexture(Path.Combine(directory, "TankTurret-1.png"));
-        AddTexture(Path.Combine(directory, "TankBarrel-1.png"));
-        NextTexture();
-    }
-
     /// <summary>
     /// Fügt eine PNG/JPG/etc. in den aktuellen Atlas ein.
     /// Wird der Atlas voll, wird automatisch ein neuer begonnen.
@@ -125,6 +111,28 @@ public sealed class TextureHandler : IDisposable
     public TextureRegion AddTexture(string filename)
     {
         string fullPath = Path.GetFullPath(filename);
+        using Texture2D source = LoadTexture(fullPath);
+        return AddTexture(fullPath, source);
+    }
+
+    /// <summary>Adds a Blockbench-style <c>data:image/...;base64,...</c> texture to an atlas.</summary>
+    public TextureRegion AddTextureFromDataUri(string cacheKey, string dataUri)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cacheKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(dataUri);
+
+        int separator = dataUri.IndexOf(',');
+        if (separator < 0 || !dataUri[..separator].Contains("base64", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Texture data must be a base64 data URI.", nameof(dataUri));
+
+        byte[] imageBytes = Convert.FromBase64String(dataUri[(separator + 1)..]);
+        using MemoryStream stream = new(imageBytes, writable: false);
+        using Texture2D source = Texture2D.FromStream(_graphicsDevice, stream);
+        return AddTexture(cacheKey, source);
+    }
+
+    private TextureRegion AddTexture(string cacheKey, Texture2D source)
+    {
 
         EnsureAtlas();
 
@@ -132,14 +140,12 @@ public sealed class TextureHandler : IDisposable
         // Gleiche Datei im aktuellen Atlas bereits vorhanden?
         //
         if (_currentAtlas!.Regions.TryGetValue(
-                fullPath,
+                cacheKey,
                 out TextureRegion? existing))
         {
             return existing;
         }
 
-
-        using Texture2D source = LoadTexture(fullPath);
 
         int width = source.Width;
         int height = source.Height;
@@ -152,7 +158,7 @@ public sealed class TextureHandler : IDisposable
             height + _padding * 2 > _atlasHeight)
         {
             throw new InvalidOperationException(
-                $"Texture '{filename}' ({width}x{height}) " +
+                $"Texture '{cacheKey}' ({width}x{height}) " +
                 $"ist zu groß für Atlas {_atlasWidth}x{_atlasHeight}.");
         }
 
@@ -241,7 +247,7 @@ public sealed class TextureHandler : IDisposable
         };
 
 
-        _currentAtlas.Regions.Add(fullPath, region);
+        _currentAtlas.Regions.Add(cacheKey, region);
 
 
         //

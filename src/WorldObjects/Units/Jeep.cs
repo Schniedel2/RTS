@@ -35,15 +35,23 @@ public class Jeep : Car
         TargetAngleMaximumDegrees = 120.0f;
 
         AttackCooldown = 2.0f;
+
+        _meshSet = new MeshSet(Globals.MeshHandler.Meshes["blue-pick-up-truck"]);
+        //_meshSet.SetAttachment("pivot:turret", Globals.MeshHandler.Meshes["TankTurret-1"]);
+        //_meshSet.SetAttachmentPath("pivot:turret/pivot:barrel", Globals.MeshHandler.Meshes["TankBarrel-2"]);
+
     }
 
     public override void Draw(Effect effect)
     {
-        if (Globals.MeshHandler.Meshes.TryGetValue("jeep", out Mesh? mesh))
-        {
-            mesh.SetParameter(Mesh.TurretAngle, MathHelper.ToRadians(TargetAngleDegrees));
-            ApplyMeshAnimationParameters(mesh);
-            Globals.MeshHandler.DrawMesh(effect, mesh, GetWorldMatrix());
-        }
+        if (_meshSet is null)
+            return;
+
+        _meshSet.SetParameter(Mesh.TurretAngle, MathHelper.ToRadians(TargetAngleDegrees));
+        // BBModelLoader maps every group whose name contains "wheel" to this
+        // shared parameter. WheelRotationDegrees is advanced from travelled
+        // distance in MobileUnit, including reverse movement.
+        _meshSet.SetParameter(Mesh.WheelAngle, -MathHelper.ToRadians(WheelRotationDegrees));
+        _meshSet.Draw(effect, GetVisualWorldMatrix());
     }
 }

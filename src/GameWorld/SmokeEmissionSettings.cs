@@ -71,4 +71,26 @@ public static class SmokeEmissionPresets
         Opacity = 0.75f,
         Color = new Color(150, 150, 150)
     };
+
+    /// <summary>Small, dark, continuous exhaust puffs for vehicles and generators.</summary>
+    public static SmokeEmissionSettings VehicleExhaust() => new()
+    {
+        ParticleCount = 1,
+        Intensity = 0.75f,
+        EmissionLength = 0.08f,
+        ForwardSpeed = 0.22f,
+        ForwardSpeedVariation = 0.10f,
+        SidewaysSpread = 0.12f,
+        UpwardSpeed = 0.55f,
+        UpwardSpeedVariation = 0.18f,
+        StartSize = 0.14f,
+        StartSizeVariation = 0.04f,
+        EndSize = 0.52f,
+        EndSizeVariation = 0.14f,
+        Lifetime = 1.15f,
+        LifetimeVariation = 0.20f,
+        Opacity = 0.48f,
+        Color = new Color(48, 48, 48),
+        WindInfluence = 0.95f
+    };
 }
