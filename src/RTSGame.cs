@@ -284,8 +284,9 @@ public class RTSGame
             Globals._unitEffect);
 
         LocalPlayer.Draw3D(camera);
-        //Globals._debugRenderer.DrawGameGrid(World, camera.View, camera.Projection);
         
+        if (Globals.Debug_ShowGameGrid)
+            Globals._debugRenderer.DrawGameGrid(World, camera.View, camera.Projection);
     }
 
 }

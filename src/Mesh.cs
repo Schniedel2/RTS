@@ -288,6 +288,23 @@ public class Mesh
         return (min, max);
     }
 
+    /// <summary>Returns bounds after this mesh's permanent local transform and an optional parent transform.</summary>
+    public BoundingBox GetTransformedBounds(Matrix parentWorld)
+    {
+        (Vector3 min, Vector3 max) = GetBounds();
+        Vector3[] corners = new BoundingBox(min, max).GetCorners();
+        Matrix transform = LocalTransform * parentWorld;
+        Vector3 transformedMin = Vector3.Transform(corners[0], transform);
+        Vector3 transformedMax = transformedMin;
+        for (int index = 1; index < corners.Length; index++)
+        {
+            Vector3 corner = Vector3.Transform(corners[index], transform);
+            transformedMin = Vector3.Min(transformedMin, corner);
+            transformedMax = Vector3.Max(transformedMax, corner);
+        }
+        return new BoundingBox(transformedMin, transformedMax);
+    }
+
     /// <summary>
     /// Replaces UV coordinates on every sub-mesh using one shared set of mesh
     /// bounds. Use <see cref="SubMesh.ApplyCubeMapping"/> for independent UV

@@ -163,7 +163,13 @@ public class MobileUnit : Unit
                 -maximumTurn,
                 maximumTurn);
 
+            Matrix previousTransform = Transform;
             Transform = Matrix.CreateRotationY(appliedTurn) * Transform;
+            // At the 45° threshold the grid footprint may switch from
+            // Width×Length to Length×Width. Do not visually turn into cells
+            // which are blocked by another unit or a building.
+            if (!Globals.World.GameGrid.TryUpdateFootprint(this))
+                Transform = previousTransform;
 
             return GetHorizontalDirection(Vector3.Forward);
         }

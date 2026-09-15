@@ -29,8 +29,12 @@ public class UnitHandler
         if (unit == null)
             return null;
 
-        AddUnit(unit);
-        return unit;
+        if (SetFootprints(unit, RotateYDegrees))
+        {
+            _units.Add(unit);
+            return unit;
+        }
+        return null;
     }
 
     public Building? SpawnBuilding(
@@ -41,9 +45,15 @@ public class UnitHandler
         Guid creatorPlayerId)
     {
         Building? unit = BuildingFactory.SpawnBuilding(buildingTypeName, position, RotateYDegrees, unitId, creatorPlayerId);
-        if (unit != null)
-            AddUnit(unit);
-        return unit;
+        if (unit is null)
+            return null;
+
+        if (SetFootprints(unit, RotateYDegrees))
+        {
+            _units.Add(unit);
+            return unit;
+        }
+        return null;
     }
 
     public Unit? FindById(Guid unitId)
@@ -115,19 +125,25 @@ public class UnitHandler
             building.Draw2D(spriteBatch, camera, viewport);
     }
 
-    private void AddUnit(Unit unit)
+    private bool SetFootprints(Unit unit, float rotateYDegrees)
     {
         Point cell = Globals.World.GameGrid.ToCell(unit.Position);
         MobileUnit? mobileUnit = unit as MobileUnit;
         if (mobileUnit != null)
+        {
             if (!Globals.World.GameGrid.TryMove(mobileUnit, cell))
             {
                 Random rnd = new Random();
                 cell.X += rnd.Next(-10, 10);
                 cell.Y += rnd.Next(-10, 10);
-                Globals.World.GameGrid.TryMove(mobileUnit, cell);
+                return Globals.World.GameGrid.TryMove(mobileUnit, cell);
             }
-        
-        _units.Add(unit);
+        }
+        else if (!Globals.World.GameGrid.TryPlace(unit, unit.Position, rotateYDegrees))
+        {
+            Console.WriteLine($"Cannot place building '{unit.GetType().Name}' at {unit.Position}: footprint is blocked.");
+            return false;
+        }
+        return true;
     }
 }

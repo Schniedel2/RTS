@@ -126,6 +126,19 @@ public sealed class MeshSet
         _parameters.TryGetValue(parameterName, out float value) ? value : 0.0f;
 
     /// <summary>
+    /// Returns the combined local bounds of the root mesh and all attached
+    /// meshes. This is intended for setup-time sizing, not per-frame queries.
+    /// </summary>
+    public BoundingBox GetBounds()
+    {
+        bool hasBounds = false;
+        Vector3 minimum = Vector3.Zero;
+        Vector3 maximum = Vector3.Zero;
+        IncludeBounds(this, Matrix.Identity, ref hasBounds, ref minimum, ref maximum);
+        return new BoundingBox(minimum, maximum);
+    }
+
+    /// <summary>
     /// Resolves a slash-separated placeholder path to a world transform. For
     /// example: "pivot:turret/pivot:barrel/pivot:muzzle". The final pivot
     /// need not have an attachment; this makes empty muzzle groups useful as
@@ -306,5 +319,46 @@ public sealed class MeshSet
         _isDirty = false;
         foreach (Attachment attachment in _attachments.Values)
             attachment.MeshSet.ClearDirtyRecursively();
+    }
+
+    private static void IncludeBounds(
+        MeshSet current,
+        Matrix world,
+        ref bool hasBounds,
+        ref Vector3 minimum,
+        ref Vector3 maximum)
+    {
+        Include(current.RootMesh.GetTransformedBounds(world), ref hasBounds, ref minimum, ref maximum);
+
+        foreach ((string placeholderName, Attachment attachment) in current._attachments)
+        {
+            Mesh.Pivot? pivot = current.RootMesh.GetPivots().FirstOrDefault(candidate =>
+                string.Equals(candidate.Name, placeholderName, StringComparison.OrdinalIgnoreCase));
+            if (pivot is null)
+                continue;
+
+            Matrix attachmentWorld = current.RootMesh.GetPivotWorldTransform(
+                pivot, world, current._parameters);
+            IncludeBounds(attachment.MeshSet, attachment.LocalTransform * attachmentWorld,
+                ref hasBounds, ref minimum, ref maximum);
+        }
+    }
+
+    private static void Include(
+        BoundingBox bounds,
+        ref bool hasBounds,
+        ref Vector3 minimum,
+        ref Vector3 maximum)
+    {
+        if (!hasBounds)
+        {
+            minimum = bounds.Min;
+            maximum = bounds.Max;
+            hasBounds = true;
+            return;
+        }
+
+        minimum = Vector3.Min(minimum, bounds.Min);
+        maximum = Vector3.Max(maximum, bounds.Max);
     }
 }

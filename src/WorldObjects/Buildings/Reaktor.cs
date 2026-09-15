@@ -22,14 +22,18 @@ public class Reaktor : Building
 
         TotalBuildingPointsNeeded = 500;
         HitPoints = 500;
+
+        SetMesh("reaktor", deriveDimensions: true);
     }
 
+    /*
     public override void Draw(Effect effect)
     {
         //  scale Y by percentage
         Matrix world = GetWorldMatrix();
         Globals.MeshHandler.DrawMesh(effect, "reaktor", world);
-    }
+    } 
+    */   
 
     public IReadOnlyList<UnitAction> GetUnitActions()
     {

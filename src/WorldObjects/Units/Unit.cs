@@ -21,6 +21,11 @@ public abstract class Unit : WorldObject
     public int Length { get; protected set; }
     public int Width { get; protected set; }
     public float Height { get; protected set; }
+    /// <summary>
+    /// Center of the physical footprint in the mesh's local space. Imported
+    /// BBModels are not required to be authored around their origin.
+    /// </summary>
+    public Vector3 FootprintLocalCenter { get; protected set; }
     public bool IsSelected { get; set; }
     public GotoCommand? CurrentCommand { get; protected set; }
     public virtual IReadOnlyList<UnitAction> Actions =>
@@ -152,6 +157,76 @@ public abstract class Unit : WorldObject
     internal void SetCreatorPlayer(Guid creatorPlayerId)
     {
         CreatorPlayerId = creatorPlayerId;
+    }
+
+    /// <summary>Assigns one mesh and optionally derives conservative grid dimensions from it.</summary>
+    protected void SetMesh(string meshName, bool deriveDimensions = false, float padding = 0.0f)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(meshName);
+        SetMeshSet(new MeshSet(Globals.MeshHandler.Meshes[meshName]), deriveDimensions, padding);
+    }
+
+    /// <summary>Assigns a composed mesh and optionally derives conservative grid dimensions from its bounds.</summary>
+    protected void SetMeshSet(MeshSet meshSet, bool deriveDimensions = false, float padding = 0.0f)
+    {
+        ArgumentNullException.ThrowIfNull(meshSet);
+        if (padding < 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(padding));
+
+        _meshSet = meshSet;
+        if (!deriveDimensions)
+            return;
+
+        BoundingBox bounds = meshSet.GetBounds();
+        Vector3 size = bounds.Max - bounds.Min + new Vector3(padding * 2.0f);
+        FootprintLocalCenter = (bounds.Min + bounds.Max) * 0.5f;
+        Width = Math.Max(1, (int)MathF.Ceiling(size.X));
+        Length = Math.Max(1, (int)MathF.Ceiling(size.Z));
+        Height = Math.Max(0.01f, size.Y);
+    }
+
+    /// <summary>Returns the world-space center used for the grid footprint.</summary>
+    public Vector3 GetFootprintCenter(Vector3 position, float rotationDegrees)
+    {
+        Matrix rotation = Matrix.CreateRotationY(MathHelper.ToRadians(rotationDegrees));
+        return position + Vector3.TransformNormal(FootprintLocalCenter, rotation);
+    }
+
+    /// <summary>
+    /// Tests a proposed world position and yaw in degrees before placing a
+    /// unit/building. Mobile units use a 90°-snapped grid footprint while
+    /// buildings retain their freely rotated footprint.
+    /// </summary>
+    public bool CanPlace(
+        Vector3 position,
+        float rotationDegrees,
+        float maximumTerrainHeightDifference = 2.0f)
+    {
+        if (maximumTerrainHeightDifference < 0.0f)
+            throw new ArgumentOutOfRangeException(nameof(maximumTerrainHeightDifference));
+
+        GameGrid grid = Globals.World.GameGrid;
+        if (!grid.CanPlace(this, position, rotationDegrees))
+            return false;
+
+        IReadOnlyList<Point> footprintCells = grid.GetFootprintCells(this, position, rotationDegrees);
+        if (footprintCells.Count == 0)
+            return false;
+
+        float minimumHeight = float.MaxValue;
+        float maximumHeight = float.MinValue;
+        foreach (Point cell in footprintCells)
+        {
+            // Grid bounds were already checked above; keeping the guard makes
+            // this method safe if the Grid implementation changes later.
+            if (cell.X < 0 || cell.Y < 0 || cell.X >= grid.Width || cell.Y >= grid.Height)
+                return false;
+            float height = Globals.World.Terrain.GetHeight(cell.X, cell.Y);
+            minimumHeight = MathF.Min(minimumHeight, height);
+            maximumHeight = MathF.Max(maximumHeight, height);
+        }
+
+        return maximumHeight - minimumHeight <= maximumTerrainHeightDifference;
     }
 
     public virtual void ClearCommand()
@@ -654,7 +729,10 @@ public abstract class Unit : WorldObject
 
     public override void Draw(Effect effect)
     {
-        Globals.MeshHandler.DrawMesh(effect, Globals.MeshHandler.Meshes["default"], GetVisualWorldMatrix());
+        if (_meshSet != null)
+            _meshSet.Draw(effect, GetVisualWorldMatrix());
+        else
+            Globals.MeshHandler.DrawMesh(effect, Globals.MeshHandler.Meshes["default"], GetVisualWorldMatrix());
     }
 
     public override void DrawShadow(Effect effect)

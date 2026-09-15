@@ -85,7 +85,7 @@ public class DebugRenderer
 
         foreach (Unit unit in world.Units.Units)
         {
-            MobileUnit mobileUnit = unit as MobileUnit;
+            MobileUnit? mobileUnit = unit as MobileUnit;
             if (mobileUnit is null || !mobileUnit.IsSelected || mobileUnit.PlannedPath.Count == 0)
                 continue;
 
@@ -320,7 +320,8 @@ public class DebugRenderer
         Matrix view,
         Matrix projection)
     {
-        var vertices = new List<VertexPositionColor>();
+        var fillVertices = new List<VertexPositionColor>();
+        var outlineVertices = new List<VertexPositionColor>();
         GameGrid grid = gameMap.GameGrid;
         Terrain terrain = gameMap.Terrain;
 
@@ -343,31 +344,75 @@ public class DebugRenderer
                 Vector3 bottomLeft = new(left, terrain.GetHeight(x, y + 1) + heightOffset, bottom);
                 Vector3 bottomRight = new(right, terrain.GetHeight(x + 1, y + 1) + heightOffset, bottom);
 
-                vertices.Add(new VertexPositionColor(topLeft, Color.OrangeRed));
-                vertices.Add(new VertexPositionColor(bottomRight, Color.OrangeRed));
-                vertices.Add(new VertexPositionColor(topRight, Color.OrangeRed));
-                vertices.Add(new VertexPositionColor(topLeft, Color.OrangeRed));
-                vertices.Add(new VertexPositionColor(bottomLeft, Color.OrangeRed));
-                vertices.Add(new VertexPositionColor(bottomRight, Color.OrangeRed));
+                // The translucent fill makes an occupied area immediately
+                // obvious, while the outline remains readable on bright or
+                // dark terrain.
+                Color fillColor = new(Color.OrangeRed, 96);
+                fillVertices.Add(new VertexPositionColor(topLeft, fillColor));
+                fillVertices.Add(new VertexPositionColor(bottomRight, fillColor));
+                fillVertices.Add(new VertexPositionColor(topRight, fillColor));
+                fillVertices.Add(new VertexPositionColor(topLeft, fillColor));
+                fillVertices.Add(new VertexPositionColor(bottomLeft, fillColor));
+                fillVertices.Add(new VertexPositionColor(bottomRight, fillColor));
+
+                Color outlineColor = Color.Yellow;
+                AddLine(outlineVertices, topLeft, topRight, outlineColor);
+                AddLine(outlineVertices, topRight, bottomRight, outlineColor);
+                AddLine(outlineVertices, bottomRight, bottomLeft, outlineColor);
+                AddLine(outlineVertices, bottomLeft, topLeft, outlineColor);
             }
         }
 
-        if (vertices.Count == 0)
+        if (fillVertices.Count == 0)
             return;
 
-        _effect.World = Matrix.Identity;
-        _effect.View = view;
-        _effect.Projection = projection;
-
-        foreach (EffectPass pass in _effect.CurrentTechnique.Passes)
+        GraphicsDevice graphicsDevice = Globals.GraphicsDevice;
+        BlendState previousBlendState = graphicsDevice.BlendState;
+        DepthStencilState previousDepthStencilState = graphicsDevice.DepthStencilState;
+        RasterizerState previousRasterizerState = graphicsDevice.RasterizerState;
+        try
         {
-            pass.Apply();
+            // Unit meshes may leave a clockwise/anticlockwise culling state
+            // behind. Debug cells must work regardless of that state.
+            graphicsDevice.BlendState = BlendState.AlphaBlend;
+            graphicsDevice.DepthStencilState = DepthStencilState.DepthRead;
+            graphicsDevice.RasterizerState = RasterizerState.CullNone;
 
-            Globals.GraphicsDevice.DrawUserPrimitives(
-                PrimitiveType.TriangleList,
-                vertices.ToArray(),
-                0,
-                vertices.Count / 3);
+            _effect.World = Matrix.Identity;
+            _effect.View = view;
+            _effect.Projection = projection;
+
+            foreach (EffectPass pass in _effect.CurrentTechnique.Passes)
+            {
+                pass.Apply();
+                graphicsDevice.DrawUserPrimitives(
+                    PrimitiveType.TriangleList,
+                    fillVertices.ToArray(),
+                    0,
+                    fillVertices.Count / 3);
+
+                graphicsDevice.DrawUserPrimitives(
+                    PrimitiveType.LineList,
+                    outlineVertices.ToArray(),
+                    0,
+                    outlineVertices.Count / 2);
+            }
         }
+        finally
+        {
+            graphicsDevice.BlendState = previousBlendState;
+            graphicsDevice.DepthStencilState = previousDepthStencilState;
+            graphicsDevice.RasterizerState = previousRasterizerState;
+        }
+    }
+
+    private static void AddLine(
+        List<VertexPositionColor> vertices,
+        Vector3 start,
+        Vector3 end,
+        Color color)
+    {
+        vertices.Add(new VertexPositionColor(start, color));
+        vertices.Add(new VertexPositionColor(end, color));
     }
 }
