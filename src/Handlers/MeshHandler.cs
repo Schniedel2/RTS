@@ -35,7 +35,7 @@ public class MeshHandler
         //Meshes["bulldozer-1"].LocalTransform = Matrix.CreateScale(0.5f);
 
         Meshes["blue-pick-up-truck"] = BBModelLoader.Load(Path.Combine(directory, "blue-pick-up-truck.bbmodel"), Color.White);
-        Meshes["blue-pick-up-truck"].LocalTransform = Matrix.CreateScale(0.5f);
+        Meshes["blue-pick-up-truck"].LocalTransform = Matrix.CreateScale(1.0f);
 
         Meshes["TankBarrel-1"].LocalTransform = Matrix.CreateScale(0.4f);
         Meshes["TankBarrel-2"].LocalTransform = Matrix.CreateScale(0.4f, 0.4f, 0.6f);

@@ -19,12 +19,13 @@ public class UnitHandler
     public Unit? SpawnUnit(
         string unitTypeName,
         Vector3 position,
+        float RotateYDegrees,
         Guid unitId,
         Guid creatorPlayerId)
     {
-        Unit? unit = UnitFactory.SpawnUnit(unitTypeName, position, unitId, creatorPlayerId);
+        Unit? unit = UnitFactory.SpawnUnit(unitTypeName, position, RotateYDegrees, unitId, creatorPlayerId);
         if (unit == null)
-            unit = SpawnBuilding(unitTypeName, position, unitId, creatorPlayerId);
+            unit = SpawnBuilding(unitTypeName, position, RotateYDegrees, unitId, creatorPlayerId);
         if (unit == null)
             return null;
 
@@ -35,10 +36,11 @@ public class UnitHandler
     public Building? SpawnBuilding(
         string buildingTypeName,
         Vector3 position,
+        float RotateYDegrees,
         Guid unitId,
         Guid creatorPlayerId)
     {
-        Building? unit = BuildingFactory.SpawnBuilding(buildingTypeName, position, unitId, creatorPlayerId);
+        Building? unit = BuildingFactory.SpawnBuilding(buildingTypeName, position, RotateYDegrees, unitId, creatorPlayerId);
         if (unit != null)
             AddUnit(unit);
         return unit;

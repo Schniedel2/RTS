@@ -2,6 +2,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 
 namespace RTS;
@@ -91,10 +92,31 @@ public class Building : Unit
     public override void Draw(Effect effect)
     {
         //  scale Y by percentage
-        effect.Parameters["World"].SetValue(
-            Matrix.CreateScale(1.0f, ConstructionPercentage, 1.0f) *
-            GetWorldMatrix());
+        effect.Parameters["World"].SetValue(GetWorldMatrix());
         base.Draw(effect);
+    }
+
+    public override Matrix GetWorldMatrix()
+    {
+        return Matrix.CreateScale(1.0f, GetConstructionScaleFactor(), 1.0f) * base.GetWorldMatrix();
+    }
+    public float GetConstructionScaleFactor()
+    {
+        return Math.Max(0.05f, ConstructionPercentage);
+    }
+
+    public override void DrawPreview(Effect effect)
+    {
+        float xConstructionProgress = ConstructionProgress;
+        float xTotalBuildingPointsNeeded = TotalBuildingPointsNeeded;
+
+        //  render complete building
+        ConstructionProgress = TotalBuildingPointsNeeded;
+        effect.Parameters["World"].SetValue(GetWorldMatrix());
+        Draw(effect);
+
+        ConstructionProgress = xConstructionProgress;
+        TotalBuildingPointsNeeded = xTotalBuildingPointsNeeded;
     }
 
     public override void Draw2D(SpriteBatch spriteBatch, Camera camera, Viewport viewport)

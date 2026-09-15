@@ -52,7 +52,8 @@ public static class NetworkCommands
             UnitTypeId: request.UnitTypeId,
             X: request.X,
             Y: request.Y,
-            Z: request.Z);
+            Z: request.Z,
+            TargetAngleY: request.TargetAngleY);
     }
 
     public static NetworkMessage CreateTextMessage(Guid senderId, string text)
@@ -327,7 +328,9 @@ public static class NetworkCommands
         string buildingTypeName,
         float x,
         float y,
-        float z)
+        float z,
+        float targetAngleY,
+        Guid unitId)
     {
         NetworkMessage request = new NetworkMessage(
             NetworkMessageType.BuildRequest,
@@ -336,7 +339,9 @@ public static class NetworkCommands
             X: x,
             Y: y,
             Z: z,
-            UnitTypeId: buildingTypeName);
+            UnitTypeId: buildingTypeName,
+            TargetAngleY: targetAngleY,
+            UnitId: unitId);
         return request;
     }
 

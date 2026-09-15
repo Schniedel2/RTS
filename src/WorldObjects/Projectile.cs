@@ -51,7 +51,7 @@ public sealed class Projectile : WorldObject
         }
     }
 
-    protected override Matrix GetWorldMatrix() =>
+    public override Matrix GetWorldMatrix() =>
         Matrix.CreateScale(0.35f) * Transform;
 
     public override void Draw(Effect effect)

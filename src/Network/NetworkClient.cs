@@ -59,14 +59,14 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
 
-    public Task RequestBuildAsync(string buildingTypeName, Vector3 target)
+    public Task RequestBuildAsync(string buildingTypeName, Vector3 target, float targetAngleY, Guid unitId)
     {
-        return RequestBuildAsync(buildingTypeName, target.X, target.Y, target.Z);
+        return RequestBuildAsync(buildingTypeName, target.X, target.Y, target.Z, targetAngleY, unitId);
     }
 
-    public Task RequestBuildAsync(string buildingTypeName, float x, float y, float z)
+    public Task RequestBuildAsync(string buildingTypeName, float x, float y, float z, float targetAngleY, Guid unitId)
     {
-        NetworkMessage request = NetworkCommands.CreateBuildRequest(_networkHandler.LocalPeerId, buildingTypeName, x, y, z);
+        NetworkMessage request = NetworkCommands.CreateBuildRequest(_networkHandler.LocalPeerId, buildingTypeName, x, y, z, targetAngleY, unitId);
         return _networkHandler.SendToHostAsync(request, CancellationToken.None);
     }
 

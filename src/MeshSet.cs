@@ -36,6 +36,9 @@ public sealed class MeshSet
     private readonly List<CachedPivot> _cachedPivots = [];
     private readonly List<MeshSetPivot> _pivots = [];
     private CachedPivot? _exhaustPivot;
+    private CachedPivot? _turretPivot;
+    private CachedPivot? _barrelPivot;
+    private CachedPivot? _pivotMuzzle;
     private bool _isDirty = true;
 
     public Mesh RootMesh { get; }
@@ -249,9 +252,22 @@ public sealed class MeshSet
         _pivots.Clear();
         _exhaustPivot = null;
         CollectPivots(this, [], "");
-        _exhaustPivot = _cachedPivots.FirstOrDefault(candidate =>
-            candidate.Description.Name.EndsWith(":exhaust", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(candidate.Description.Name, "exhaust", StringComparison.OrdinalIgnoreCase));
+
+        foreach (var pivot in _cachedPivots)
+        {
+            if (pivot.Description.Name.StartsWith("pivot:", StringComparison.OrdinalIgnoreCase))
+            {
+                if (pivot.Description.Name.Equals("pivot:exhaust", StringComparison.OrdinalIgnoreCase))
+                    _exhaustPivot = pivot;
+                if (pivot.Description.Name.Equals("pivot:turret", StringComparison.OrdinalIgnoreCase))
+                    _turretPivot = pivot;
+                if (pivot.Description.Name.Equals("pivot:barrel", StringComparison.OrdinalIgnoreCase))
+                    _barrelPivot = pivot;
+                if (pivot.Description.Name.Equals("pivot:muzzle", StringComparison.OrdinalIgnoreCase))
+                    _pivotMuzzle = pivot;
+            }
+        }
+
         ClearDirtyRecursively();
     }
 

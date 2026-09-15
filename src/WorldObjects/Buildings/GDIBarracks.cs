@@ -26,8 +26,7 @@ public class GDIBarracks : Building
 
     public override void Draw(Effect effect)
     {
-        //  scale Y by percentage
-        Matrix world = Matrix.CreateScale(1.0f, ConstructionPercentage, 1.0f) * GetWorldMatrix();
+        Matrix world = GetWorldMatrix();
         Globals.MeshHandler.DrawMesh(effect, "gdi-barracks", world);
     }
 

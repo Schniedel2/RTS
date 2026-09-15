@@ -28,7 +28,7 @@ public class GDIBase : Building
     public override void Draw(Effect effect)
     {
        //  scale Y by percentage
-        Matrix world = Matrix.CreateScale(1.0f, ConstructionPercentage, 1.0f) * GetWorldMatrix();
+        Matrix world = GetWorldMatrix();
 
         Mesh mesh = Globals.MeshHandler.Meshes["gdi-base"];
         mesh.SetParameter("radar", MathHelper.ToRadians(RadarAngleDegree));

@@ -8,6 +8,7 @@ public static class UnitFactory
     public static MobileUnit? SpawnUnit(
         string unitTypeName,
         Vector3 position,
+        float RotateYDegrees,
         Guid unitId,
         Guid creatorPlayerId)
     {
@@ -35,6 +36,7 @@ public static class UnitFactory
             default:            
                 return null;
         }
+        unit.SetRotationYDegrees(RotateYDegrees);
         unit.SetCreatorPlayer(creatorPlayerId);
         return unit;
     }

@@ -83,13 +83,14 @@ public class DebugRenderer
         var vertices = new List<VertexPositionColor>();
         const float heightOffset = 0.16f;
 
-        foreach (MobileUnit unit in world.Units.Units)
+        foreach (Unit unit in world.Units.Units)
         {
-            if (!unit.IsSelected || unit.PlannedPath.Count == 0)
+            MobileUnit mobileUnit = unit as MobileUnit;
+            if (mobileUnit is null || !mobileUnit.IsSelected || mobileUnit.PlannedPath.Count == 0)
                 continue;
 
-            Vector3 previous = unit.Position + Vector3.Up * heightOffset;
-            foreach (Point waypoint in unit.PlannedPath)
+            Vector3 previous = mobileUnit.Position + Vector3.Up * heightOffset;
+            foreach (Point waypoint in mobileUnit.PlannedPath)
             {
                 Vector3 point = world.GameGrid.ToWorldPosition(waypoint, 0.0f);
                 point.Y = world.Terrain.GetHeight(waypoint.X, waypoint.Y) + heightOffset;

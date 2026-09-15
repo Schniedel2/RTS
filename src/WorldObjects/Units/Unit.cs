@@ -641,7 +641,7 @@ public abstract class Unit : WorldObject
             settings ?? SmokeEmissionPresets.VehicleExhaust());
     }
 
-    protected override Matrix GetWorldMatrix()
+    public override Matrix GetWorldMatrix()
     {
         return Matrix.CreateScale(1.0f) * Transform;
     }

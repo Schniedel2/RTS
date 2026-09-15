@@ -8,6 +8,7 @@ public static class BuildingFactory
     public static Building? SpawnBuilding(
         string buildingTypeName,
         Vector3 position,
+        float RotateYDegrees,
         Guid unitId,
         Guid creatorPlayerId)
     {
@@ -27,6 +28,7 @@ public static class BuildingFactory
                 return null;
         }
         building.SetCreatorPlayer(creatorPlayerId);
+        building.SetRotationYDegrees(RotateYDegrees);
         return (Building)building;
     }
 }

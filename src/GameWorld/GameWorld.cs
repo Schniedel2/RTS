@@ -119,6 +119,7 @@ public class GameWorld
             new Vector2(1.0f / shadowTexture.Width, 1.0f / shadowTexture.Height));
         unitEffect.Parameters["LightDirection"]?.SetValue(lightDirection);
         unitEffect.Parameters["Unlit"]?.SetValue(0.0f);
+        unitEffect.Parameters["Opacity"]?.SetValue(1.0f);
         // Always bind a valid texture. Meshes without a dedicated mask use
         // MaterialMaskUseTexture=0, but the shader still owns this sampler.
         unitEffect.Parameters["MaterialMaskTexture"]?.SetValue(Globals._whiteTexture);

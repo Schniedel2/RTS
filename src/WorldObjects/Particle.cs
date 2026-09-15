@@ -47,7 +47,7 @@ public sealed class Particle : WorldObject
         SetPosition(Position + (Velocity + wind * WindInfluence) * deltaSeconds);
     }
 
-    protected override Matrix GetWorldMatrix()
+    public override Matrix GetWorldMatrix()
     {
         float progress = MathHelper.Clamp(_remainingLifetime / _lifetime, 0.0f, 1.0f);
         float size = _initialSize * (0.35f + progress * 0.65f);

@@ -488,7 +488,7 @@ public class MobileUnit : Unit
                 terrainCenter.X, terrainCenter.Y, terrainCenter.Z, 1.0f);
     }
 
-    protected override Matrix GetWorldMatrix()
+    public override Matrix GetWorldMatrix()
     {
         return Matrix.CreateScale(1.0f) * Transform;
     }

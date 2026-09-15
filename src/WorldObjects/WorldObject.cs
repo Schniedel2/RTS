@@ -26,6 +26,13 @@ public abstract class WorldObject
         Transform = transform;
     }
 
+    public void SetRotationYDegrees(float rotationDegrees)
+    {
+        Matrix transform = Matrix.CreateRotationY(MathHelper.ToRadians(rotationDegrees));
+        transform.Translation = Position;
+        Transform = transform;
+    }
+
     public void SetTransform(Matrix transform)
     {
         Transform = transform;
@@ -43,7 +50,7 @@ public abstract class WorldObject
         //DrawMesh(effect);
     }
 
-    protected virtual Matrix GetWorldMatrix()
+    public virtual Matrix GetWorldMatrix()
     {
         return Transform;
     }
@@ -63,5 +70,10 @@ public abstract class WorldObject
     public virtual void UpdateHost(GameTime gameTime)
     {
         //  is called on the host to update network-related state.
+    }
+
+    public virtual void DrawPreview(Effect effect)
+    {
+        Draw(effect);
     }
 }

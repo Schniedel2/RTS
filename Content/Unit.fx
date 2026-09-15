@@ -31,6 +31,7 @@ float2 PlayerSkinUVOffset;
 float2 PlayerSkinUVScale;
 float  PlayerSkinUVRepeat;
 float  PlayerSkinStrength;
+float Opacity;
 
 // 0 == untextured (vertex color only), 1 == fully textured
 float TextureStrength;
@@ -268,7 +269,7 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
 
     return float4(
         finalColor,
-        baseColor.a);
+        baseColor.a * Opacity);
 }
 
 

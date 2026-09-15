@@ -6,20 +6,28 @@ Dies soll zuerst nur eine einfache RTS-Multiplayer-Engine werden.
 1.  MonoGame-Grundgerüst -> done
 2.  Spielfeld / Grid -> done
 3.  Kamera + Scrollen -> done
-3.1 Tilemap
-4.  Maussteuerung
-5.  Terrain
-6.  Einheiten
-6.1. Einheiten spawnen
-6.2. Spawnen über Actionlist antriggern
-6.3. später: Actionlist über merhere Clients syncen
-7.  Einheiten auswählen
-8.  Move-Befehl (über Actionlist)
-9.  Pathfinding
-10. Gebäude
+3.1 Tilemap -> done
+4.  Maussteuerung -> done (muss noch verbessert werden))
+5.  Terrain -> done
+6.  Einheiten -> done
+6.1. Einheiten spawnen -> done
+6.2. Spawnen über Actionlist antriggern -> done (muss noch verbessert werden + Shortcuts)
+6.3. später: Actionlist über merhere Clients syncen -> done
+7.  Einheiten auswählen -> done
+8.  Move-Befehl (über Actionlist) -> done
+9.  Pathfinding -> done
+10. Gebäude -> done
 11. Ressourcen
 12. Gegner / KI
-13. Combat
-14. UI
+13. Combat -> done
+14. UI -> done
 15. Sound
 16. Save/Load
+
+
+Ideen:
+Ressource: wie Tiberium (C&C) + Man kann Tiberumpflanzen ausgraben und woanders wieder eingraben
+
+Beim Bauen: Gebäude drehen und Vorschau (trasnparent) anzeigen
+Gebäude müssen den Boden/Zellen blocken
+zerstörte Gebäude müssen den Boden/Zellen freigeben

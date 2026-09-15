@@ -16,23 +16,34 @@ public enum ToolShape
 
 public class PlayerHandler
 {    
+    enum CurrentMode
+    {
+        EditTerrain,
+        SelectUnits,
+        BuildPreview
+    }
+
     private readonly GameWorld _map;
     private readonly MarkerHandler _markerHandler;
+    private readonly RenderStateStack _renderStates;
     private readonly List<Unit> _selectedUnits = [];
     private MouseState _previousMouseState;
-    private Point _selectionStart;
-
     public IReadOnlyList<Unit> SelectedUnits => _selectedUnits;
     public UnitAction? ActiveAction { get; private set; }
     private Rectangle _currentSelectionRect;
     private bool _isSelectingUnits;
     public Vector3 MouseWorldPosition { get; private set; }
+    public Point MouseScreenPosition { get; private set; }
+    public Vector3 PressLeftWorldPosition { get; private set; }
+    public Point PressLeftScreenPosition { get; private set; }
     private bool IsMouseOnTerrain = false;
+    private bool _isDrag = false;
 
     private int _toolSize;
     private ToolShape _toolShape;    
     private double _nextAllowedActionTime;
     public TerrainTile _currentTerrainTile = TerrainTile.Grass;
+    private float _buildPreviewDegree;
 
     public bool SelectAction(UnitAction action, bool alternateAction)
     {
@@ -95,6 +106,7 @@ public class PlayerHandler
     {
         _map = map;
         _markerHandler = markerHandler;
+        _renderStates = new RenderStateStack(Globals.GraphicsDevice);
 
         _toolSize = 8;
         _toolShape = ToolShape.Circle;
@@ -103,6 +115,8 @@ public class PlayerHandler
 
     public void Update(GameTime gameTime, Camera camera, Viewport viewport)
     {
+        _isDrag = false;        
+
         MouseState mouse = Mouse.GetState();
         //  update mouse-world position
         Point screenPosition = mouse.Position;
@@ -113,16 +127,45 @@ public class PlayerHandler
             IsMouseOnTerrain = true;
         }
 
-        if (IsUnitSelectionEnabled())
-        {
+        if (GetMode() == CurrentMode.BuildPreview)
+        {            
             if (IsLeftButtonPressed(mouse))
-                _selectionStart = mouse.Position;
+            {
+                PressLeftScreenPosition = mouse.Position;
+                PressLeftWorldPosition = MouseWorldPosition;                
+            }
 
             if (mouse.LeftButton == ButtonState.Pressed)
             {
-                _currentSelectionRect = CreateSelectionRectangle(_selectionStart, mouse.Position);
+                Point drag = mouse.Position - PressLeftScreenPosition;
+                if (drag.ToVector2().Length() > 8)
+                {
+                    _isDrag = true;
+                    _buildPreviewDegree = -MathHelper.ToDegrees((float)Math.Atan2(drag.Y, drag.X));
+                }
+            }
+        
+            if (IsLeftButtonReleased(mouse))
+                if (IsMouseOnTerrain)
+                {
+                    PerformClickAction(_selectedUnits, PressLeftWorldPosition, _buildPreviewDegree);
+                    _buildPreviewDegree = 0;
+                }
+        }
+
+        if (GetMode() == CurrentMode.SelectUnits)
+        {
+            if (IsLeftButtonPressed(mouse))
+                PressLeftScreenPosition = mouse.Position;
+
+            if (mouse.LeftButton == ButtonState.Pressed)
+            {
+                _currentSelectionRect = CreateSelectionRectangle(PressLeftScreenPosition, mouse.Position);
                 if (_currentSelectionRect.Width > 8 || _currentSelectionRect.Height > 8)
+                {
                     _isSelectingUnits = true;
+                    _isDrag = true;
+                }
             }
 
             if (IsLeftButtonReleased(mouse))
@@ -135,7 +178,7 @@ public class PlayerHandler
                     SelectUnits(camera, viewport, _currentSelectionRect, 99);
                 else
                     if (IsMouseOnTerrain)
-                        PerformClickAction(_selectedUnits, MouseWorldPosition);
+                        PerformClickAction(_selectedUnits, MouseWorldPosition, 0);
 
                 _isSelectingUnits = false;
             }
@@ -145,7 +188,7 @@ public class PlayerHandler
         }
         else
         {
-            if (IsTerrainEditingEnabled())
+            if (GetMode() == CurrentMode.EditTerrain)
             {
                 if (gameTime.TotalGameTime.TotalMilliseconds > _nextAllowedActionTime)
                 {
@@ -154,20 +197,20 @@ public class PlayerHandler
                     {
                         if (IsMouseOnTerrain)
                             if (mouse.LeftButton == ButtonState.Pressed)
-                                RequestAction(ActiveAction, MouseWorldPosition, null);
+                                RequestAction(ActiveAction, MouseWorldPosition, null, 0);
                         if (mouse.RightButton == ButtonState.Pressed)
                         {
                             //  alternate actions for terrain editing
                             if (ActiveAction.Type == UnitActionType.RaiseTerrain)
                             {
                                 UnitAction altAction = new (UnitActionType.LowerTerrain, ActiveAction.Name, ActiveAction.IconColumn, ActiveAction.IconRow);
-                                RequestAction(altAction, MouseWorldPosition, null);
+                                RequestAction(altAction, MouseWorldPosition, null, 0);
                                 
                             }
                             if (ActiveAction.Type == UnitActionType.LowerTerrain)
                             {
                                 UnitAction altAction = new (UnitActionType.RaiseTerrain, ActiveAction.Name, ActiveAction.IconColumn, ActiveAction.IconRow);
-                                RequestAction(altAction, MouseWorldPosition, null);
+                                RequestAction(altAction, MouseWorldPosition, null, 0);
                             }
                         }
                     }
@@ -232,7 +275,7 @@ public class PlayerHandler
         return UnitActionType.None;
     }
 
-    bool PerformClickAction(List<Unit> selectedUnits, Vector3 mouseWorldPosition)
+    bool PerformClickAction(List<Unit> selectedUnits, Vector3 mouseWorldPosition, float targetAngleY)
     {
         if (ActiveAction == null)
             return false;
@@ -244,7 +287,7 @@ public class PlayerHandler
             SendRequestAction(suggestedAction, mouseWorldPosition, targetUnit);
             return true;
         }
-        RequestAction(ActiveAction, mouseWorldPosition, targetUnit);
+        RequestAction(ActiveAction, mouseWorldPosition, targetUnit, targetAngleY);
         return true;
     }
 
@@ -342,7 +385,7 @@ public class PlayerHandler
             return false;
         }
 
-        private void RequestAction(UnitAction action, Vector3 targetPosition, Unit? targetUnit)
+        private void RequestAction(UnitAction action, Vector3 targetPosition, Unit? targetUnit, float targetAngleY)
         {            
             if (_selectedUnits.Count == 0)
                 return;
@@ -362,7 +405,10 @@ public class PlayerHandler
                 _ = Globals.Game.NetworkClient.RequestFollowAsync(_selectedUnits, targetUnit.UnitId);
             if (action.Type == UnitActionType.Build)
             {
-                Globals.Game.NetworkClient.RequestBuildAsync(action.TargetObjectName, targetPosition);
+                Guid buildingId = Guid.NewGuid();
+                Globals.Game.NetworkClient.RequestBuildAsync(action.TargetObjectName, targetPosition, targetAngleY, buildingId);
+                Globals.Game.NetworkClient.RequestBuildConstructionAsync(_selectedUnits, buildingId);
+                ActiveAction = null;
             }
             if ((action.Type == UnitActionType.RaiseTerrain) || 
                 (action.Type == UnitActionType.FlattenTerrain) || 
@@ -447,27 +493,34 @@ public class PlayerHandler
         return new Rectangle(left, top, right - left + 1, bottom - top + 1);
     }
 
-    public bool IsTerrainEditingEnabled()
-    {
+    private CurrentMode GetMode()
+    {    
         if (ActiveAction is null)
-            return false;
+            return CurrentMode.SelectUnits;
 
-        return IsMouseOnTerrain && (
+        if (IsMouseOnTerrain)
+        if  (
             (ActiveAction.Type == UnitActionType.RaiseTerrain) || 
             (ActiveAction.Type == UnitActionType.LowerTerrain) || 
             (ActiveAction.Type == UnitActionType.SmoothTerrain) || 
             (ActiveAction.Type == UnitActionType.FlattenTerrain) ||
             (ActiveAction.Type == UnitActionType.SetTerrainTile) ||
             (ActiveAction.Type == UnitActionType.FillTile) 
-            );
+            )
+            return CurrentMode.EditTerrain;
+        
+        if (ActiveAction.Type == UnitActionType.Build)
+            return CurrentMode.BuildPreview;
+
+        return CurrentMode.SelectUnits;
     }
 
     public void Draw3D(Camera camera)
     {
-       //  render editor-tool
+        //  render editor-tool
         if (IsMouseOnTerrain)
         {
-            if (IsTerrainEditingEnabled())
+            if (GetMode() == CurrentMode.EditTerrain)
             {
                 //  render the terrain modification tool at the mouse world position
                 //  1. let the current tool determine all affected terrain cells
@@ -476,6 +529,31 @@ public class PlayerHandler
                 foreach (Point cell in affectedCells)
                 {
                     _map.Terrain.HighlightCell(camera, cell.X, cell.Y);
+                }
+            }
+
+            if (ActiveAction is not null)
+            {
+                //  render the active action's visual representation at the mouse world position
+                if (ActiveAction.Type == UnitActionType.Build)
+                {
+                    Vector3 pos = MouseWorldPosition;
+                    if (_isDrag)
+                        pos = PressLeftWorldPosition;
+                    
+                    Building? unit = BuildingFactory.SpawnBuilding(ActiveAction.TargetObjectName, pos, _buildPreviewDegree, Guid.Empty, Guid.Empty);
+                    if (unit is not null)
+                    {
+                        GraphicsDevice graphicsDevice = Globals.GraphicsDevice;
+                        _renderStates.PushState();
+
+                        graphicsDevice.BlendState = BlendState.NonPremultiplied;
+                        graphicsDevice.DepthStencilState = DepthStencilState.DepthRead;
+                        Globals._unitEffect.Parameters["Opacity"]?.SetValue(0.75f);
+                        unit.DrawPreview(Globals._unitEffect);
+                        Globals._unitEffect.Parameters["Opacity"]?.SetValue(1.0f);
+                        _renderStates.PopState();
+                    }
                 }
             }
         }
@@ -519,10 +597,5 @@ public class PlayerHandler
                 RenderHelper.DrawTooltip(spriteBatch, suggestion, _previousMouseState.Position.X + 24, _previousMouseState.Position.Y + 16);
             }
         }
-    }
-
-    public bool IsUnitSelectionEnabled()
-    {
-        return !IsTerrainEditingEnabled();
     }
 }

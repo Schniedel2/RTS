@@ -87,6 +87,7 @@ public sealed record NetworkMessage(
     float Damage = 0.0f,
     float HitPoints = 0.0f,
     string? UnitTypeId = null,
+    float TargetAngleY = 0.0f,
     float X = 0.0f,
     float Y = 0.0f,
     float Z = 0.0f,

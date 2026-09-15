@@ -90,7 +90,7 @@ public sealed class NetworkInput
         {
             Guid unitId = message.UnitId ?? Guid.NewGuid();
             if (message.PlayerId is Guid playerId && message.UnitTypeId is not null)
-                SpawnUnitLocally(message.UnitTypeId, playerId, unitId, message.X, message.Y, message.Z);
+                SpawnUnitLocally(message.UnitTypeId, playerId, unitId, message.X, message.Y, message.Z, message.TargetAngleY);
 
             return;
         }
@@ -99,7 +99,7 @@ public sealed class NetworkInput
         {
             Guid unitId = message.UnitId ?? Guid.NewGuid();
             if (message.PlayerId is Guid playerId && message.UnitTypeId is not null)
-                SpawnBuildingLocally(message.UnitTypeId, playerId, unitId, message.X, message.Y, message.Z);
+                SpawnBuildingLocally(message.UnitTypeId, playerId, unitId, message.X, message.Y, message.Z, message.TargetAngleY);
 
             return;
         }
@@ -178,19 +178,19 @@ public sealed class NetworkInput
         }
     }
 
-    private void SpawnUnitLocally(string unitTypeId, Guid playerId, Guid unitId, float x, float y, float z)
+    private void SpawnUnitLocally(string unitTypeId, Guid playerId, Guid unitId, float x, float y, float z, float targetAngleY)
     {
         Vector3 target = new(x, y, z);
-        Globals.World.Units.SpawnUnit(unitTypeId, target, unitId, playerId);
+        Globals.World.Units.SpawnUnit(unitTypeId, target, targetAngleY, unitId, playerId);
 
         string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);
         Globals.Console.Print($"Spawned {unitTypeId} for player {playerName}.");
     }
 
-    private void SpawnBuildingLocally(string buildingTypeId, Guid playerId, Guid unitId, float x, float y, float z)
+    private void SpawnBuildingLocally(string buildingTypeId, Guid playerId, Guid unitId, float x, float y, float z, float targetAngleY)
     {
         Vector3 target = new(x, y, z);
-        Globals.World.Units.SpawnBuilding(buildingTypeId, target, unitId, playerId);
+        Globals.World.Units.SpawnBuilding(buildingTypeId, target, targetAngleY, unitId, playerId);
 
         string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);
         Globals.Console.Print($"Spawned {buildingTypeId} for player {playerName}.");
