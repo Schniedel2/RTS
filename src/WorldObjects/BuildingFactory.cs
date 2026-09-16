@@ -28,6 +28,7 @@ public static class BuildingFactory
                 return null;
         }
         building.SetCreatorPlayer(creatorPlayerId);
+        building.SetArmy(creatorPlayerId == Guid.Empty ? null : creatorPlayerId);
         building.SetRotationYDegrees(RotateYDegrees);
         return (Building)building;
     }

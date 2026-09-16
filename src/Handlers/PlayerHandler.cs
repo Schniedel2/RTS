@@ -291,17 +291,19 @@ public class PlayerHandler
         return true;
     }
 
-    void ClearSelection()
+    void ClearSelection(bool notify = true)
     {
         foreach (Unit unit in _selectedUnits)
             unit.Select(false);
         _selectedUnits.Clear();
         ActiveAction = null;
+        if (notify)
+            NotifySelectionChanged();
     }
 
     private void SelectUnits(Camera camera, Viewport viewport, Rectangle selection, int maxUnits) 
     {
-        ClearSelection();
+        ClearSelection(notify: false);
 
         foreach (Unit unit in _map.Units.Units)
         {
@@ -311,6 +313,9 @@ public class PlayerHandler
                 viewport);
 
             if (!selection.Intersects(unitBounds))
+                continue;
+
+            if (!Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, unit.ArmyId))
                 continue;
 
             if (_selectedUnits.Count < maxUnits)
@@ -328,6 +333,13 @@ public class PlayerHandler
             .FirstOrDefault();
         
         ActiveAction = commonAction;
+        NotifySelectionChanged();
+    }
+
+    private void NotifySelectionChanged()
+    {
+        _ = Globals.Game.NetworkClient.NotifyUnitsSelectedAsync(
+            _selectedUnits.Select(unit => unit.UnitId).ToArray());
     }
 
     private bool IsLeftButtonPressed(MouseState mouse)

@@ -5,6 +5,34 @@ namespace RTS.Network;
 
 public static class NetworkCommands
 {
+    public static NetworkMessage CreateNotifyUnitsSelected(Guid senderId, Guid[] unitIds, uint revision) =>
+        new(NetworkMessageType.NotifyUnitsSelected, senderId, PlayerId: senderId,
+            UnitIds: unitIds, SelectionRevision: revision);
+
+    public static NetworkMessage CreateArmyControlRequest(Guid senderId, Guid armyId, Guid recipientPlayerId, bool grant) =>
+        new(grant ? NetworkMessageType.GrantArmyControlRequest : NetworkMessageType.RevokeArmyControlRequest,
+            senderId, TargetId: recipientPlayerId, PlayerId: senderId, ArmyId: armyId);
+
+    public static NetworkMessage CreateArmyControlCommand(Guid hostId, NetworkMessage request, bool grant) =>
+        new(grant ? NetworkMessageType.GrantArmyControlCommand : NetworkMessageType.RevokeArmyControlCommand,
+            hostId, TargetId: request.TargetId, PlayerId: request.PlayerId ?? request.SenderId, ArmyId: request.ArmyId);
+
+    public static NetworkMessage CreateTransferUnitRequest(Guid senderId, Guid unitId, Guid recipientPlayerId) =>
+        new(NetworkMessageType.TransferUnitRequest, senderId, TargetId: recipientPlayerId,
+            PlayerId: senderId, UnitId: unitId);
+
+    public static NetworkMessage CreateTransferUnitCommand(Guid hostId, NetworkMessage request, Guid recipientArmyId) =>
+        new(NetworkMessageType.TransferUnitCommand, hostId, PlayerId: request.PlayerId ?? request.SenderId,
+            UnitId: request.UnitId, ArmyId: recipientArmyId);
+
+    public static NetworkMessage CreateMergeArmiesRequest(Guid senderId, Guid firstArmyId, Guid secondArmyId, Guid mergedArmyId) =>
+        new(NetworkMessageType.MergeArmiesRequest, senderId, PlayerId: senderId,
+            ArmyId: firstArmyId, SecondaryArmyId: secondArmyId, TargetId: mergedArmyId);
+
+    public static NetworkMessage CreateMergeArmiesCommand(Guid hostId, NetworkMessage request) =>
+        new(NetworkMessageType.MergeArmiesCommand, hostId, PlayerId: request.PlayerId ?? request.SenderId,
+            ArmyId: request.ArmyId, SecondaryArmyId: request.SecondaryArmyId, TargetId: request.TargetId);
+
     public static NetworkMessage CreateWorldData(Guid hostId, WorldData worldData)
     {
         return new NetworkMessage(

@@ -21,6 +21,27 @@ public sealed class NetworkClient
         return _networkHandler.RequestWorldDataAsync(cancellationToken);
     }
 
+    private uint _selectionRevision;
+
+    public Task NotifyUnitsSelectedAsync(Guid[] unitIds, CancellationToken cancellationToken = default)
+    {
+        NetworkMessage message = NetworkCommands.CreateNotifyUnitsSelected(
+            _networkHandler.LocalPeerId, unitIds, ++_selectionRevision);
+        return _networkHandler.SendToHostAsync(message, cancellationToken);
+    }
+
+    public Task RequestArmyControlAsync(Guid armyId, Guid recipientPlayerId, bool grant) =>
+        _networkHandler.SendToHostAsync(NetworkCommands.CreateArmyControlRequest(
+            _networkHandler.LocalPeerId, armyId, recipientPlayerId, grant), CancellationToken.None);
+
+    public Task RequestTransferUnitAsync(Guid unitId, Guid recipientPlayerId) =>
+        _networkHandler.SendToHostAsync(NetworkCommands.CreateTransferUnitRequest(
+            _networkHandler.LocalPeerId, unitId, recipientPlayerId), CancellationToken.None);
+
+    public Task RequestMergeArmiesAsync(Guid firstArmyId, Guid secondArmyId) =>
+        _networkHandler.SendToHostAsync(NetworkCommands.CreateMergeArmiesRequest(
+            _networkHandler.LocalPeerId, firstArmyId, secondArmyId, Guid.NewGuid()), CancellationToken.None);
+
     public Task RequestPlayerUpdateAsync(
         Player player,
         CancellationToken cancellationToken = default)

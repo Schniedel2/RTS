@@ -68,6 +68,32 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type == NetworkMessageType.NotifyUnitsSelected && message.PlayerId is Guid selectedPlayerId)
+        {
+            if (selectedPlayerId != Globals.Game.Network.LocalPeerId)
+                Globals.Game.RemoteSelections.SetSelection(selectedPlayerId, message.UnitIds ?? Array.Empty<Guid>());
+            return;
+        }
+
+        if (message.Type is NetworkMessageType.GrantArmyControlCommand or NetworkMessageType.RevokeArmyControlCommand)
+        {
+            ApplyArmyControl(message, message.Type == NetworkMessageType.GrantArmyControlCommand);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.TransferUnitCommand)
+        {
+            if (message.UnitId is Guid unitId && message.ArmyId is Guid armyId && armyId != Guid.Empty)
+                Globals.World.Units.FindById(unitId)?.SetArmy(armyId);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.MergeArmiesCommand)
+        {
+            ApplyArmyMerge(message);
+            return;
+        }
+
         if (message.Type == NetworkMessageType.WorldData && message.WorldData is not null)
         {
             Globals.World.Terrain.ApplyWorldData(message.WorldData);
@@ -208,6 +234,29 @@ public sealed class NetworkInput
         }
 
         Globals.Game.World.Markers.ShowGotoMarker(new Vector3(message.X, message.Y, message.Z));
+    }
+
+    private static void ApplyArmyControl(NetworkMessage message, bool grant)
+    {
+        if (message.ArmyId is not Guid armyId || message.PlayerId is not Guid ownerId || message.TargetId is not Guid recipientId)
+            return;
+        if (grant)
+            Globals.Game.Armies.GrantCommandUnits(armyId, ownerId, recipientId);
+        else
+            Globals.Game.Armies.RevokeCommandUnits(armyId, ownerId, recipientId);
+    }
+
+    private static void ApplyArmyMerge(NetworkMessage message)
+    {
+        if (message.ArmyId is not Guid firstArmyId || message.SecondaryArmyId is not Guid secondArmyId || message.TargetId is not Guid mergedArmyId)
+            return;
+        Army? merged = Globals.Game.Armies.Merge(firstArmyId, secondArmyId, mergedArmyId);
+        if (merged is null)
+            return;
+        foreach (Player player in Globals.Game.Players.Where(player => player.ArmyId is var armyId && (armyId == firstArmyId || armyId == secondArmyId)))
+            player.SetArmy(merged.Id);
+        foreach (Unit unit in Globals.World.Units.Units.Where(unit => unit.ArmyId == firstArmyId || unit.ArmyId == secondArmyId))
+            unit.SetArmy(merged.Id);
     }
 
     private void ExecuteAttack(NetworkMessage message)

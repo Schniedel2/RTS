@@ -60,7 +60,16 @@ public enum NetworkMessageType
     BuildCommand,
     BuildConstructionRequest,
     BuildConstructionCommand,
-    UnitStateCommand
+    UnitStateCommand,
+    NotifyUnitsSelected,
+    GrantArmyControlRequest,
+    GrantArmyControlCommand,
+    RevokeArmyControlRequest,
+    RevokeArmyControlCommand,
+    TransferUnitRequest,
+    TransferUnitCommand,
+    MergeArmiesRequest,
+    MergeArmiesCommand
 }
 
 public sealed record WorldData(
@@ -97,4 +106,7 @@ public sealed record NetworkMessage(
     TerrainTile? TerrainTile = null,
     WorldData? WorldData = null,
     int TeamId = 0,
-    int? PlayerSkin = null);
+    int? PlayerSkin = null,
+    uint SelectionRevision = 0,
+    Guid? ArmyId = null,
+    Guid? SecondaryArmyId = null);

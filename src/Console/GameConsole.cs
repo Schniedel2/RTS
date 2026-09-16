@@ -107,7 +107,7 @@ public class GameConsole
         if (command.Length == 0)
             return;
 
-        AddHistory("> " + command);
+        //AddHistory("> " + command);
 
         _ = ExecuteCommandAsync(command);
 

@@ -38,6 +38,7 @@ public static class UnitFactory
         }
         unit.SetRotationYDegrees(RotateYDegrees);
         unit.SetCreatorPlayer(creatorPlayerId);
+        unit.SetArmy(creatorPlayerId == Guid.Empty ? null : creatorPlayerId);
         return unit;
     }
 }

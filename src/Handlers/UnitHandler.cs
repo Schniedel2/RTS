@@ -29,6 +29,7 @@ public class UnitHandler
         if (unit == null)
             return null;
 
+        AssignCurrentArmy(unit, creatorPlayerId);
         if (SetFootprints(unit, RotateYDegrees))
         {
             _units.Add(unit);
@@ -48,6 +49,7 @@ public class UnitHandler
         if (unit is null)
             return null;
 
+        AssignCurrentArmy(unit, creatorPlayerId);
         if (SetFootprints(unit, RotateYDegrees))
         {
             _units.Add(unit);
@@ -145,5 +147,17 @@ public class UnitHandler
             return false;
         }
         return true;
+    }
+
+    private static void AssignCurrentArmy(Unit unit, Guid creatorPlayerId)
+    {
+        if (creatorPlayerId == Guid.Empty)
+        {
+            unit.SetArmy(null);
+            return;
+        }
+
+        Player? owner = Globals.Game.Players.FirstOrDefault(player => player.Id == creatorPlayerId);
+        unit.SetArmy(owner?.ArmyId ?? creatorPlayerId);
     }
 }

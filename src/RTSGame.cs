@@ -26,6 +26,9 @@ public class RTSGame
     public IReadOnlyList<Player> Players => _players;
     private readonly Dictionary<Guid, AIPlayer> _aiPlayers = [];
     public IReadOnlyCollection<AIPlayer> AIPlayers => _aiPlayers.Values;
+    public TeamHandler Teams { get; } = new();
+    public ArmyHandler Armies { get; } = new();
+    public RemoteSelectionHandler RemoteSelections { get; } = new();
 
     public RTSGame(
         int terrainWidth,
@@ -56,7 +59,10 @@ public class RTSGame
         ActionPanel = new ActionPanel(Globals.ActionIcons);
 
         Network = new NetworkHandler();
-        _players.Add(new Player(Network.LocalPeerId, Network.DisplayName));
+        Player localPlayer = new(Network.LocalPeerId, Network.DisplayName);
+        _players.Add(localPlayer);
+        Teams.UpdateMembership(localPlayer.Id, localPlayer.TeamId, localPlayer.TeamId);
+        Armies.EnsureArmy(localPlayer.ArmyId, localPlayer.Id);
         Network.SetPlayerDataProvider(() => _players.Select(player =>
             NetworkCommands.CreatePlayerUpdateCommand(
                 Network.LocalPeerId,
@@ -89,11 +95,17 @@ public class RTSGame
         Player? player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
         if (player is null)
         {
-            _players.Add(new Player(playerId, name, teamId, skin));
+            Player added = new(playerId, name, teamId, skin);
+            _players.Add(added);
+            Teams.UpdateMembership(added.Id, added.TeamId, teamId);
+            Armies.EnsureArmy(added.ArmyId, added.Id);
             return;
         }
 
+        int previousTeamId = player.TeamId;
         player.SetRequestedData(name, teamId, skin);
+        Teams.UpdateMembership(playerId, previousTeamId, teamId);
+        Armies.EnsureArmy(player.ArmyId, player.Id);
     }
 
     public void RemovePlayer(Guid playerId)
@@ -101,6 +113,8 @@ public class RTSGame
         Player? player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
         if (player is not null)
             _players.Remove(player);
+        Teams.RemovePlayer(playerId);
+        RemoteSelections.RemovePlayer(playerId);
         _aiPlayers.Remove(playerId);
     }
 
@@ -119,6 +133,8 @@ public class RTSGame
             .FirstOrDefault(candidate => _players.All(player => player.Skin != candidate));
         Player player = new(Guid.NewGuid(), name.Trim(), teamId, skin);
         _players.Add(player);
+        Teams.UpdateMembership(player.Id, player.TeamId, player.TeamId);
+        Armies.EnsureArmy(player.ArmyId, player.Id);
         AIPlayer aiPlayer = new(player);
         _aiPlayers.Add(player.Id, aiPlayer);
         return aiPlayer;

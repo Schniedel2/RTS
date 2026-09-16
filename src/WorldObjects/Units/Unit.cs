@@ -18,6 +18,8 @@ public abstract class Unit : WorldObject
     public float HitPoints { get; set; }
     public float MaxHitPoints { get; }
     public Guid CreatorPlayerId { get; private set; }
+    /// <summary>Current owner. Null represents a neutral/capturable world unit.</summary>
+    public Guid? ArmyId { get; private set; }
     public int Length { get; protected set; }
     public int Width { get; protected set; }
     public float Height { get; protected set; }
@@ -158,6 +160,8 @@ public abstract class Unit : WorldObject
     {
         CreatorPlayerId = creatorPlayerId;
     }
+
+    internal void SetArmy(Guid? armyId) => ArmyId = armyId;
 
     /// <summary>Assigns one mesh and optionally derives conservative grid dimensions from it.</summary>
     protected void SetMesh(string meshName, bool deriveDimensions = false, float padding = 0.0f)

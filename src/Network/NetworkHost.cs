@@ -46,6 +46,11 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.ToolActionRequest &&
             message.Type != NetworkMessageType.BuildRequest &&
             message.Type != NetworkMessageType.BuildConstructionRequest &&
+            message.Type != NetworkMessageType.NotifyUnitsSelected &&
+            message.Type != NetworkMessageType.GrantArmyControlRequest &&
+            message.Type != NetworkMessageType.RevokeArmyControlRequest &&
+            message.Type != NetworkMessageType.TransferUnitRequest &&
+            message.Type != NetworkMessageType.MergeArmiesRequest &&
             message.Type != NetworkMessageType.TextRequest &&
             message.Type != NetworkMessageType.RequestPlayerUpdate)
             return;
@@ -97,6 +102,11 @@ public sealed class NetworkHost
                     NetworkMessageType.RequestPlayerUpdate => NetworkCommands.CreatePlayerUpdateCommand(_networkHandler.LocalPeerId, request, ConfirmPlayerSkin(request)),
                     NetworkMessageType.BuildRequest => NetworkCommands.CreateBuildCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.BuildConstructionRequest => NetworkCommands.CreateBuildConstructionCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.NotifyUnitsSelected => request,
+                    NetworkMessageType.GrantArmyControlRequest => NetworkCommands.CreateArmyControlCommand(_networkHandler.LocalPeerId, request, grant: true),
+                    NetworkMessageType.RevokeArmyControlRequest => NetworkCommands.CreateArmyControlCommand(_networkHandler.LocalPeerId, request, grant: false),
+                    NetworkMessageType.TransferUnitRequest => CreateTransferUnitCommand(request),
+                    NetworkMessageType.MergeArmiesRequest => NetworkCommands.CreateMergeArmiesCommand(_networkHandler.LocalPeerId, request),
                     _ => throw new InvalidOperationException($"Unsupported request type: {request.Type}")
                 };
 
@@ -111,6 +121,15 @@ public sealed class NetworkHost
         {
             _updateGate.Release();
         }
+    }
+
+    private NetworkMessage CreateTransferUnitCommand(NetworkMessage request)
+    {
+        Player? recipient = request.TargetId is Guid playerId
+            ? Globals.Game.Players.FirstOrDefault(player => player.Id == playerId)
+            : null;
+        return NetworkCommands.CreateTransferUnitCommand(
+            _networkHandler.LocalPeerId, request, recipient?.ArmyId ?? Guid.Empty);
     }
 
     /// <summary>Grants the requested skin unless another player already owns it.</summary>

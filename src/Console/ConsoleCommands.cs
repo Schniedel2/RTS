@@ -128,6 +128,24 @@ public class ConsoleCommands
         _console.RegisterCommand(
             "ai-list",
             ListAIPlayers);
+        _console.RegisterCommand(
+            "army-list",
+            ListArmies);
+        _console.RegisterAsyncCommand(
+            "army-share",
+            ShareArmyAsync);
+        _console.RegisterAsyncCommand(
+            "army-unshare",
+            UnshareArmyAsync);
+        _console.RegisterAsyncCommand(
+            "army-gift",
+            GiftUnitAsync);
+        _console.RegisterAsyncCommand(
+            "army-gift-selected",
+            GiftSelectedUnitsAsync);
+        _console.RegisterAsyncCommand(
+            "army-merge",
+            MergeArmyAsync);
     }
 
     public async System.Threading.Tasks.Task CallBatch(string[] args)
@@ -954,6 +972,90 @@ public class ConsoleCommands
 
         TerrainGenerator.ImproveSymmetry(_world.Terrain, args[0] == "horizontal", blend);
         _console.Print($"{args[0]} terrain symmetry improved.");
+    }
+
+    private void ListArmies(string[] args)
+    {
+        foreach (Player player in _rtsGame.Players)
+            _console.Print($"Player {player.Name} id={player.Id.ToString("N")[..8]} team={player.TeamId} army={player.ArmyId.ToString("N")[..8]}");
+        foreach (Army army in _rtsGame.Armies.Armies)
+            _console.Print($"Army {army.Id.ToString("N")[..8]} owners={string.Join(',', army.OwnerPlayerIds.Select(id => id.ToString("N")[..8]))} resources={army.Resources}");
+    }
+
+    private async System.Threading.Tasks.Task ShareArmyAsync(string[] args) =>
+        await SetArmyShareAsync(args, grant: true);
+
+    private async System.Threading.Tasks.Task UnshareArmyAsync(string[] args) =>
+        await SetArmyShareAsync(args, grant: false);
+
+    private async System.Threading.Tasks.Task SetArmyShareAsync(string[] args, bool grant)
+    {
+        if (args.Length != 1 || !TryFindPlayer(args[0], out Player? recipient))
+        {
+            _console.Print($"Usage: army-{(grant ? "share" : "unshare")} <player-name|id>");
+            return;
+        }
+        Player? local = GetLocalPlayer();
+        if (local is null)
+            return;
+        await _rtsGame.NetworkClient.RequestArmyControlAsync(local.ArmyId, recipient!.Id, grant);
+        _console.Print($"Army control {(grant ? "grant" : "revoke")} request sent for {recipient.Name}.");
+    }
+
+    private async System.Threading.Tasks.Task GiftUnitAsync(string[] args)
+    {
+        if (args.Length != 2 || !Guid.TryParse(args[0], out Guid unitId) || !TryFindPlayer(args[1], out Player? recipient))
+        {
+            _console.Print("Usage: army-gift <unit-guid> <player-name|id>");
+            return;
+        }
+        await _rtsGame.NetworkClient.RequestTransferUnitAsync(unitId, recipient!.Id);
+        _console.Print($"Transfer request sent for unit {unitId.ToString("N")[..8]}.");
+    }
+
+    private async System.Threading.Tasks.Task GiftSelectedUnitsAsync(string[] args)
+    {
+        if (args.Length != 1 || !TryFindPlayer(args[0], out Player? recipient))
+        {
+            _console.Print("Usage: army-gift-selected <player-name|id>");
+            return;
+        }
+        foreach (Unit unit in _localPlayer.SelectedUnits)
+            await _rtsGame.NetworkClient.RequestTransferUnitAsync(unit.UnitId, recipient!.Id);
+        _console.Print($"Transfer requests sent for {_localPlayer.SelectedUnits.Count} selected unit(s).");
+    }
+
+    private async System.Threading.Tasks.Task MergeArmyAsync(string[] args)
+    {
+        if (args.Length != 1 || !TryFindPlayer(args[0], out Player? other))
+        {
+            _console.Print("Usage: army-merge <player-name|id>");
+            return;
+        }
+        Player? local = GetLocalPlayer();
+        if (local is null)
+            return;
+        await _rtsGame.NetworkClient.RequestMergeArmiesAsync(local.ArmyId, other!.ArmyId);
+        _console.Print($"Army merge request sent for {other.Name}.");
+    }
+
+    private Player? GetLocalPlayer()
+    {
+        Player? local = _rtsGame.Players.FirstOrDefault(player => player.Id == _rtsGame.Network.LocalPeerId);
+        if (local is null)
+            _console.Print("Local player was not found.");
+        return local;
+    }
+
+    private bool TryFindPlayer(string nameOrId, out Player? player)
+    {
+        player = _rtsGame.Players.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, nameOrId, StringComparison.OrdinalIgnoreCase) ||
+            candidate.Id.ToString("N").StartsWith(nameOrId, StringComparison.OrdinalIgnoreCase));
+        if (player is not null)
+            return true;
+        _console.Print($"Player not found: {nameOrId}");
+        return false;
     }
 
     private void SetClock(string[] args)
