@@ -43,7 +43,83 @@ public static class BBModelLoader
             : Path.GetFileNameWithoutExtension(path);
 
         MeshNode? hierarchy = BuildHierarchy(root, meshName, elementsByUuid);
-        return hierarchy is not null ? new Mesh(meshName, hierarchy) : new Mesh(meshName, [.. elementsByUuid.Values]);
+        Mesh mesh = hierarchy is not null ? new Mesh(meshName, hierarchy) : new Mesh(meshName, [.. elementsByUuid.Values]);
+        foreach (MeshAnimationClip clip in ReadAnimations(root))
+            mesh.Animations[clip.Name] = clip;
+        return mesh;
+    }
+
+    private static IEnumerable<MeshAnimationClip> ReadAnimations(JsonElement root)
+    {
+        if (!root.TryGetProperty("animations", out JsonElement animations) || animations.ValueKind != JsonValueKind.Array)
+            yield break;
+
+        foreach (JsonElement animation in animations.EnumerateArray())
+        {
+            string name = animation.TryGetProperty("name", out JsonElement nameValue)
+                ? nameValue.GetString() ?? "Animation"
+                : "Animation";
+            float length = animation.TryGetProperty("length", out JsonElement lengthValue) && lengthValue.TryGetSingle(out float parsedLength)
+                ? parsedLength : 0.0f;
+            bool loop = animation.TryGetProperty("loop", out JsonElement loopValue) &&
+                string.Equals(loopValue.GetString(), "loop", StringComparison.OrdinalIgnoreCase);
+            MeshAnimationClip clip = new(name, length, loop);
+            if (!animation.TryGetProperty("animators", out JsonElement animators) || animators.ValueKind != JsonValueKind.Object)
+            {
+                yield return clip;
+                continue;
+            }
+
+            foreach (JsonProperty animatorProperty in animators.EnumerateObject())
+            {
+                JsonElement animator = animatorProperty.Value;
+                if (!animator.TryGetProperty("name", out JsonElement groupNameValue) || string.IsNullOrWhiteSpace(groupNameValue.GetString()))
+                    continue;
+                string groupName = groupNameValue.GetString()!;
+                MeshAnimationTrack track = new();
+                ReadKeyframes(animator, "rotation", track.RotationKeys);
+                ReadKeyframes(animator, "position", track.PositionKeys);
+                ReadKeyframes(animator, "scale", track.ScaleKeys);
+                if (track.RotationKeys.Count > 0 || track.PositionKeys.Count > 0 || track.ScaleKeys.Count > 0)
+                    clip.Tracks[groupName] = track;
+            }
+            yield return clip;
+        }
+    }
+
+    private static void ReadKeyframes(JsonElement animator, string channel, List<MeshAnimationKeyframe> destination)
+    {
+        if (!animator.TryGetProperty("keyframes", out JsonElement keyframes) || keyframes.ValueKind != JsonValueKind.Array)
+            return;
+        foreach (JsonElement keyframe in keyframes.EnumerateArray())
+        {
+            if (!keyframe.TryGetProperty("channel", out JsonElement channelValue) ||
+                !string.Equals(channelValue.GetString(), channel, StringComparison.OrdinalIgnoreCase) ||
+                !keyframe.TryGetProperty("time", out JsonElement timeValue) || !timeValue.TryGetSingle(out float time) ||
+                !keyframe.TryGetProperty("data_points", out JsonElement points) || points.GetArrayLength() == 0)
+            {
+                continue;
+            }
+            JsonElement point = points[0];
+            if (!TryReadAnimationVector(point, out Vector3 value))
+                continue;
+            destination.Add(new MeshAnimationKeyframe(time, value));
+        }
+        destination.Sort((left, right) => left.TimeSeconds.CompareTo(right.TimeSeconds));
+    }
+
+    private static bool TryReadAnimationVector(JsonElement point, out Vector3 value)
+    {
+        value = Vector3.Zero;
+        if (!point.TryGetProperty("x", out JsonElement x) || !point.TryGetProperty("y", out JsonElement y) || !point.TryGetProperty("z", out JsonElement z) ||
+            !float.TryParse(x.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float xValue) ||
+            !float.TryParse(y.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float yValue) ||
+            !float.TryParse(z.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float zValue))
+        {
+            return false;
+        }
+        value = new Vector3(xValue, yValue, zValue);
+        return true;
     }
 
     /// <summary>Rebuilds the Blockbench "outliner" tree so whole groups (turret, wheels, ...) can be transformed at once.</summary>
@@ -87,6 +163,8 @@ public static class BBModelLoader
 
         string name = group.TryGetProperty("name", out JsonElement groupName) ? groupName.GetString() ?? uuid : uuid;
         MeshNode node = new(name, ReadVector3(group.GetProperty("origin")) * ModelScale);
+        if (group.TryGetProperty("rotation", out JsonElement rotation))
+            node.BaseRotationDegrees = ReadVector3(rotation);
         ApplyRotationParameter(node, isGroup: true);
 
         if (item.TryGetProperty("children", out JsonElement children))

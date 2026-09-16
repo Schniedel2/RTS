@@ -7,6 +7,7 @@ namespace RTS;
 
 public class Soldier : MobileUnit
 {
+    private readonly AnimationPlayer _animationPlayer;
     public override IReadOnlyList<UnitAction> Actions =>
     [
         new(UnitActionType.Goto, "Goto", 0, 1),
@@ -31,5 +32,19 @@ public class Soldier : MobileUnit
         RotationSpeed = MathHelper.TwoPi;
 
         SetMesh("Soldier-1", deriveDimensions: true);
+        _animationPlayer = new AnimationPlayer(_meshSet!.RootMesh.Animations);
+        _animationPlayer.Play("Standing");
+    }
+
+    public override void Update(GameTime gameTime)
+    {
+        base.Update(gameTime);
+        _animationPlayer.Play(PlannedPath.Count > 0 ? "Running" : "Standing");
+        _animationPlayer.Update((float)gameTime.ElapsedGameTime.TotalSeconds);
+    }
+
+    public override void Draw(Effect effect)
+    {
+        _meshSet?.Draw(effect, GetVisualWorldMatrix(), _animationPlayer.EvaluatePose());
     }
 }

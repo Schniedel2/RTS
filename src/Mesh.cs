@@ -63,6 +63,8 @@ public sealed class MeshNode(string name, Vector3 pivot)
 {
     public string Name { get; } = name;
     public Vector3 Pivot { get; } = pivot;
+    /// <summary>Authored Blockbench group rotation, preserved independently of animation.</summary>
+    public Vector3 BaseRotationDegrees { get; set; }
     public List<MeshNode> Children { get; } = [];
     public List<SubMesh> SubMeshes { get; } = [];
 
@@ -70,20 +72,34 @@ public sealed class MeshNode(string name, Vector3 pivot)
     public string? RotationParameter { get; set; }
     public Vector3 RotationAxis { get; set; } = Vector3.Up;
 
-    public Matrix GetLocalTransform(IReadOnlyDictionary<string, float> parameters)
+    public Matrix GetLocalTransform(IReadOnlyDictionary<string, float> parameters, AnimationPose? pose = null)
     {
-        if (RotationParameter is null || !parameters.TryGetValue(RotationParameter, out float angle) || angle == 0.0f)
-            return Matrix.Identity;
-        return Matrix.CreateTranslation(-Pivot) * Matrix.CreateFromAxisAngle(RotationAxis, angle) * Matrix.CreateTranslation(Pivot);
+        Matrix transform = Matrix.Identity;
+        if (BaseRotationDegrees != Vector3.Zero)
+            transform = Matrix.CreateTranslation(-Pivot) *
+                Matrix.CreateRotationX(MathHelper.ToRadians(BaseRotationDegrees.X)) *
+                Matrix.CreateRotationY(MathHelper.ToRadians(BaseRotationDegrees.Y)) *
+                Matrix.CreateRotationZ(MathHelper.ToRadians(BaseRotationDegrees.Z)) *
+                Matrix.CreateTranslation(Pivot);
+        if (pose is not null && pose.TryGetRotation(Name, out Vector3 animationDegrees))
+            transform = transform * (Matrix.CreateTranslation(-Pivot) *
+                Matrix.CreateRotationX(MathHelper.ToRadians(animationDegrees.X)) *
+                Matrix.CreateRotationY(MathHelper.ToRadians(animationDegrees.Y)) *
+                Matrix.CreateRotationZ(MathHelper.ToRadians(animationDegrees.Z)) *
+                Matrix.CreateTranslation(Pivot));
+        if (RotationParameter is not null && parameters.TryGetValue(RotationParameter, out float angle) && angle != 0.0f)
+            transform = transform * (Matrix.CreateTranslation(-Pivot) * Matrix.CreateFromAxisAngle(RotationAxis, angle) * Matrix.CreateTranslation(Pivot));
+        return transform;
     }
 
     public void Draw(
         Effect effect,
         Matrix parentWorld,
         IReadOnlyDictionary<string, float> parameters,
-        Action<string, Matrix>? drawAttachments = null)
+        Action<string, Matrix>? drawAttachments = null,
+        AnimationPose? pose = null)
     {
-        Matrix world = GetLocalTransform(parameters) * parentWorld;
+        Matrix world = GetLocalTransform(parameters, pose) * parentWorld;
         foreach (SubMesh subMesh in SubMeshes)
         {
             effect.Parameters["World"]?.SetValue(world);
@@ -94,7 +110,7 @@ public sealed class MeshNode(string name, Vector3 pivot)
         }
         drawAttachments?.Invoke(Name, GetAttachmentWorld(parentWorld, parameters));
         foreach (MeshNode child in Children)
-            child.Draw(effect, world, parameters, drawAttachments);
+            child.Draw(effect, world, parameters, drawAttachments, pose);
     }
 
     private static void ApplyMaterialMask(Effect effect, SubMesh subMesh)
@@ -227,6 +243,7 @@ public class Mesh
     public string Name { get; }
     public MeshNode Root { get; }
     public IReadOnlyList<SubMesh> SubMeshes { get; }
+    public Dictionary<string, MeshAnimationClip> Animations { get; } = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>
     /// Permanent local correction applied before the Unit or attachment world
     /// transform. Use it for import-time scale, rotation or origin tuning.
@@ -324,8 +341,9 @@ public class Mesh
         Effect effect,
         Matrix world,
         IReadOnlyDictionary<string, float> drawParameters,
-        Action<string, Matrix>? drawAttachments = null) =>
-        Root.Draw(effect, LocalTransform * world, drawParameters, drawAttachments);
+        Action<string, Matrix>? drawAttachments = null,
+        AnimationPose? pose = null) =>
+        Root.Draw(effect, LocalTransform * world, drawParameters, drawAttachments, pose);
 
     public bool TryGetPivotWorldTransform(
         string pivotName,

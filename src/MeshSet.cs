@@ -208,9 +208,9 @@ public sealed class MeshSet
         return true;
     }
 
-    public void Draw(Effect effect, Matrix world) =>
+    public void Draw(Effect effect, Matrix world, AnimationPose? pose = null) =>
         RootMesh.Draw(effect, world, _parameters,
-            (placeholderName, attachmentWorld) => DrawAttachment(effect, placeholderName, attachmentWorld));
+            (placeholderName, attachmentWorld) => DrawAttachment(effect, placeholderName, attachmentWorld), pose);
 
     private void DrawAttachment(Effect effect, string placeholderName, Matrix attachmentWorld)
     {
