@@ -216,9 +216,14 @@ public class MobileUnit : Unit
 
     protected bool TryMoveTo(Vector3 position)
     {
-        Point targetCell = Globals.World.GameGrid.ToCell(position);
+        GameGrid grid = Globals.World.GameGrid;
+        Point targetCell = grid.ToCell(position);
+        Point currentCell = grid.ToCell(Position);
 
-        if (!Globals.World.GameGrid.TryMove(this, targetCell))
+        // Continuous visual movement within an already occupied cell cannot
+        // change the discrete footprint. Ask the grid only when crossing into
+        // another cell; body turns are handled separately by TurnTowards.
+        if (targetCell != currentCell && !grid.TryMove(this, targetCell))
         {
             PathDebug($"movement blocked at cell=({targetCell.X},{targetCell.Y})");
             return false;

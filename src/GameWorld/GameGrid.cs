@@ -67,14 +67,32 @@ public class GameGrid
         if (left < 0 || top < 0 || right >= Width || bottom >= Height)
             return false;
 
+        HashSet<Unit>? testedBuildings = unit is MobileUnit ? [] : null;
         for (int y = top; y <= bottom; y++)
         {
             for (int x = left; x <= right; x++)
             {
                 Unit? occupant = _occupants[x, y];
 
-                if (occupant != null && occupant != unit)
-                    return false;
+                if (occupant is null || occupant == unit)
+                    continue;
+
+                // A rotated building deliberately occupies every touched grid
+                // cell. That is conservative for A*, but it must not turn a
+                // geometrically clear, edge-hugging route into a collision.
+                // Test the real rectangles once per building before rejecting
+                // a mobile unit's candidate cell.
+                if (unit is MobileUnit mobileUnit && occupant is Building building)
+                {
+                    if (testedBuildings!.Add(building) &&
+                        MobileFootprintIntersectsBuilding(mobileUnit, footprint, building))
+                    {
+                        return false;
+                    }
+                    continue;
+                }
+
+                return false;
             }
         }
 
@@ -183,12 +201,15 @@ public class GameGrid
             return true;
 
         Point centerCell = ToCell(unit.Position);
-        if (!CanPlace(unit, centerCell))
-            return false;
-
         Rectangle newFootprint = GetFootprint(unit, centerCell);
         if (_occupiedFootprints.TryGetValue(unit, out Rectangle oldFootprint) && oldFootprint == newFootprint)
             return true;
+
+        // Only crossing the 45° orientation threshold changes a vehicle's
+        // discrete grid footprint. Until then a smooth visual turn needs no
+        // collision query at all.
+        if (!CanPlace(unit, centerCell))
+            return false;
 
         Clear(unit);
         Occupy(unit, centerCell);
@@ -253,6 +274,62 @@ public class GameGrid
         int left = centerCell.X - (footprintWidth - 1) / 2;
         int top = centerCell.Y - (footprintHeight - 1) / 2;
         return new Rectangle(left, top, footprintWidth, footprintHeight);
+    }
+
+    /// <summary>
+    /// Precise X/Z collision check used when a vehicle crosses a conservatively
+    /// occupied cell of a freely rotated building. Touching edges are allowed;
+    /// only a positive-area overlap blocks movement.
+    /// </summary>
+    private bool MobileFootprintIntersectsBuilding(
+        MobileUnit mobileUnit,
+        Rectangle mobileFootprint,
+        Building building)
+    {
+        Vector2 mobileCenter = new(
+            (mobileFootprint.Left + mobileFootprint.Width * 0.5f) * CellSize,
+            (mobileFootprint.Top + mobileFootprint.Height * 0.5f) * CellSize);
+        float mobileHalfWidth = mobileFootprint.Width * CellSize * 0.5f;
+        float mobileHalfLength = mobileFootprint.Height * CellSize * 0.5f;
+
+        float buildingYawDegrees = GetYawDegrees(building.Transform);
+        Matrix buildingYaw = Matrix.CreateRotationY(MathHelper.ToRadians(buildingYawDegrees));
+        Vector3 right3 = Vector3.TransformNormal(Vector3.Right, buildingYaw);
+        Vector3 forward3 = Vector3.TransformNormal(Vector3.Forward, buildingYaw);
+        Vector2 buildingRight = new(right3.X, right3.Z);
+        Vector2 buildingForward = new(forward3.X, forward3.Z);
+        Vector3 buildingCenter3 = building.GetFootprintCenter(building.Position, buildingYawDegrees);
+        Vector2 buildingCenter = new(buildingCenter3.X, buildingCenter3.Z);
+        float buildingHalfWidth = building.Width * CellSize * 0.5f;
+        float buildingHalfLength = building.Length * CellSize * 0.5f;
+        Vector2 delta = buildingCenter - mobileCenter;
+
+        // Test the building's two local axes against the vehicle AABB.
+        if (MathF.Abs(Vector2.Dot(delta, buildingRight)) >=
+            buildingHalfWidth + mobileHalfWidth * MathF.Abs(buildingRight.X) + mobileHalfLength * MathF.Abs(buildingRight.Y))
+        {
+            return false;
+        }
+        if (MathF.Abs(Vector2.Dot(delta, buildingForward)) >=
+            buildingHalfLength + mobileHalfWidth * MathF.Abs(buildingForward.X) + mobileHalfLength * MathF.Abs(buildingForward.Y))
+        {
+            return false;
+        }
+
+        // Test the vehicle's world X/Z axes against the building OBB.
+        if (MathF.Abs(delta.X) >= mobileHalfWidth +
+            buildingHalfWidth * MathF.Abs(buildingRight.X) + buildingHalfLength * MathF.Abs(buildingForward.X))
+        {
+            return false;
+        }
+        return MathF.Abs(delta.Y) < mobileHalfLength +
+            buildingHalfWidth * MathF.Abs(buildingRight.Y) + buildingHalfLength * MathF.Abs(buildingForward.Y);
+    }
+
+    private static float GetYawDegrees(Matrix transform)
+    {
+        Vector3 forward = transform.Forward;
+        return MathHelper.ToDegrees(MathF.Atan2(-forward.X, -forward.Z));
     }
 
     private static bool IntersectsCell(

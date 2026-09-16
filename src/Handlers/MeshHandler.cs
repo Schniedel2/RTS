@@ -20,7 +20,8 @@ public class MeshHandler
 
     public void LoadMeshes(string directory)
     {
-        Meshes["default"] = ObjMeshLoader.Load(Path.Combine(directory, "default.obj"), Color.White);
+        Meshes["default"] = BBModelLoader.Load(Path.Combine(directory, "Soldier-1.bbmodel"), Color.White);
+        Meshes["Soldier-1"] = BBModelLoader.Load(Path.Combine(directory, "Soldier-1.bbmodel"), Color.White);
         Meshes["reaktor"] = BBModelLoader.Load(Path.Combine(directory, "reaktor.bbmodel"), Color.White);
         Meshes["gdi-base"] = BBModelLoader.Load(Path.Combine(directory, "gdi-base.bbmodel"), Color.White);
 
@@ -47,14 +48,7 @@ public class MeshHandler
         int tileSize = 64;
         int tx = tileSize*3+8;
         int ty = tileSize*2+8;
-
-        var Concrete1 = new CubeProportionalTileMapping(tileSize, tx*0, ty*0, 2048, 2048);
-        var Bricks1 = new CubeProportionalTileMapping(tileSize, tx*1, ty*0, 2048, 2048);
-
-        //  apply textures to meshes
-
-        CubeMapping.Apply(Meshes["reaktor"], Concrete1);
-        CubeMapping.Apply(Meshes["gdi-base"], Bricks1);
+        
     }
 
     public void DrawMesh(Effect effect, string meshName, Matrix baseWorld)

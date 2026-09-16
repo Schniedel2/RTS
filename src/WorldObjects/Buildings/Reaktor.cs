@@ -26,14 +26,14 @@ public class Reaktor : Building
         SetMesh("reaktor", deriveDimensions: true);
     }
 
-    /*
-    public override void Draw(Effect effect)
+    public override void Update(GameTime gameTime)
     {
-        //  scale Y by percentage
-        Matrix world = GetWorldMatrix();
-        Globals.MeshHandler.DrawMesh(effect, "reaktor", world);
-    } 
-    */   
+        if (IsCompleted)
+        {
+            UpdateExhaust(gameTime, 0.1f, SmokeEmissionPresets.ReactorExhaust());
+        }
+        base.Update(gameTime);
+    }
 
     public IReadOnlyList<UnitAction> GetUnitActions()
     {

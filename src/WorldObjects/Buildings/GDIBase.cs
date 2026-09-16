@@ -9,6 +9,8 @@ public class GDIBase : Building
 {
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
     private float RadarAngleDegree = 0.0f;
+    private float RadarSpeedDegreePerSecond = 180.0f;
+    private float RadarSpeedFactor = 0.0f;
 
     public GDIBase(
         Vector3 position,
@@ -17,9 +19,7 @@ public class GDIBase : Building
             position,
             unitId)
     {
-        Length = 2;
-        Width = 4;
-        Height = 4;
+        SetMesh("gdi-base", deriveDimensions: true);
 
         TotalBuildingPointsNeeded = 2500;
         HitPoints = 2500;
@@ -27,12 +27,8 @@ public class GDIBase : Building
 
     public override void Draw(Effect effect)
     {
-       //  scale Y by percentage
-        Matrix world = GetWorldMatrix();
-
-        Mesh mesh = Globals.MeshHandler.Meshes["gdi-base"];
-        mesh.SetParameter("radar", MathHelper.ToRadians(RadarAngleDegree));
-        Globals.MeshHandler.DrawMesh(effect, "gdi-base", world);
+        _meshSet?.SetParameter("pivot:radar", MathHelper.ToRadians(RadarAngleDegree));
+        base.Draw(effect);
     }
 
     public IReadOnlyList<UnitAction> GetUnitActions()
@@ -58,7 +54,14 @@ public class GDIBase : Building
     public override void Update(GameTime gameTime)
     {
         if (IsCompleted)
-           RadarAngleDegree += (float)gameTime.ElapsedGameTime.TotalSeconds * 180.0f;
+        {
+            //  todo: bei Stromausfall muss RadarSpeedFactor reduziert werden
+            RadarSpeedFactor += 0.01f;
+            if (RadarSpeedFactor > 1.0f)
+                RadarSpeedFactor = 1.0f;
+
+           RadarAngleDegree += (float)gameTime.ElapsedGameTime.TotalSeconds * RadarSpeedDegreePerSecond * RadarSpeedFactor;
+        }
         base.Update(gameTime);
     }
 }

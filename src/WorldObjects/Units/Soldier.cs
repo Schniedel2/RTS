@@ -25,9 +25,11 @@ public class Soldier : MobileUnit
             width: 1,
             height: 1.8f,
             unitId,
-            movementProfile)
+            movementProfile)            
     {
         MoveSpeed = 2.0f;
         RotationSpeed = MathHelper.TwoPi;
+
+        SetMesh("Soldier-1", deriveDimensions: true);
     }
 }
