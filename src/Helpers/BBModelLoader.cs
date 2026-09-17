@@ -28,10 +28,16 @@ public static class BBModelLoader
         {
             foreach (JsonElement element in elements.EnumerateArray())
             {
-                if (!element.TryGetProperty("type", out JsonElement type) || type.GetString() != "mesh")
+                if (!element.TryGetProperty("type", out JsonElement type))
                     continue;
-                elementsByUuid[element.GetProperty("uuid").GetString()!] = LoadMeshElement(
-                    element, vertexColor, resolution, textureRegions);
+                SubMesh? subMesh = type.GetString() switch
+                {
+                    "mesh" => LoadMeshElement(element, vertexColor, resolution, textureRegions),
+                    "cube" => LoadCubeElement(element, vertexColor, resolution, textureRegions),
+                    _ => null
+                };
+                if (subMesh is not null)
+                    elementsByUuid[element.GetProperty("uuid").GetString()!] = subMesh;
             }
         }
 
@@ -292,6 +298,135 @@ public static class BBModelLoader
         return submesh;
     }
 
+    /// <summary>
+    /// Loads Blockbench's standard cube element. Unlike a mesh, its vertices
+    /// are implicit in <c>from</c>/<c>to</c>; every face owns a rectangular UV.
+    /// </summary>
+    private static SubMesh? LoadCubeElement(
+        JsonElement element,
+        Color vertexColor,
+        (float Width, float Height) resolution,
+        IReadOnlyDictionary<int, ImportedTexture> textureRegions)
+    {
+        if (!element.TryGetProperty("from", out JsonElement fromValue) ||
+            !element.TryGetProperty("to", out JsonElement toValue))
+        {
+            return null;
+        }
+
+        string name = element.TryGetProperty("name", out JsonElement nameValue)
+            ? nameValue.GetString() ?? "cube"
+            : "cube";
+        Vector3 minimum = ReadVector3(fromValue);
+        Vector3 maximum = ReadVector3(toValue);
+        float inflate = element.TryGetProperty("inflate", out JsonElement inflateValue) && inflateValue.TryGetSingle(out float parsedInflate)
+            ? parsedInflate : 0.0f;
+        minimum -= new Vector3(inflate);
+        maximum += new Vector3(inflate);
+        Vector3 origin = element.TryGetProperty("origin", out JsonElement originValue)
+            ? ReadVector3(originValue)
+            : (minimum + maximum) * 0.5f;
+        Matrix cubeTransform = Matrix.CreateTranslation(-origin) * ReadRotation(element) * Matrix.CreateTranslation(origin);
+
+        Vector3[] corners =
+        [
+            new(minimum.X, minimum.Y, minimum.Z), // 0: left, bottom, north
+            new(maximum.X, minimum.Y, minimum.Z), // 1: right, bottom, north
+            new(minimum.X, maximum.Y, minimum.Z), // 2: left, top, north
+            new(maximum.X, maximum.Y, minimum.Z), // 3: right, top, north
+            new(minimum.X, minimum.Y, maximum.Z), // 4: left, bottom, south
+            new(maximum.X, minimum.Y, maximum.Z), // 5: right, bottom, south
+            new(minimum.X, maximum.Y, maximum.Z), // 6: left, top, south
+            new(maximum.X, maximum.Y, maximum.Z)  // 7: right, top, south
+        ];
+        for (int index = 0; index < corners.Length; index++)
+            corners[index] = Vector3.Transform(corners[index], cubeTransform) * ModelScale;
+
+        if (!element.TryGetProperty("faces", out JsonElement faces) || faces.ValueKind != JsonValueKind.Object)
+            return null;
+
+        List<VertexPositionColorNormalTexture> vertices = [];
+        List<int> indices = [];
+        int? textureAtlasIndex = null;
+        ImportedTexture? importedTexture = null;
+        foreach ((string faceName, int[] cornerIndices) in CubeFaces)
+        {
+            if (!faces.TryGetProperty(faceName, out JsonElement face))
+                continue;
+            ImportedTexture? faceTexture = ReadFaceTextureRegion(face, textureRegions);
+            if (faceTexture?.Visible is TextureHandler.TextureRegion region)
+            {
+                if (textureAtlasIndex is int existingAtlas && existingAtlas != region.AtlasIndex)
+                    throw new InvalidDataException($"Cube '{name}' uses textures from multiple atlases.");
+                textureAtlasIndex = region.AtlasIndex;
+                importedTexture ??= faceTexture;
+            }
+            AddCubeFace(vertices, indices, corners, cornerIndices, face, resolution, faceTexture?.Visible, vertexColor);
+        }
+
+        return vertices.Count == 0 ? null : new SubMesh(
+            name, vertices.ToArray(), indices.ToArray(), origin * ModelScale, textureAtlasIndex,
+            textureRegion: importedTexture?.Visible,
+            materialMaskRegion: importedTexture?.MaterialMask);
+    }
+
+    private static readonly (string Name, int[] Corners)[] CubeFaces =
+    [
+        ("north", [0, 2, 3, 1]),
+        ("east",  [1, 3, 7, 5]),
+        ("south", [5, 7, 6, 4]),
+        ("west",  [4, 6, 2, 0]),
+        ("up",    [2, 6, 7, 3]),
+        ("down",  [4, 0, 1, 5])
+    ];
+
+    private static void AddCubeFace(
+        List<VertexPositionColorNormalTexture> vertices,
+        List<int> indices,
+        Vector3[] corners,
+        int[] faceCorners,
+        JsonElement face,
+        (float Width, float Height) resolution,
+        TextureHandler.TextureRegion? textureRegion,
+        Color color)
+    {
+        Vector2 uvMinimum = Vector2.Zero;
+        Vector2 uvMaximum = Vector2.One;
+        if (face.TryGetProperty("uv", out JsonElement uv) && uv.GetArrayLength() >= 4)
+        {
+            uvMinimum = new Vector2(uv[0].GetSingle() / resolution.Width, uv[1].GetSingle() / resolution.Height);
+            uvMaximum = new Vector2(uv[2].GetSingle() / resolution.Width, uv[3].GetSingle() / resolution.Height);
+        }
+        Vector2[] uvs =
+        [
+            new(uvMinimum.X, uvMinimum.Y), new(uvMinimum.X, uvMaximum.Y),
+            new(uvMaximum.X, uvMaximum.Y), new(uvMaximum.X, uvMinimum.Y)
+        ];
+        if (textureRegion is not null)
+            for (int index = 0; index < uvs.Length; index++)
+                uvs[index] = textureRegion.RemapUV(uvs[index]);
+
+        Vector3 a = corners[faceCorners[0]], b = corners[faceCorners[1]], c = corners[faceCorners[2]], d = corners[faceCorners[3]];
+        Vector3 normal = Vector3.Cross(b - a, c - a);
+        normal = normal.LengthSquared() > 0.0f ? Vector3.Normalize(normal) : Vector3.Up;
+        AddTriangle(vertices, indices, a, uvs[0], b, uvs[1], c, uvs[2], normal, color);
+        AddTriangle(vertices, indices, a, uvs[0], c, uvs[2], d, uvs[3], normal, color);
+    }
+
+    private static void AddTriangle(
+        List<VertexPositionColorNormalTexture> vertices,
+        List<int> indices,
+        Vector3 a, Vector2 uvA, Vector3 b, Vector2 uvB, Vector3 c, Vector2 uvC,
+        Vector3 normal, Color color)
+    {
+        // Match LoadMeshElement's reversed render winding.
+        int first = vertices.Count;
+        vertices.Add(new VertexPositionColorNormalTexture(b, color, normal, uvB));
+        vertices.Add(new VertexPositionColorNormalTexture(a, color, normal, uvA));
+        vertices.Add(new VertexPositionColorNormalTexture(c, color, normal, uvC));
+        indices.Add(first); indices.Add(first + 1); indices.Add(first + 2);
+    }
+
     private static Vector2[] ReadFaceUv(
         JsonElement face,
         string[] faceVertexKeys,
@@ -329,48 +464,43 @@ public static class BBModelLoader
                 ? nameElement.GetString()
                 : null;
             string? textureFileName = string.IsNullOrWhiteSpace(relativePath) ? name : relativePath;
-            if (string.IsNullOrWhiteSpace(textureFileName))
-            {
-                index++;
-                continue;
-            }
-
-            string texturePath = Path.GetFullPath(Path.Combine(modelDirectory, textureFileName));
             string? embeddedSource = texture.TryGetProperty("source", out JsonElement sourceElement)
                 ? sourceElement.GetString()
                 : null;
             bool hasEmbeddedSource = !string.IsNullOrWhiteSpace(embeddedSource) &&
                 embeddedSource.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase);
 
-            if (!hasEmbeddedSource && !File.Exists(texturePath))
-                throw new FileNotFoundException(
-                    $"BBModel texture '{textureFileName}' is neither embedded nor found next to '{Path.GetFileName(modelPath)}'.",
-                    texturePath);
+            // BBModels are self-contained assets: only their embedded images
+            // are used for visible mesh textures. In particular, do not fall
+            // back to a PNG next to the model merely because it has the same
+            // filename as a Blockbench texture entry.
+            if (!hasEmbeddedSource)
+            {
+                index++;
+                continue;
+            }
 
-            TextureHandler.TextureRegion region;
-            if (hasEmbeddedSource)
+            // The model's full path makes this key unique across BBModels, so
+            // two models may both embed e.g. "texture.png" without sharing or
+            // overwriting an atlas region. The index distinguishes multiple
+            // textures inside one model.
+            string embeddedKey = $"bbmodel:{Path.GetFullPath(modelPath)}:texture:{index}";
+            TextureHandler.TextureRegion region = Globals.TextureHandler.TryGetTextureRegionByCacheKey(embeddedKey, out TextureHandler.TextureRegion existing)
+                ? existing
+                : Globals.TextureHandler.AddTextureFromDataUri(embeddedKey, embeddedSource!);
+            TextureHandler.TextureRegion? mask = null;
+            if (!string.IsNullOrWhiteSpace(textureFileName))
             {
-                // A stable key prevents the same embedded image from occupying
-                // the atlas again when a BBModel is loaded more than once.
-                string embeddedKey = $"bbmodel:{Path.GetFullPath(modelPath)}:texture:{index}";
-                region = Globals.TextureHandler.TryGetTextureRegion(embeddedKey, out TextureHandler.TextureRegion existing)
-                    ? existing
-                    : Globals.TextureHandler.AddTextureFromDataUri(embeddedKey, embeddedSource!);
+                string texturePath = Path.GetFullPath(Path.Combine(modelDirectory, textureFileName));
+                string maskPath = Path.Combine(
+                    Path.GetDirectoryName(texturePath)!,
+                    $"{Path.GetFileNameWithoutExtension(texturePath)}-MaterialMask.png");
+                mask = File.Exists(maskPath)
+                    ? (Globals.TextureHandler.TryGetTextureRegion(maskPath, out TextureHandler.TextureRegion existingMask)
+                        ? existingMask
+                        : Globals.TextureHandler.AddTexture(maskPath))
+                    : null;
             }
-            else
-            {
-                region = Globals.TextureHandler.TryGetTextureRegion(texturePath, out TextureHandler.TextureRegion existing)
-                    ? existing
-                    : Globals.TextureHandler.AddTexture(texturePath);
-            }
-            string maskPath = Path.Combine(
-                Path.GetDirectoryName(texturePath)!,
-                $"{Path.GetFileNameWithoutExtension(texturePath)}-MaterialMask.png");
-            TextureHandler.TextureRegion? mask = File.Exists(maskPath)
-                ? (Globals.TextureHandler.TryGetTextureRegion(maskPath, out TextureHandler.TextureRegion existingMask)
-                    ? existingMask
-                    : Globals.TextureHandler.AddTexture(maskPath))
-                : null;
             ImportedTexture importedTexture = new(region, mask);
             regions[index] = importedTexture;
 

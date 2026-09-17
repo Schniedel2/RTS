@@ -269,9 +269,20 @@ public sealed class TextureHandler : IDisposable
     public bool TryGetTextureRegion(string filename, out TextureRegion region)
     {
         string fullPath = Path.GetFullPath(filename);
+        return TryGetTextureRegionByCacheKey(fullPath, out region);
+    }
+
+    /// <summary>
+    /// Returns an atlas region by its exact cache key. This is intended for
+    /// in-memory assets such as textures embedded in BBModel files, whose keys
+    /// are deliberately not file-system paths.
+    /// </summary>
+    public bool TryGetTextureRegionByCacheKey(string cacheKey, out TextureRegion region)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cacheKey);
         foreach (Atlas atlas in _atlases)
         {
-            if (atlas.Regions.TryGetValue(fullPath, out TextureRegion? existing))
+            if (atlas.Regions.TryGetValue(cacheKey, out TextureRegion? existing))
             {
                 region = existing;
                 return true;

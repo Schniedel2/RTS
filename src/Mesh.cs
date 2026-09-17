@@ -74,22 +74,36 @@ public sealed class MeshNode(string name, Vector3 pivot)
 
     public Matrix GetLocalTransform(IReadOnlyDictionary<string, float> parameters, AnimationPose? pose = null)
     {
-        Matrix transform = Matrix.Identity;
+        Matrix rotation = GetRotationTransform(parameters, pose);
+        return Matrix.CreateTranslation(-Pivot) * rotation * Matrix.CreateTranslation(Pivot);
+    }
+
+    private Matrix GetRotationTransform(IReadOnlyDictionary<string, float> parameters, AnimationPose? pose)
+    {
+        Matrix baseRotation = Matrix.Identity;
         if (BaseRotationDegrees != Vector3.Zero)
-            transform = Matrix.CreateTranslation(-Pivot) *
+            baseRotation =
                 Matrix.CreateRotationX(MathHelper.ToRadians(BaseRotationDegrees.X)) *
                 Matrix.CreateRotationY(MathHelper.ToRadians(BaseRotationDegrees.Y)) *
-                Matrix.CreateRotationZ(MathHelper.ToRadians(BaseRotationDegrees.Z)) *
-                Matrix.CreateTranslation(Pivot);
+                Matrix.CreateRotationZ(MathHelper.ToRadians(BaseRotationDegrees.Z));
+
+        // Blockbench animation keyframes are offsets in the group's local
+        // coordinate system.  The base group orientation therefore has to be
+        // applied after the animation rotation (row-vector matrix convention).
+        // This makes an animated shoulder behave correctly when its rest pose
+        // has been turned, for example ±90 degrees for a T-pose.
+        Matrix animationRotation = Matrix.Identity;
         if (pose is not null && pose.TryGetRotation(Name, out Vector3 animationDegrees))
-            transform = transform * (Matrix.CreateTranslation(-Pivot) *
+            animationRotation =
                 Matrix.CreateRotationX(MathHelper.ToRadians(animationDegrees.X)) *
                 Matrix.CreateRotationY(MathHelper.ToRadians(animationDegrees.Y)) *
-                Matrix.CreateRotationZ(MathHelper.ToRadians(animationDegrees.Z)) *
-                Matrix.CreateTranslation(Pivot));
+                Matrix.CreateRotationZ(MathHelper.ToRadians(animationDegrees.Z));
+
+        Matrix parameterRotation = Matrix.Identity;
         if (RotationParameter is not null && parameters.TryGetValue(RotationParameter, out float angle) && angle != 0.0f)
-            transform = transform * (Matrix.CreateTranslation(-Pivot) * Matrix.CreateFromAxisAngle(RotationAxis, angle) * Matrix.CreateTranslation(Pivot));
-        return transform;
+            parameterRotation = Matrix.CreateFromAxisAngle(RotationAxis, angle);
+
+        return animationRotation * parameterRotation * baseRotation;
     }
 
     public void Draw(
@@ -108,7 +122,7 @@ public sealed class MeshNode(string name, Vector3 pivot)
             ApplyMaterialMask(effect, subMesh);
             RenderHelper.DrawMesh(effect, subMesh.Vertices, subMesh.Indices);
         }
-        drawAttachments?.Invoke(Name, GetAttachmentWorld(parentWorld, parameters));
+        drawAttachments?.Invoke(Name, GetAttachmentWorld(parentWorld, parameters, pose));
         foreach (MeshNode child in Children)
             child.Draw(effect, world, parameters, drawAttachments, pose);
     }
@@ -140,27 +154,28 @@ public sealed class MeshNode(string name, Vector3 pivot)
     /// </summary>
     private Matrix GetAttachmentWorld(
         Matrix parentWorld,
-        IReadOnlyDictionary<string, float> parameters)
+        IReadOnlyDictionary<string, float> parameters,
+        AnimationPose? pose = null)
     {
-        if (RotationParameter is null || !parameters.TryGetValue(RotationParameter, out float angle) || angle == 0.0f)
-            return Matrix.CreateTranslation(Pivot) * parentWorld;
-
-        return Matrix.CreateFromAxisAngle(RotationAxis, angle) *
-            Matrix.CreateTranslation(Pivot) * parentWorld;
+        // An attached mesh has its own local origin at this node's pivot.
+        // It therefore needs the node's full authored + animated rotation,
+        // followed by the pivot translation (but not T(-pivot)).
+        return GetRotationTransform(parameters, pose) * Matrix.CreateTranslation(Pivot) * parentWorld;
     }
 
     internal static Matrix GetAttachmentWorldFromPath(
         IReadOnlyList<MeshNode> nodePath,
         Matrix meshWorld,
-        IReadOnlyDictionary<string, float> parameters)
+        IReadOnlyDictionary<string, float> parameters,
+        AnimationPose? pose = null)
     {
         Matrix parentWorld = meshWorld;
         for (int index = 0; index < nodePath.Count; index++)
         {
             MeshNode node = nodePath[index];
             if (index == nodePath.Count - 1)
-                return node.GetAttachmentWorld(parentWorld, parameters);
-            parentWorld = node.GetLocalTransform(parameters) * parentWorld;
+                return node.GetAttachmentWorld(parentWorld, parameters, pose);
+            parentWorld = node.GetLocalTransform(parameters, pose) * parentWorld;
         }
 
         return meshWorld;

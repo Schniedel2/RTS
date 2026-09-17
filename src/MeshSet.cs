@@ -39,6 +39,7 @@ public sealed class MeshSet
     private CachedPivot? _turretPivot;
     private CachedPivot? _barrelPivot;
     private CachedPivot? _pivotMuzzle;
+    private CachedPivot? _gunPivot;
     private bool _isDirty = true;
 
     public Mesh RootMesh { get; }
@@ -276,6 +277,8 @@ public sealed class MeshSet
                     _turretPivot = pivot;
                 if (pivot.Description.Name.Equals("pivot:barrel", StringComparison.OrdinalIgnoreCase))
                     _barrelPivot = pivot;
+                if (pivot.Description.Name.Equals("pivot:gun", StringComparison.OrdinalIgnoreCase))
+                    _gunPivot = pivot;
                 if (pivot.Description.Name.Equals("pivot:muzzle", StringComparison.OrdinalIgnoreCase))
                     _pivotMuzzle = pivot;
             }

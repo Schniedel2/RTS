@@ -16,6 +16,9 @@ public class Soldier : MobileUnit
         new(UnitActionType.Stop, "Stop", 7, 1)
     ];
 
+    private float _nextIdlePoseTimeer = 0.0f;
+    private bool _isMoving = false;
+
     public Soldier(
         Vector3 position,
         Guid unitId,
@@ -31,15 +34,54 @@ public class Soldier : MobileUnit
         MoveSpeed = 2.0f;
         RotationSpeed = MathHelper.TwoPi;
 
-        SetMesh("Soldier-1", deriveDimensions: true);
-        _animationPlayer = new AnimationPlayer(_meshSet!.RootMesh.Animations);
-        _animationPlayer.Play("Standing");
+        //SetMesh("Soldier-1", deriveDimensions: true);
+        SetMesh("Soldier-2", deriveDimensions: true);
+
+        int weapon = Random.Shared.Next(2);
+        if (weapon == 0)
+            _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["ak47"]);
+        else
+            _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["breda-m1935pg"]);
+        
+
+        _animationPlayer = new AnimationPlayer(_meshSet!.RootMesh.Animations);        
+        _animationPlayer.Play("idle");
+        _animationPlayer.SetRandomAnimationTime();
+        _animationPlayer.Speed = 0.9f + Random.Shared.NextSingle() * 0.2f;
+        //_animationPlayer.AddOverlay("pose:idleRifle", weight: 1.0f);        
+
     }
 
     public override void Update(GameTime gameTime)
     {
         base.Update(gameTime);
-        _animationPlayer.Play(PlannedPath.Count > 0 ? "Running" : "Standing");
+
+        if (!_isMoving)
+        {
+            _nextIdlePoseTimeer -= (float)gameTime.ElapsedGameTime.TotalSeconds;
+            if (_nextIdlePoseTimeer <= 0.0f)
+            {
+                int i = Random.Shared.Next(4);
+                if (i == 0)
+                    _animationPlayer.AddOverlayTransition("pose:idleRifle", 0.5f);
+                if (i == 1)
+                    _animationPlayer.AddOverlayTransition("pose:idleRifle2", 0.5f);
+                if (i == 2)
+                    _animationPlayer.AddOverlayTransition("pose:idleRifle3", 0.5f);
+                if (i == 3)
+                    _animationPlayer.AddOverlayTransition("pose:idleRifle4", 0.5f);
+                    
+                _nextIdlePoseTimeer = 3.0f + Random.Shared.NextSingle() * 5.0f;
+            }
+        }
+
+        bool isMoving = PlannedPath.Count > 0;
+        if ((_isMoving != isMoving) && isMoving)
+            _animationPlayer.AddOverlayTransition("pose:idleRifle", 0.5f);
+
+        _isMoving = isMoving;
+        _animationPlayer.Play(_isMoving ? "run" : "idle");
+        //_animationPlayer.AddOverlay("pose:idleRifle", weight: 1.0f);
         _animationPlayer.Update((float)gameTime.ElapsedGameTime.TotalSeconds);
     }
 
