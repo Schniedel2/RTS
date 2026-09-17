@@ -202,18 +202,19 @@ public sealed class MeshNode(string name, Vector3 pivot)
         string nodeName,
         Matrix parentWorld,
         IReadOnlyDictionary<string, float> parameters,
-        out Matrix attachmentWorld)
+        out Matrix attachmentWorld,
+        AnimationPose? pose = null)
     {
-        Matrix world = GetLocalTransform(parameters) * parentWorld;
+        Matrix world = GetLocalTransform(parameters, pose) * parentWorld;
         if (string.Equals(Name, nodeName, StringComparison.OrdinalIgnoreCase))
         {
-            attachmentWorld = GetAttachmentWorld(parentWorld, parameters);
+            attachmentWorld = GetAttachmentWorld(parentWorld, parameters, pose);
             return true;
         }
 
         foreach (MeshNode child in Children)
         {
-            if (child.TryGetAttachmentWorldTransform(nodeName, world, parameters, out attachmentWorld))
+            if (child.TryGetAttachmentWorldTransform(nodeName, world, parameters, out attachmentWorld, pose))
                 return true;
         }
 
@@ -364,12 +365,14 @@ public class Mesh
         string pivotName,
         Matrix world,
         IReadOnlyDictionary<string, float> drawParameters,
-        out Matrix pivotWorld) =>
+        out Matrix pivotWorld,
+        AnimationPose? pose = null) =>
         Root.TryGetAttachmentWorldTransform(
             pivotName,
             LocalTransform * world,
             drawParameters,
-            out pivotWorld);
+            out pivotWorld,
+            pose);
 
     public IReadOnlyList<Pivot> GetPivots()
     {
@@ -381,11 +384,13 @@ public class Mesh
     internal Matrix GetPivotWorldTransform(
         Pivot pivot,
         Matrix world,
-        IReadOnlyDictionary<string, float> drawParameters) =>
+        IReadOnlyDictionary<string, float> drawParameters,
+        AnimationPose? pose = null) =>
         MeshNode.GetAttachmentWorldFromPath(
             pivot.NodePath,
             LocalTransform * world,
-            drawParameters);
+            drawParameters,
+            pose);
 
     private static void CollectPivots(MeshNode node, List<MeshNode> ancestors, List<Pivot> pivots)
     {

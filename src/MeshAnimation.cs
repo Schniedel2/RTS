@@ -56,15 +56,20 @@ public sealed class AnimationPlayer
         public float TimeSeconds { get; set; }
     }
 
+    private sealed class OverlayTransition(String? fromClipName, String? toClipName, float duration)
+    {
+        public float _duration = duration;
+        public String? _toClipName = toClipName;
+        public String? _fromClipName = fromClipName;
+        public float _elapsedTime = 0;
+    }
+
     private readonly IReadOnlyDictionary<string, MeshAnimationClip> _clips;
     private readonly List<OverlayLayer> _overlays = [];
+    private Dictionary<string, OverlayTransition> _overlayTransitions = new();
     public string? CurrentClipName { get; private set; }
     public float TimeSeconds { get; private set; }
     public float Speed { get; set; } = 1.0f;
-    private float _overlayTransitionDuration;
-    private OverlayLayer? _overlayTransitionTarget = null;
-    private OverlayLayer? _overlayTransitionSource = null;
-    private float _overlayTransitionElapsed;
 
     public IReadOnlyList<string> OverlayClipNames => _overlays.Select(layer => layer.ClipName).ToArray();
 
@@ -117,64 +122,77 @@ public sealed class AnimationPlayer
         return true;
     }
 
-    public void ClearOverlays() => _overlays.Clear();
-
-    public void AddOverlayTransition(string? to, float duration)
+    public bool RemoveOverlayLayer(string layerTag)
     {
-        AddOverlayTransition(_overlays.FirstOrDefault()?.ClipName ?? null, to, duration);
+        int index = _overlays.FindIndex(layer =>
+            string.Equals(layer.ClipName.Split(":")[0], layerTag, StringComparison.OrdinalIgnoreCase));
+        if (index < 0)
+            return false;
+        _overlays.RemoveAt(index);
+        return true;
     }
 
-    public void AddOverlayTransition(string? from,string? to, float duration)
+    public void ClearOverlays() => _overlays.Clear();
+
+    public void AddOverlayTransition(string layerTag, string? to, float duration)
     {
-        // For now, simply add the overlay with initial weight 0.0f.
-        _overlayTransitionTarget = null;
-        if (to is not null)
-        {
-            OverlayLayer? existingTarget = _overlays.FirstOrDefault(layer =>
-                string.Equals(layer.ClipName, to, StringComparison.OrdinalIgnoreCase));
-            if (existingTarget is not null)
-                return;
+        string? fromClipName = null;
+        if (_overlayTransitions.ContainsKey(layerTag))
+            fromClipName = _overlayTransitions[layerTag]?._toClipName;
+        
+        OverlayLayer? toLayer = _overlays.FirstOrDefault(layer => string.Equals(layer.ClipName, to, StringComparison.OrdinalIgnoreCase));
+        AddOverlayTransition(layerTag, fromClipName, to, duration);
+    }
 
-            AddOverlay(to, 0.0f);
-            _overlayTransitionTarget = _overlays.FirstOrDefault(layer =>
-                string.Equals(layer.ClipName, to, StringComparison.OrdinalIgnoreCase));
-        }
+    private void AddOverlayTransition(string layerTag, string? fromClipName, string? toClipName, float duration)
+    {
+        if (fromClipName is null && toClipName is null)
+            return;
 
-        _overlayTransitionSource = null;
-        if (from is not null)
-        {
-            AddOverlay(from, 1.0f);
-            _overlayTransitionSource = _overlays.FirstOrDefault(layer =>
-                string.Equals(layer.ClipName, from, StringComparison.OrdinalIgnoreCase));
-        }
+        if (string.Equals(fromClipName, toClipName, StringComparison.OrdinalIgnoreCase))
+            return;
 
-        _overlayTransitionElapsed = 0.0f;
-        _overlayTransitionDuration = duration;
+        if (fromClipName is not null)
+            AddOverlay(fromClipName, 1.0f);
+        if (toClipName is not null)
+            AddOverlay(toClipName, 0.0f);
+
+        OverlayTransition overlayTransition = new OverlayTransition(
+            fromClipName,
+            toClipName,
+            duration);
+        _overlayTransitions[layerTag] = overlayTransition;
     }
 
     public void UpdateOverlayTransition(float elapsedSeconds)
     {
-        if ((_overlayTransitionTarget is null) && (_overlayTransitionSource is null))
-            return;
-
-        _overlayTransitionElapsed += elapsedSeconds;
-        float ratio = MathHelper.Clamp(_overlayTransitionElapsed / _overlayTransitionDuration, 0.0f, 1.0f);
-
-        float sourceWeight = 1.0f - ratio;
-        float targetWeight = ratio;
-
-        if (_overlayTransitionSource is not null)
-            _overlayTransitionSource.Weight = sourceWeight;
-
-        if (_overlayTransitionTarget is not null)
-            _overlayTransitionTarget.Weight = targetWeight;
-
-        if (_overlayTransitionElapsed >= _overlayTransitionDuration)
+        foreach (var overlayTransition in _overlayTransitions.Values)
         {
-            if (_overlayTransitionSource is not null)
-                RemoveOverlay(_overlayTransitionSource.ClipName);
-            _overlayTransitionTarget = null;
-            _overlayTransitionSource = null;
+            if (overlayTransition._elapsedTime >= overlayTransition._duration)
+                continue;
+
+            OverlayLayer? fromLayer = _overlays.FirstOrDefault(layer => string.Equals(layer.ClipName, overlayTransition._fromClipName, StringComparison.OrdinalIgnoreCase));
+            OverlayLayer? toLayer = _overlays.FirstOrDefault(layer => string.Equals(layer.ClipName, overlayTransition._toClipName, StringComparison.OrdinalIgnoreCase));
+
+            overlayTransition._elapsedTime += elapsedSeconds;
+            float ratio = MathHelper.Clamp(overlayTransition._elapsedTime / overlayTransition._duration, 0.0f, 1.0f);
+
+            float sourceWeight = 1.0f - ratio;
+            float targetWeight = ratio;
+
+            if (fromLayer is not null)
+                fromLayer.Weight = sourceWeight;
+
+            if (toLayer is not null)
+                toLayer.Weight = targetWeight;
+
+            if (overlayTransition._elapsedTime >= overlayTransition._duration)
+            {
+                if (fromLayer is not null)
+                    RemoveOverlay(fromLayer.ClipName);
+                toLayer = null;
+                fromLayer = null;
+            }   
         }
     }
 

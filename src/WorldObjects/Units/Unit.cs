@@ -130,12 +130,18 @@ public abstract class Unit : WorldObject
     public float TargetAngleDegrees { get; private set; }
     public float TargetAngleDegreesPerSecond { get; set; } = 50.0f;
     /// <summary>
+    /// When enabled, aiming turns the unit's complete world transform instead
+    /// of a local turret/head mesh part. Use this for infantry and other
+    /// units whose weapon is fixed to the body.
+    /// </summary>
+    public bool RotateBodyTowardsTarget { get; set; }
+    /// <summary>
     /// Lowest permitted local target angle in degrees. The default permits a
     /// full turret rotation; values such as -120 limit a vehicle turret.
     /// </summary>
-    public float TargetAngleMinimumDegrees { get; set; } = -360.0f;
+    public float TargetAngleMinimumDegrees { get; set; } = -45.0f;
     /// <summary>Highest permitted local target angle in degrees.</summary>
-    public float TargetAngleMaximumDegrees { get; set; } = 360.0f;
+    public float TargetAngleMaximumDegrees { get; set; } = 45.0f;
     private double _nextShotTime;
     private Vector3? _targetTerrainPosition;
     public bool IsDamaged => HitPoints < MaxHitPoints;
@@ -441,6 +447,45 @@ public abstract class Unit : WorldObject
     public void UpdateTargetAngle(GameTime gameTime)
     {
         Vector3? targetPosition = GetTargetPosition();
+
+        if (RotateBodyTowardsTarget)
+        {
+            if (targetPosition is not Vector3 bodyTarget)
+            {
+                // A body-aiming unit has no independent aim part to return.
+                TargetAngleDegrees = 0.0f;
+                return;
+            }
+
+            Vector3 desiredDirection = bodyTarget - Position;
+            desiredDirection.Y = 0.0f;
+            if (desiredDirection.LengthSquared() <= 0.0001f)
+                return;
+            desiredDirection.Normalize();
+
+            Vector3 bodyForward = Vector3.TransformNormal(Vector3.Forward, Transform);
+            bodyForward.Y = 0.0f;
+            if (bodyForward.LengthSquared() <= 0.0001f)
+                return;
+            bodyForward.Normalize();
+
+            float requiredTurnRadians = MathF.Atan2(
+                Vector3.Cross(bodyForward, desiredDirection).Y,
+                Vector3.Dot(bodyForward, desiredDirection));
+            float maximumTurnRadians = MathHelper.ToRadians(TargetAngleDegreesPerSecond) *
+                (float)gameTime.ElapsedGameTime.TotalSeconds;
+            float appliedTurnRadians = MathHelper.Clamp(
+                requiredTurnRadians,
+                -maximumTurnRadians,
+                maximumTurnRadians);
+
+            Transform = Matrix.CreateRotationY(appliedTurnRadians) * Transform;
+            // Weapon, muzzle and shot direction use the unit transform now;
+            // there is deliberately no residual turret angle.
+            TargetAngleDegrees = 0.0f;
+            return;
+        }
+
         if (targetPosition is not Vector3 target)
         {
             // No target: return the visual aiming part (turret, head, ...) to
@@ -455,31 +500,33 @@ public abstract class Unit : WorldObject
             return;
         }
 
-        Vector3 desiredDirection = target - Position;
-        desiredDirection.Y = 0.0f;
-        if (desiredDirection.LengthSquared() <= 0.0001f)
-            return;
-        desiredDirection.Normalize();
+        {
+            Vector3 desiredDirection = target - Position;
+            desiredDirection.Y = 0.0f;
+            if (desiredDirection.LengthSquared() <= 0.0001f)
+                return;
+            desiredDirection.Normalize();
 
-        Vector3 bodyForward = Vector3.TransformNormal(Vector3.Forward, Transform);
-        bodyForward.Y = 0.0f;
-        if (bodyForward.LengthSquared() <= 0.0001f)
-            return;
-        bodyForward.Normalize();
+            Vector3 bodyForward = Vector3.TransformNormal(Vector3.Forward, Transform);
+            bodyForward.Y = 0.0f;
+            if (bodyForward.LengthSquared() <= 0.0001f)
+                return;
+            bodyForward.Normalize();
 
-        float bodyYawDegrees = DirectionToAngleDegrees(bodyForward);
-        float desiredWorldYawDegrees = DirectionToAngleDegrees(desiredDirection);
-        float desiredLocalAngleDegrees = ClampTargetAngleDegrees(
-            WrapAngleDegrees(desiredWorldYawDegrees - bodyYawDegrees));
-        float currentWorldYawDegrees = bodyYawDegrees + TargetAngleDegrees;
-        float maximumStep = TargetAngleDegreesPerSecond *
-            (float)gameTime.ElapsedGameTime.TotalSeconds;
-        float nextWorldYawDegrees = currentWorldYawDegrees + MoveTargetAngleTowardsDegrees(
-            TargetAngleDegrees,
-            desiredLocalAngleDegrees,
-            maximumStep);
+            float bodyYawDegrees = DirectionToAngleDegrees(bodyForward);
+            float desiredWorldYawDegrees = DirectionToAngleDegrees(desiredDirection);
+            float desiredLocalAngleDegrees = ClampTargetAngleDegrees(
+                WrapAngleDegrees(desiredWorldYawDegrees - bodyYawDegrees));
+            float currentWorldYawDegrees = bodyYawDegrees + TargetAngleDegrees;
+            float maximumStep = TargetAngleDegreesPerSecond *
+                (float)gameTime.ElapsedGameTime.TotalSeconds;
+            float nextWorldYawDegrees = currentWorldYawDegrees + MoveTargetAngleTowardsDegrees(
+                TargetAngleDegrees,
+                desiredLocalAngleDegrees,
+                maximumStep);
 
-        TargetAngleDegrees = ClampTargetAngleDegrees(nextWorldYawDegrees - bodyYawDegrees);
+            TargetAngleDegrees = ClampTargetAngleDegrees(nextWorldYawDegrees - bodyYawDegrees);
+        }
     }
 
     /// <summary>
@@ -750,8 +797,12 @@ public abstract class Unit : WorldObject
         return _meshSet?.TryGetPivotWorldPosition(
             "pivot:muzzle",
             GetVisualWorldMatrix(),
-            out position) ?? SetMissingMuzzlePosition(out position);
+            out position,
+            GetMeshAnimationPose()) ?? SetMissingMuzzlePosition(out position);
     }
+
+    /// <summary>Override for units whose BBModel pivots are moved by animation.</summary>
+    protected virtual AnimationPose? GetMeshAnimationPose() => null;
 
     private static bool SetMissingMuzzlePosition(out Vector3 position)
     {

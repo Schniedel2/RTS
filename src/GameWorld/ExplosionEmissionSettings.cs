@@ -47,6 +47,18 @@ public static class ExplosionEmissionPresets
         DebrisSmokeInterval = 0.1f
     };
 
+    public static ExplosionEmissionSettings RifleFlash() => new()
+    {
+        FireParticleCount = 3,
+        DebrisCount = 0,
+        Intensity = 0.45f,
+        DebrisSpeed = 0f,
+        ShockwaveRadius = 0.0f,
+        ShockwaveStrength = 0.0f,
+        ShockwaveLifetime = 0.0f,
+        DebrisSmokeInterval = 0.1f
+    };
+
     public static ExplosionEmissionSettings HeavyShell() => new()
     {
         FireParticleCount = 42,

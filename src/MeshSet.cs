@@ -148,7 +148,8 @@ public sealed class MeshSet
     public bool TryGetPivotWorldTransform(
         string pivotName,
         Matrix world,
-        out Matrix pivotWorld)
+        out Matrix pivotWorld,
+        AnimationPose? pose = null)
     {
         pivotWorld = Matrix.Identity;
         if (string.IsNullOrWhiteSpace(pivotName))
@@ -165,18 +166,24 @@ public sealed class MeshSet
         foreach (AttachmentStep step in pivot.Steps)
         {
             Matrix attachmentWorld = step.Owner.RootMesh.GetPivotWorldTransform(
-                step.Pivot, currentWorld, step.Owner._parameters);
+                step.Pivot, currentWorld, step.Owner._parameters,
+                ReferenceEquals(step.Owner, this) ? pose : null);
             currentWorld = step.Attachment.LocalTransform * attachmentWorld;
         }
 
         pivotWorld = pivot.Owner.RootMesh.GetPivotWorldTransform(
-            pivot.Pivot, currentWorld, pivot.Owner._parameters);
+            pivot.Pivot, currentWorld, pivot.Owner._parameters,
+            ReferenceEquals(pivot.Owner, this) ? pose : null);
         return true;
     }
 
-    public bool TryGetPivotWorldPosition(string pivotName, Matrix world, out Vector3 position)
+    public bool TryGetPivotWorldPosition(
+        string pivotName,
+        Matrix world,
+        out Vector3 position,
+        AnimationPose? pose = null)
     {
-        if (TryGetPivotWorldTransform(pivotName, world, out Matrix pivotWorld))
+        if (TryGetPivotWorldTransform(pivotName, world, out Matrix pivotWorld, pose))
         {
             position = pivotWorld.Translation;
             return true;

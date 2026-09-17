@@ -24,7 +24,12 @@ public class MeshHandler
 
         Meshes["Rifle-1"] = BBModelLoader.Load(Path.Combine(directory, "rifle-1.bbmodel"), Color.White);
         Meshes["ak47"] = BBModelLoader.Load(Path.Combine(directory, "guns/ak47.bbmodel"), Color.White);
+        Meshes["m16"] = BBModelLoader.Load(Path.Combine(directory, "guns/m16.bbmodel"), Color.White);
         Meshes["breda-m1935pg"] = BBModelLoader.Load(Path.Combine(directory, "guns/breda-m1935pg.bbmodel"), Color.White);
+        Meshes["brok17"] = BBModelLoader.Load(Path.Combine(directory, "guns/brok-17.bbmodel"), Color.White);
+        Meshes["kraber-ap-sniper"] = BBModelLoader.Load(Path.Combine(directory, "guns/kraber-ap-sniper.bbmodel"), Color.White);
+        Meshes["uzi-mac-10"] = BBModelLoader.Load(Path.Combine(directory, "guns/uzi-mac-10.bbmodel"), Color.White);
+        Meshes["minigun"] = BBModelLoader.Load(Path.Combine(directory, "guns/minigun.bbmodel"), Color.White);
         
         // Attachments inherit Soldier-1's 0.3 local scale. Rifle-1's authored
         // geometry is correspondingly smaller, so scale it back up locally.

@@ -17,6 +17,7 @@ public sealed class SmokeParticle : WorldObject
     private readonly float _rotationSpeedRadians;
     private readonly Color _color;
     private readonly float _opacity;
+    private readonly float _buoyancy;
     private float _elapsed;
 
     public Vector3 Velocity { get; private set; }
@@ -26,7 +27,7 @@ public sealed class SmokeParticle : WorldObject
     public SmokeParticle(Vector3 position, Vector3 velocity, TilemapHandler.Tilemap tilemap,
         int tileIndex, float startSize, float endSize, float lifetime,
         float rotationRadians, float rotationSpeedRadians, Color color, float opacity,
-        float windInfluence) : base(position)
+        float windInfluence, float buoyancy = 0.35f) : base(position)
     {
         (Vector2 uvOffset, Vector2 uvScale) = tilemap.GetAtlasUV(tileIndex);
         _atlasIndex = tilemap.AtlasIndex;
@@ -38,6 +39,7 @@ public sealed class SmokeParticle : WorldObject
         _rotationSpeedRadians = rotationSpeedRadians;
         _color = color;
         _opacity = opacity;
+        _buoyancy = buoyancy;
         WindInfluence = windInfluence;
         _vertices =
         [
@@ -52,7 +54,7 @@ public sealed class SmokeParticle : WorldObject
     {
         float deltaSeconds = (float)gameTime.ElapsedGameTime.TotalSeconds;
         _elapsed += deltaSeconds;
-        Velocity += Vector3.Up * 0.35f * deltaSeconds;
+        Velocity += Vector3.Up * _buoyancy * deltaSeconds;
         Vector3 wind = Globals.World.Weather.GetWind(Position);
         SetPosition(Position + (Velocity + wind * WindInfluence) * deltaSeconds);
     }

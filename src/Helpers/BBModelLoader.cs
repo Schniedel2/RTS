@@ -231,7 +231,7 @@ public static class BBModelLoader
         return (32f, 32f);
     }
 
-    private static SubMesh LoadMeshElement(
+    private static SubMesh? LoadMeshElement(
         JsonElement element,
         Color vertexColor,
         (float Width, float Height) resolution,
@@ -262,6 +262,11 @@ public static class BBModelLoader
 
             Vector3[] facePositions = faceVertexKeys.Select(key => positions[key]).ToArray();
             ImportedTexture? importedTexture = ReadFaceTextureRegion(face.Value, textureRegions);
+            // Do not let a face without an assigned embedded texture inherit
+            // whichever UnitTexture happened to be bound by a previous draw.
+            // An element containing only such faces is omitted below.
+            if (importedTexture is null)
+                continue;
             TextureHandler.TextureRegion? textureRegion = importedTexture?.Visible;
             subMeshTexture ??= importedTexture;
             if (textureRegion is not null)
@@ -290,6 +295,9 @@ public static class BBModelLoader
                 indices.Add(first); indices.Add(first + 1); indices.Add(first + 2);
             }
         }
+
+        if (vertices.Count == 0 || subMeshTexture is null)
+            return null;
 
         SubMesh submesh = new SubMesh(
             name, vertices.ToArray(), indices.ToArray(), pivot, textureAtlasIndex,
@@ -354,6 +362,10 @@ public static class BBModelLoader
             if (!faces.TryGetProperty(faceName, out JsonElement face))
                 continue;
             ImportedTexture? faceTexture = ReadFaceTextureRegion(face, textureRegions);
+            // Same rule as mesh faces: an untextured face must not borrow the
+            // texture that was used by a preceding submesh draw.
+            if (faceTexture is null)
+                continue;
             if (faceTexture?.Visible is TextureHandler.TextureRegion region)
             {
                 if (textureAtlasIndex is int existingAtlas && existingAtlas != region.AtlasIndex)

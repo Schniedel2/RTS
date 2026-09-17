@@ -117,6 +117,72 @@ public sealed class ParticleSystem
         EmitSmoke(position, barrelDirection, settings ?? SmokeEmissionPresets.TankCannon());
     }
 
+    /// <summary>
+    /// Creates a brief, directed small-arms muzzle flash. Unlike an impact
+    /// explosion it does not rise, create a decal, disturb local wind or use
+    /// the global explosion particle budget for debris.
+    /// </summary>
+    public void EmitRifleMuzzleFlash(
+        Vector3 position,
+        Vector3 barrelDirection,
+        MuzzleFlashEmissionSettings? settings = null)
+    {
+        settings ??= MuzzleFlashEmissionPresets.Rifle();
+        EmitSmoke(position, barrelDirection, settings.SmokeSettings);
+
+        if (!Globals.TilemapHandler.TryGet(settings.TilemapName, out TilemapHandler.Tilemap flashes))
+            return;
+
+        Vector3 direction = barrelDirection.LengthSquared() > 0.0001f
+            ? Vector3.Normalize(barrelDirection)
+            : Vector3.Forward;
+        Vector3 sideways = Vector3.Cross(direction, Vector3.Up);
+        sideways = sideways.LengthSquared() > 0.0001f ? Vector3.Normalize(sideways) : Vector3.Right;
+
+        // Bright central flash at the barrel end. SmokeParticle provides the
+        // required billboard and start-to-end-size interpolation; wind is
+        // explicitly zero so a muzzle flash always follows the weapon.
+        if (HasParticleCapacity)
+        {
+            _smokeParticles.Add(new SmokeParticle(
+                position + direction * 0.015f,
+                direction * 0.10f,
+                flashes,
+                Random.Shared.Next(flashes.TileCount),
+                settings.MainStartSize,
+                settings.MainEndSize,
+                settings.Lifetime,
+                Random.Shared.NextSingle() * MathHelper.TwoPi,
+                0.0f,
+                settings.Color,
+                1.0f,
+                windInfluence: 0.0f,
+                buoyancy: 0.0f));
+        }
+
+        for (int index = 0; index < settings.SecondaryFlashCount && HasParticleCapacity; index++)
+        {
+            float distance = settings.SecondaryDistance * (0.45f + Random.Shared.NextSingle() * 0.80f);
+            Vector3 offset = direction * distance +
+                sideways * ((Random.Shared.NextSingle() - 0.5f) * 0.09f) +
+                Vector3.Up * ((Random.Shared.NextSingle() - 0.5f) * 0.07f);
+            _smokeParticles.Add(new SmokeParticle(
+                position + offset,
+                direction * (settings.SecondarySpeed * (0.75f + Random.Shared.NextSingle() * 0.45f)),
+                flashes,
+                Random.Shared.Next(flashes.TileCount),
+                settings.SecondaryStartSize * (0.75f + Random.Shared.NextSingle() * 0.35f),
+                settings.SecondaryEndSize,
+                settings.Lifetime * (0.70f + Random.Shared.NextSingle() * 0.25f),
+                Random.Shared.NextSingle() * MathHelper.TwoPi,
+                0.0f,
+                settings.Color,
+                0.82f,
+                windInfluence: 0.0f,
+                buoyancy: 0.0f));
+        }
+    }
+
     /// <summary>Emits a configurable smoke burst in an arbitrary world direction.</summary>
     public void EmitSmoke(
         Vector3 position,
