@@ -23,6 +23,9 @@ public sealed class BuildingFlag
     private const float MaximumFlutterAmplitude = 0.28f;
     private const float FlutterSpring = 90.0f;
     private const float FlutterDamping = 8.0f;
+    private const float VerticalFlutterAmplitude = 0.13f;
+    private const float VerticalFlutterSpring = 42.0f;
+    private const float VerticalFlutterDamping = 6.0f;
     private const float WindOrientationThreshold = 0.05f;
 
     private readonly Vector3[] _positions = new Vector3[Columns * Rows];
@@ -96,6 +99,16 @@ public sealed class BuildingFlag
                 float normalVelocity = Vector3.Dot(_velocities[index], clothNormal);
                 acceleration += clothNormal *
                     ((targetOffset - currentOffset) * FlutterSpring - normalVelocity * FlutterDamping);
+
+                // Give every row a slightly different vertical phase. The
+                // silhouette is therefore no longer two ruler-straight lines
+                // at the top and bottom of the flag.
+                float verticalPhase = phase * 1.19f + row * 1.65f + column * 0.42f;
+                float targetVerticalOffset = MathF.Sin(verticalPhase) *
+                    VerticalFlutterAmplitude * edgeFactor * edgeFactor * windFactor;
+                float currentVerticalOffset = _positions[index].Y - GetRestPosition(column, row).Y;
+                acceleration.Y += (targetVerticalOffset - currentVerticalOffset) * VerticalFlutterSpring -
+                    _velocities[index].Y * VerticalFlutterDamping;
             }
             _velocities[index] = (_velocities[index] + acceleration * deltaSeconds) * Damping;
             _positions[index] += _velocities[index] * deltaSeconds;
@@ -107,9 +120,11 @@ public sealed class BuildingFlag
             ConstrainHorizontal();
             ConstrainVertical();
             ConstrainMastClearance();
+            ClampVerticesBelowPivot();
         }
         PinMastVertices();
         ConstrainMastClearance();
+        ClampVerticesBelowPivot();
     }
 
     public void Draw(Effect effect, Color color)
@@ -254,6 +269,21 @@ public sealed class BuildingFlag
                 continue;
             Vector3 direction = distance > 0.0001f ? radial / distance : _right;
             _positions[index] += direction * (clearance - distance);
+        }
+    }
+
+    /// <summary>Prevents gusts from lifting any flag vertex above the mast pivot.</summary>
+    private void ClampVerticesBelowPivot()
+    {
+        for (int index = 0; index < _positions.Length; index++)
+        {
+            if (_positions[index].Y <= _anchor.Y)
+                continue;
+            Vector3 position = _positions[index];
+            position.Y = _anchor.Y;
+            _positions[index] = position;
+            if (_velocities[index].Y > 0.0f)
+                _velocities[index].Y = 0.0f;
         }
     }
 
