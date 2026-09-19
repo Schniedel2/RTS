@@ -22,7 +22,9 @@ public class Soldier : MobileUnit
         KraberAPSniper,
         HuntingRifle,
         //  minigun
-        Minigun
+        Minigun,
+        //  launchers
+        RPG
     }
 
     private static readonly Weapon[] AvailableWeapons = Enum.GetValues<Weapon>();
@@ -319,6 +321,13 @@ public class Soldier : MobileUnit
         FireClips = new List<string> { "fire:Minigun0"};
     }
 
+    void SetWeaponType_Launcher()
+    {        
+        ArmsOverlayClips = new List<string> { "arms:idleLauncher0", "arms:idleLauncher1" };
+        RunArmsOverlayClips = new List<string> { "arms:idleLauncher1", "arms:idleLauncher2" };
+        FireClips = new List<string> { "fire:Launcher0", "fire:Launcher1"};
+    }
+
     public void SetWeapon(Weapon weaponType)
     {        
         switch (weaponType)
@@ -382,6 +391,12 @@ public class Soldier : MobileUnit
                 _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["minigun"]);
                 this.AttackCooldown = 0.01f;
                 this.AttackDamage = 25.0f;
+                break;
+            case Weapon.RPG:
+                SetWeaponType_Launcher();
+                _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["rpg"]);
+                this.AttackCooldown = 2.00f;
+                this.AttackDamage = 150.0f;
                 break;
         }
     }
