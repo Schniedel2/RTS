@@ -72,6 +72,10 @@ public abstract class Unit : WorldObject
     /// separate impact position to peers after triggering the muzzle effect.
     /// </summary>
     public virtual bool UsesHitscanWeapon => false;
+    public virtual ProjectileKind ProjectileKind =>
+        UsesHitscanWeapon ? ProjectileKind.None : ProjectileKind.BallisticShell;
+    /// <summary>Visual and authoritative travel speed in world units per second.</summary>
+    public virtual float ProjectileSpeed => 35.0f;
     public Guid? AttackTargetId { get; private set; }
     public Vector3? AttackGroundTarget { get; private set; }
     /// <summary>Unit to keep within <see cref="FollowDistance"/> world units of.</summary>
@@ -913,12 +917,27 @@ public abstract class Unit : WorldObject
     /// <summary>Returns the projectile spawn position at an empty pivot:muzzle group.</summary>
     public bool TryGetMuzzleWorldPosition(out Vector3 position)
     {
-        return _meshSet?.TryGetPivotWorldPosition(
-            "pivot:muzzle",
-            GetVisualWorldMatrix(),
-            out position,
-            GetMeshAnimationPose()) ?? SetMissingMuzzlePosition(out position);
+        if (TryGetAnimatedPivotWorldTransform("pivot:muzzle", out Matrix pivotWorld))
+        {
+            position = pivotWorld.Translation;
+            return true;
+        }
+        return SetMissingMuzzlePosition(out position);
     }
+
+    /// <summary>Resolves a pivot including the unit's current animation and attachments.</summary>
+    public bool TryGetAnimatedPivotWorldTransform(string pivotName, out Matrix pivotWorld) =>
+        _meshSet?.TryGetPivotWorldTransform(
+            pivotName,
+            GetVisualWorldMatrix(),
+            out pivotWorld,
+            GetMeshAnimationPose()) ?? SetMissingPivotTransform(out pivotWorld);
+
+    public bool TryGetProjectileLaunchWorldTransform(out Matrix pivotWorld) =>
+        TryGetAnimatedPivotWorldTransform("pivot:projectile", out pivotWorld) ||
+        // Keep compatibility with the current RPG asset's misspelled pivot.
+        TryGetAnimatedPivotWorldTransform("pivot:projecile", out pivotWorld) ||
+        TryGetAnimatedPivotWorldTransform("pivot:muzzle", out pivotWorld);
 
     /// <summary>Override for units whose BBModel pivots are moved by animation.</summary>
     protected virtual AnimationPose? GetMeshAnimationPose() => null;
@@ -926,6 +945,12 @@ public abstract class Unit : WorldObject
     private static bool SetMissingMuzzlePosition(out Vector3 position)
     {
         position = Vector3.Zero;
+        return false;
+    }
+
+    private static bool SetMissingPivotTransform(out Matrix transform)
+    {
+        transform = Matrix.Identity;
         return false;
     }
 }

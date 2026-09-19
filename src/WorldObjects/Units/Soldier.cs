@@ -30,7 +30,12 @@ public class Soldier : MobileUnit
     private static readonly Weapon[] AvailableWeapons = Enum.GetValues<Weapon>();
 
     private readonly AnimationPlayer _animationPlayer;
-    public override bool UsesHitscanWeapon => true;
+    public Weapon EquippedWeapon { get; private set; }
+    public override bool UsesHitscanWeapon => EquippedWeapon != Weapon.RPG;
+    public override ProjectileKind ProjectileKind => EquippedWeapon == Weapon.RPG
+        ? ProjectileKind.Rocket
+        : ProjectileKind.None;
+    public override float ProjectileSpeed => EquippedWeapon == Weapon.RPG ? 14.0f : base.ProjectileSpeed;
     public override IReadOnlyList<UnitAction> Actions =>
     [
         new(UnitActionType.Goto, "Goto", 0, 1),
@@ -51,6 +56,7 @@ public class Soldier : MobileUnit
     protected float _minigunRotationMaxSpeed = 256.0f;
     protected float _minigunRotationAcceleration = 64.0f;
     private float _nextIdlePoseTimer = 0.0f;
+    private float _launcherReloadRemaining;
     private bool _isDying;
     private float _deathElapsed;
     private float _deathAnimationDuration = 0.65f;
@@ -86,7 +92,8 @@ public class Soldier : MobileUnit
         SetMesh("Soldier-2", deriveDimensions: true);
 
         //turret mount point for the weapon
-        Weapon weapon = AvailableWeapons[Random.Shared.Next(AvailableWeapons.Length)];
+        uint weaponSeed = BitConverter.ToUInt32(unitId.ToByteArray(), 0);
+        Weapon weapon = AvailableWeapons[weaponSeed % (uint)AvailableWeapons.Length];
         SetWeapon(weapon);
 
         _animationPlayer = new AnimationPlayer(_meshSet!.RootMesh.Animations);        
@@ -165,6 +172,12 @@ public class Soldier : MobileUnit
         }
 
         UpdateMinigun(gameTime);
+        if (_launcherReloadRemaining > 0.0f)
+        {
+            _launcherReloadRemaining -= (float)gameTime.ElapsedGameTime.TotalSeconds;
+            if (_launcherReloadRemaining <= 0.0f)
+                SetLauncherProjectileVisible(true);
+        }
         base.Update(gameTime);
 
 
@@ -197,8 +210,8 @@ public class Soldier : MobileUnit
 
             if (_currentUnitState is UnitActionState.Moving or UnitActionState.Spawning)
             {
-                SetRandomRunningArmsPose();
                 _animationPlayer.Play("run");
+                SetRandomRunningArmsPose();
             }
             else if (_currentUnitState == UnitActionState.Idle)
             {
@@ -278,6 +291,25 @@ public class Soldier : MobileUnit
             muzzlePosition = Position + Vector3.Up * (Height * 0.75f) +
                 barrelDirection * (Length * 0.52f);
 
+        if (EquippedWeapon == Weapon.RPG)
+        {
+            _launcherReloadRemaining = AttackCooldown;
+            SetLauncherProjectileVisible(false);
+            Globals.World.Particles.EmitSmoke(
+                muzzlePosition,
+                barrelDirection,
+                SmokeEmissionPresets.RpgMuzzle());
+
+            if (TryGetAnimatedPivotWorldTransform("pivot:exhaust", out Matrix exhaustWorld))
+            {
+                Globals.World.Particles.EmitSmoke(
+                    exhaustWorld.Translation,
+                    -barrelDirection,
+                    SmokeEmissionPresets.RpgBackblast());
+            }
+            return;
+        }
+
         Globals.World.Particles.EmitRifleMuzzleFlash(muzzlePosition, barrelDirection);
     }
 
@@ -324,12 +356,15 @@ public class Soldier : MobileUnit
     void SetWeaponType_Launcher()
     {        
         ArmsOverlayClips = new List<string> { "arms:idleLauncher0", "arms:idleLauncher1" };
-        RunArmsOverlayClips = new List<string> { "arms:idleLauncher1", "arms:idleLauncher2" };
+        RunArmsOverlayClips = new List<string> { "arms:idleLauncher0", "arms:idleLauncher1" };
         FireClips = new List<string> { "fire:Launcher0", "fire:Launcher1"};
     }
 
     public void SetWeapon(Weapon weaponType)
-    {        
+    {
+        EquippedWeapon = weaponType;
+        _launcherReloadRemaining = 0.0f;
+        SetLauncherProjectileVisible(true);
         switch (weaponType)
         {
             case Weapon.Ak47:
@@ -399,5 +434,11 @@ public class Soldier : MobileUnit
                 this.AttackDamage = 150.0f;
                 break;
         }
+    }
+
+    private void SetLauncherProjectileVisible(bool visible)
+    {
+        float value = visible ? 1.0f : 0.0f;
+        _meshSet?.SetAttachmentParameter("pivot:gun", "visibility:pivot:projectile", value);
     }
 }

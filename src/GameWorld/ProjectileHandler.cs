@@ -8,9 +8,13 @@ public sealed class ProjectileHandler
 {
     private readonly List<Projectile> _projectiles = [];
 
-    public void Fire(Vector3 start, Vector3 target)
+    public void Fire(
+        Vector3 start,
+        Vector3 target,
+        ProjectileKind kind = ProjectileKind.BallisticShell,
+        float speed = 35.0f)
     {
-        _projectiles.Add(new Projectile(start, target));
+        _projectiles.Add(new Projectile(start, target, kind, speed));
     }
 
     public void Update(GameTime gameTime)

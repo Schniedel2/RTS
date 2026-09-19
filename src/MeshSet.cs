@@ -138,6 +138,10 @@ public sealed class MeshSet
 
     public void SetParameter(string parameterName, float value) => _parameters[parameterName] = value;
 
+    /// <summary>Shows or hides a complete imported group for this MeshSet instance.</summary>
+    public void SetNodeVisible(string nodeName, bool visible) =>
+        _parameters[$"visibility:{nodeName}"] = visible ? 1.0f : 0.0f;
+
     public float GetParameter(string parameterName) =>
         _parameters.TryGetValue(parameterName, out float value) ? value : 0.0f;
 

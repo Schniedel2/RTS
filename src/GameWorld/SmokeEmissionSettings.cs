@@ -129,6 +129,57 @@ public static class SmokeEmissionPresets
         WindInfluence = 0.95f
     };
 
+    public static SmokeEmissionSettings RpgMuzzle() => new()
+    {
+        ParticleCount = 5,
+        Intensity = 0.9f,
+        EmissionLength = 0.35f,
+        ForwardSpeed = 1.4f,
+        ForwardSpeedVariation = 0.45f,
+        SidewaysSpread = 0.5f,
+        UpwardSpeed = 0.2f,
+        StartSize = 0.18f,
+        EndSize = 0.75f,
+        Lifetime = 0.75f,
+        Opacity = 0.72f,
+        Color = new Color(205, 205, 195),
+        WindInfluence = 0.65f
+    };
+
+    public static SmokeEmissionSettings RpgBackblast() => new()
+    {
+        ParticleCount = 10,
+        Intensity = 1.15f,
+        EmissionLength = 1.2f,
+        ForwardSpeed = 2.8f,
+        ForwardSpeedVariation = 0.8f,
+        SidewaysSpread = 1.1f,
+        UpwardSpeed = 0.25f,
+        StartSize = 0.22f,
+        EndSize = 1.05f,
+        Lifetime = 1.0f,
+        Opacity = 0.78f,
+        Color = new Color(185, 180, 165),
+        WindInfluence = 0.75f
+    };
+
+    public static SmokeEmissionSettings RocketTrail() => new()
+    {
+        ParticleCount = 1,
+        Intensity = 0.7f,
+        EmissionLength = 0.03f,
+        ForwardSpeed = 0.18f,
+        ForwardSpeedVariation = 0.08f,
+        SidewaysSpread = 0.12f,
+        UpwardSpeed = 0.08f,
+        StartSize = 0.16f,
+        EndSize = 0.48f,
+        Lifetime = 0.9f,
+        Opacity = 0.62f,
+        Color = new Color(125, 125, 120),
+        WindInfluence = 0.75f
+    };
+
     public static SmokeEmissionSettings ReactorExhaust() => new()
     {
         //  big white

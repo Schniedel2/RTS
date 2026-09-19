@@ -124,6 +124,9 @@ public sealed class MeshNode(string name, Vector3 pivot)
         Action<string, Matrix>? drawAttachments = null,
         AnimationPose? pose = null)
     {
+        if (parameters.TryGetValue($"visibility:{Name}", out float visibility) && visibility <= 0.0f)
+            return;
+
         Matrix world = GetLocalTransform(parameters, pose) * parentWorld;
         foreach (SubMesh subMesh in SubMeshes)
         {

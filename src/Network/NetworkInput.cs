@@ -410,9 +410,17 @@ public sealed class NetworkInput
             attacker.PlayShotEffects();
             if (attacker.UsesHitscanWeapon)
                 continue;
-            if (!attacker.TryGetMuzzleWorldPosition(out Vector3 start))
+            if (!attacker.TryGetProjectileLaunchWorldTransform(out Matrix launchTransform))
+                launchTransform = Matrix.CreateTranslation(
+                    attacker.Position + Vector3.Up * (attacker.Height * 0.75f));
+            Vector3 start = launchTransform.Translation;
+            if (start == Vector3.Zero)
                 start = attacker.Position + Vector3.Up * (attacker.Height * 0.75f);
-            Globals.World.Projectiles.Fire(start, target);
+            Globals.World.Projectiles.Fire(
+                start,
+                target,
+                attacker.ProjectileKind,
+                attacker.ProjectileSpeed);
         }
     }
 

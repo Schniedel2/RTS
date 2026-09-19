@@ -23,16 +23,25 @@ public sealed class ParticleSystem
 
     private bool HasParticleCapacity => ActiveParticleCount < MaximumParticles;
 
-    public void EmitRocketTrail(Vector3 position)
+    public void EmitRocketTrail(Vector3 position, Vector3 direction, bool emitSmoke)
     {
         if (!HasParticleCapacity)
             return;
+
+        if (emitSmoke)
+            EmitSmoke(position, direction, SmokeEmissionPresets.RocketTrail());
 
         Vector3 velocity = new(
             Random.Shared.NextSingle() - 0.5f,
             Random.Shared.NextSingle() * 0.5f,
             Random.Shared.NextSingle() - 0.5f);
-        _particles.Add(new Particle(position, velocity, Color.Orange, 0.25f, 0.18f, windInfluence: 0.25f));
+        _particles.Add(new Particle(
+            position,
+            velocity,
+            emitSmoke ? Color.OrangeRed : Color.Orange,
+            emitSmoke ? 0.16f : 0.25f,
+            emitSmoke ? 0.10f : 0.18f,
+            windInfluence: emitSmoke ? 0.0f : 0.25f));
     }
 
     public void EmitExplosion(Vector3 position, ExplosionEmissionSettings? settings = null)

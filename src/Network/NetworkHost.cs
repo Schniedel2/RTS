@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 
 namespace RTS.Network;
@@ -20,6 +21,13 @@ public sealed class NetworkHost
     private const double StateHeartbeatInterval = 3.0;
     private double _hostTime;
     private double _simulationAccumulator;
+    private readonly List<PendingProjectileImpact> _pendingProjectileImpacts = [];
+
+    private sealed record PendingProjectileImpact(
+        Guid AttackerId,
+        Vector3 Position,
+        float Damage,
+        double ImpactTime);
 
     public NetworkHost(
         NetworkHandler networkHandler,
@@ -96,6 +104,7 @@ public sealed class NetworkHost
         try
         {
             UpdateHostSimulation(gameTime);
+            await ResolvePendingProjectileImpactsAsync();
 
             for (int index = 0; index < MaximumRequestsPerUpdate; index++)
             {
@@ -480,13 +489,29 @@ public sealed class NetworkHost
 
     private async Task ResolveGroundAttackAsync(NetworkMessage request)
     {
-        const float attackRadius = 1.5f;
         Vector3 impactPosition = new(request.X, request.Y, request.Z);
 
         foreach (Guid attackerId in request.UnitIds ?? Array.Empty<Guid>())
         {
             if (_world.Units.FindById(attackerId) is not Unit attacker || attacker.IsDying)
                 continue;
+
+            if (attacker.ProjectileKind == ProjectileKind.Rocket)
+            {
+                Vector3 launchPosition = attacker.TryGetProjectileLaunchWorldTransform(out Matrix launchTransform)
+                    ? launchTransform.Translation
+                    : attacker.Position + Vector3.Up * (attacker.Height * 0.75f);
+                double travelSeconds = Math.Max(
+                    0.05,
+                    Vector3.Distance(launchPosition, impactPosition) /
+                    Math.Max(0.1f, attacker.ProjectileSpeed));
+                _pendingProjectileImpacts.Add(new PendingProjectileImpact(
+                    attackerId,
+                    impactPosition,
+                    attacker.AttackDamage,
+                    _hostTime + travelSeconds));
+                continue;
+            }
 
             if (attacker.UsesHitscanWeapon)
             {
@@ -496,7 +521,27 @@ public sealed class NetworkHost
                 await _networkHandler.BroadcastAsync(impactCommand, CancellationToken.None);
             }
 
-            Unit? target = _world.Units.Units.FirstOrDefault(unit =>
+            await ApplyImpactDamageAsync(attackerId, impactPosition, attacker.AttackDamage);
+        }
+    }
+
+    private async Task ResolvePendingProjectileImpactsAsync()
+    {
+        for (int index = _pendingProjectileImpacts.Count - 1; index >= 0; index--)
+        {
+            PendingProjectileImpact impact = _pendingProjectileImpacts[index];
+            if (impact.ImpactTime > _hostTime)
+                continue;
+
+            _pendingProjectileImpacts.RemoveAt(index);
+            await ApplyImpactDamageAsync(impact.AttackerId, impact.Position, impact.Damage);
+        }
+    }
+
+    private async Task ApplyImpactDamageAsync(Guid attackerId, Vector3 impactPosition, float damage)
+    {
+        const float attackRadius = 1.5f;
+        Unit? target = _world.Units.Units.FirstOrDefault(unit =>
             {
                 if (!unit.CanBeTargeted)
                     return false;
@@ -506,30 +551,29 @@ public sealed class NetworkHost
                 return offset.LengthSquared() <= attackRadius * attackRadius;
             });
 
-            if (target is null)
-                continue;
+        if (target is null)
+            return;
 
-            HitInfo hit = new(attackerId, impactPosition, attacker.AttackDamage);
-            bool destroyed = target.OnHit(hit);
-            NetworkMessage hitCommand = NetworkCommands.CreateUnitHitCommand(
-                _networkHandler.LocalPeerId,
-                target.UnitId,
-                attackerId,
-                impactPosition,
-                attacker.AttackDamage,
-                target.HitPoints);
-            _networkHandler.EnqueueLocalMessage(hitCommand);
-            await _networkHandler.BroadcastAsync(hitCommand, CancellationToken.None);
+        HitInfo hit = new(attackerId, impactPosition, damage);
+        bool destroyed = target.OnHit(hit);
+        NetworkMessage hitCommand = NetworkCommands.CreateUnitHitCommand(
+            _networkHandler.LocalPeerId,
+            target.UnitId,
+            attackerId,
+            impactPosition,
+            damage,
+            target.HitPoints);
+        _networkHandler.EnqueueLocalMessage(hitCommand);
+        await _networkHandler.BroadcastAsync(hitCommand, CancellationToken.None);
 
-            if (!destroyed)
-                continue;
+        if (!destroyed)
+            return;
 
-            _world.Units.Destroy(target.UnitId);
-            NetworkMessage destroyCommand = NetworkCommands.CreateDestroyUnitCommand(
-                _networkHandler.LocalPeerId,
-                target.UnitId);
-            _networkHandler.EnqueueLocalMessage(destroyCommand);
-            await _networkHandler.BroadcastAsync(destroyCommand, CancellationToken.None);
-        }
+        _world.Units.Destroy(target.UnitId);
+        NetworkMessage destroyCommand = NetworkCommands.CreateDestroyUnitCommand(
+            _networkHandler.LocalPeerId,
+            target.UnitId);
+        _networkHandler.EnqueueLocalMessage(destroyCommand);
+        await _networkHandler.BroadcastAsync(destroyCommand, CancellationToken.None);
     }
 }
