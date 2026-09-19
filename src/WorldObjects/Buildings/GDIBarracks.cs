@@ -31,6 +31,19 @@ public class GDIBarracks : Building
         base.Draw(effect);
     }
 
+    public override bool TryGetProductionDuration(string unitTypeId, out float durationSeconds)
+    {
+        durationSeconds = unitTypeId.ToLowerInvariant() switch
+        {
+            "rak-zero" => 4.0f,
+            "grunt" => 5.0f,
+            "flamer" => 6.0f,
+            "invasor" => 8.0f,
+            _ => 0.0f
+        };
+        return durationSeconds > 0.0f;
+    }
+
     public IReadOnlyList<UnitAction> GetUnitActions()
     {
         IReadOnlyList<UnitAction> actions =
@@ -42,10 +55,10 @@ public class GDIBarracks : Building
         {
             actions = 
             [
-                new(UnitActionType.TrainUnit, "Rak Zero", 6, 1),
-                new(UnitActionType.TrainUnit, "Grunt", 6, 1),
-                new(UnitActionType.TrainUnit, "Flamer", 6, 1),
-                new(UnitActionType.TrainUnit, "Invasor", 6, 1),
+                new(UnitActionType.TrainUnit, "Rak Zero", 6, 1, "rak-zero"),
+                new(UnitActionType.TrainUnit, "Grunt", 6, 1, "grunt"),
+                new(UnitActionType.TrainUnit, "Flamer", 6, 1, "flamer"),
+                new(UnitActionType.TrainUnit, "Invasor", 6, 1, "invasor"),
                 new(UnitActionType.Goto, "Cancel", 0, 1),
                 new(UnitActionType.Follow, "Sell", 6, 1),
                 new(UnitActionType.Stop, "Destroy", 7, 1)

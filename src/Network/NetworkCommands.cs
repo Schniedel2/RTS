@@ -252,6 +252,37 @@ public static class NetworkCommands
             Z: request.Z);
     }
 
+    public static NetworkMessage CreateProducedUnitCommand(
+        Guid hostId,
+        Building building,
+        ProductionOrder order,
+        Vector3 spawnPosition,
+        Vector3 exitPosition)
+    {
+        Vector2 direction = new(
+            exitPosition.X - spawnPosition.X,
+            exitPosition.Z - spawnPosition.Z);
+        float rotationDegrees = direction.LengthSquared() > 0.0001f
+            ? MathHelper.ToDegrees(MathF.Atan2(-direction.X, -direction.Y))
+            : 0.0f;
+
+        return new NetworkMessage(
+            NetworkMessageType.SpawnCommand,
+            hostId,
+            PlayerId: order.RequestedByPlayerId,
+            UnitId: Guid.NewGuid(),
+            UnitTypeId: order.UnitTypeId,
+            TargetAngleY: rotationDegrees,
+            X: spawnPosition.X,
+            Y: spawnPosition.Y,
+            Z: spawnPosition.Z,
+            ArmyId: building.ArmyId,
+            SpawnSourceBuildingId: building.UnitId,
+            ExitX: exitPosition.X,
+            ExitY: exitPosition.Y,
+            ExitZ: exitPosition.Z);
+    }
+
     /// <summary>Host-authoritative visual impact for an instantaneous (hitscan) weapon.</summary>
     public static NetworkMessage CreateBulletImpactCommand(Guid hostId, Guid sourceUnitId, Vector3 position) =>
         new(NetworkMessageType.BulletImpactCommand, hostId,
@@ -421,6 +452,35 @@ public static class NetworkCommands
             PlayerId: request.PlayerId ?? request.SenderId,
             UnitIds: request.UnitIds,
             ConstructionSiteId: request.ConstructionSiteId);
+    }
+
+    public static NetworkMessage CreateTrainUnitRequest(
+        Guid senderId,
+        Guid buildingId,
+        string unitTypeId)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.TrainUnitRequest,
+            senderId,
+            PlayerId: senderId,
+            UnitId: buildingId,
+            UnitTypeId: unitTypeId,
+            ProductionOrderId: Guid.NewGuid());
+    }
+
+    public static NetworkMessage CreateTrainUnitCommand(
+        Guid hostId,
+        NetworkMessage request,
+        float productionSeconds)
+    {
+        return new NetworkMessage(
+            NetworkMessageType.TrainUnitCommand,
+            hostId,
+            PlayerId: request.PlayerId ?? request.SenderId,
+            UnitId: request.UnitId,
+            UnitTypeId: request.UnitTypeId,
+            ProductionOrderId: request.ProductionOrderId ?? Guid.NewGuid(),
+            ProductionSeconds: productionSeconds);
     }
 
     public static NetworkMessage CreateUnitStateCommand(

@@ -27,6 +27,15 @@ public class MobileUnit : Unit
     public IMovementProfile MovementProfile { get; }
     public Guid? TargetBuildingId { get; private set; }
     public bool IsBuilding { get; private set; }
+    /// <summary>
+    /// True while a freshly produced unit moves from an interior spawn pivot
+    /// to the building's exterior exit pivot without occupying the GameGrid.
+    /// </summary>
+    public bool IsLeavingBuilding { get; private set; }
+    public Guid? SpawnSourceBuildingId { get; private set; }
+    public Vector3 SpawnExitPosition { get; private set; }
+    public override bool IsSelectable => base.IsSelectable && !IsLeavingBuilding;
+    public override bool CanBeTargeted => base.CanBeTargeted && !IsLeavingBuilding;
     public IReadOnlyList<Point> PlannedPath => _plannedPath;
     public override IReadOnlyList<UnitAction> Actions =>
     [
@@ -234,6 +243,72 @@ public class MobileUnit : Unit
         return true;
     }
 
+    public void BeginLeavingBuilding(Guid sourceBuildingId, Vector3 exitPosition)
+    {
+        Stop();
+        SpawnSourceBuildingId = sourceBuildingId;
+        SpawnExitPosition = exitPosition;
+        IsLeavingBuilding = true;
+        _currentUnitState = UnitActionState.Spawning;
+        OnBeginLeavingBuilding();
+        PathDebug($"leaving building={sourceBuildingId.ToString("N")[..8]} exit=({exitPosition.X:0.0},{exitPosition.Z:0.0})");
+    }
+
+    /// <summary>Lets animated units immediately enter their spawn/run animation.</summary>
+    protected virtual void OnBeginLeavingBuilding()
+    {
+    }
+
+    /// <summary>Lets animated units return to idle after reaching the exit.</summary>
+    protected virtual void OnFinishedLeavingBuilding()
+    {
+    }
+
+    /// <summary>
+    /// Moves along the authored interior-to-exterior corridor. The unit is not
+    /// registered in the grid until it reaches a genuinely free exit cell, so
+    /// it cannot overwrite the production building's footprint.
+    /// </summary>
+    private bool UpdateLeavingBuilding(GameTime gameTime)
+    {
+        if (!IsLeavingBuilding)
+            return false;
+
+        Vector3 toExit = SpawnExitPosition - Position;
+        Vector3 horizontal = new(toExit.X, 0.0f, toExit.Z);
+        float distance = horizontal.Length();
+        float movementDistance = MoveSpeed * (float)gameTime.ElapsedGameTime.TotalSeconds;
+
+        if (distance > 0.0001f)
+            FaceDirection(horizontal / distance);
+
+        if (distance > Math.Max(WaypointArrivalRadius, movementDistance))
+        {
+            float fraction = movementDistance / distance;
+            Vector3 nextPosition = Position + horizontal / distance * movementDistance;
+            nextPosition.Y = MathHelper.Lerp(Position.Y, SpawnExitPosition.Y, fraction);
+            AdvanceWheelRotation(nextPosition);
+            SetPosition(nextPosition);
+            return true;
+        }
+
+        Point exitCell = Globals.World.GameGrid.ToCell(SpawnExitPosition);
+        if (!Globals.World.GameGrid.TryMove(this, exitCell))
+        {
+            PathDebug($"building exit blocked cell=({exitCell.X},{exitCell.Y}); waiting");
+            return true;
+        }
+
+        AdvanceWheelRotation(SpawnExitPosition);
+        SetPosition(SpawnExitPosition);
+        IsLeavingBuilding = false;
+        SpawnSourceBuildingId = null;
+        _currentUnitState = UnitActionState.Idle;
+        OnFinishedLeavingBuilding();
+        PathDebug("building exit reached; normal grid movement enabled");
+        return true;
+    }
+
     /// <summary>
     /// Applies the standard vehicle animation parameters to a Blockbench mesh.
     /// Mesh parameters use radians; Unit state uses degrees.
@@ -352,6 +427,12 @@ public class MobileUnit : Unit
 
     public override void Update(GameTime gameTime)
     {
+        if (UpdateLeavingBuilding(gameTime))
+        {
+            base.Update(gameTime);
+            return;
+        }
+
         UpdateFollowMovement(gameTime);
         UpdateAttackMovement(gameTime);
         MoveAlongPath(gameTime);

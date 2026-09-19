@@ -116,8 +116,42 @@ public sealed class NetworkInput
         {
             Guid unitId = message.UnitId ?? Guid.NewGuid();
             if (message.PlayerId is Guid playerId && message.UnitTypeId is not null)
-                SpawnUnitLocally(message.UnitTypeId, playerId, unitId, message.X, message.Y, message.Z, message.TargetAngleY);
+            {
+                if (message.SpawnSourceBuildingId is Guid sourceBuildingId)
+                {
+                    SpawnProducedUnitLocally(
+                        message.UnitTypeId,
+                        playerId,
+                        unitId,
+                        sourceBuildingId,
+                        message.ArmyId,
+                        new Vector3(message.X, message.Y, message.Z),
+                        new Vector3(message.ExitX, message.ExitY, message.ExitZ),
+                        message.TargetAngleY);
+                }
+                else
+                {
+                    SpawnUnitLocally(message.UnitTypeId, playerId, unitId, message.X, message.Y, message.Z, message.TargetAngleY);
+                }
+            }
 
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.TrainUnitCommand)
+        {
+            if (message.UnitId is Guid buildingId &&
+                message.ProductionOrderId is Guid orderId &&
+                message.PlayerId is Guid playerId &&
+                message.UnitTypeId is not null &&
+                Globals.World.Units.FindById(buildingId) is Building building)
+            {
+                building.TryQueueProduction(
+                    orderId,
+                    message.UnitTypeId,
+                    playerId,
+                    message.ProductionSeconds);
+            }
             return;
         }
 
@@ -217,6 +251,32 @@ public sealed class NetworkInput
 
         string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);
         Globals.Console.Print($"Spawned {unitTypeId} for player {playerName}.");
+    }
+
+    private void SpawnProducedUnitLocally(
+        string unitTypeId,
+        Guid playerId,
+        Guid unitId,
+        Guid sourceBuildingId,
+        Guid? armyId,
+        Vector3 spawnPosition,
+        Vector3 exitPosition,
+        float targetAngleY)
+    {
+        MobileUnit? unit = Globals.World.Units.SpawnUnitFromBuilding(
+            unitTypeId,
+            spawnPosition,
+            exitPosition,
+            targetAngleY,
+            unitId,
+            playerId,
+            armyId,
+            sourceBuildingId);
+        if (unit is null)
+            return;
+
+        string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);
+        Globals.Console.Print($"Produced {unitTypeId} for player {playerName}.");
     }
 
     private void SpawnBuildingLocally(string buildingTypeId, Guid playerId, Guid unitId, float x, float y, float z, float targetAngleY)

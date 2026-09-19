@@ -17,6 +17,7 @@ public abstract class Unit : WorldObject
     public enum UnitActionState
     {
         Idle,
+        Spawning,
         Moving,
         Aiming,
         Dying
@@ -41,8 +42,8 @@ public abstract class Unit : WorldObject
     /// <summary>True while this unit is visually playing its death sequence.</summary>
     public virtual bool IsDying => false;
     /// <summary>Death ghosts remain drawable but cannot be selected or targeted.</summary>
-    public bool CanBeTargeted => !IsDying;
-    public bool IsSelectable => !IsDying;
+    public virtual bool CanBeTargeted => !IsDying;
+    public virtual bool IsSelectable => !IsDying;
     /// <summary>Lets a unit keep itself alive locally for a death animation.</summary>
     public virtual bool BeginDeathSequence() => false;
     /// <summary>Set by animated death units once their local visual has finished.</summary>

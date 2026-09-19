@@ -38,6 +38,36 @@ public class UnitHandler
         return null;
     }
 
+    /// <summary>
+    /// Creates a produced mobile unit inside a building without replacing the
+    /// building's occupied GameGrid cells. The unit registers itself when it
+    /// reaches the supplied exterior exit position.
+    /// </summary>
+    public MobileUnit? SpawnUnitFromBuilding(
+        string unitTypeName,
+        Vector3 spawnPosition,
+        Vector3 exitPosition,
+        float rotateYDegrees,
+        Guid unitId,
+        Guid creatorPlayerId,
+        Guid? armyId,
+        Guid sourceBuildingId)
+    {
+        MobileUnit? unit = UnitFactory.SpawnUnit(
+            unitTypeName,
+            spawnPosition,
+            rotateYDegrees,
+            unitId,
+            creatorPlayerId);
+        if (unit is null)
+            return null;
+
+        unit.SetArmy(armyId);
+        unit.BeginLeavingBuilding(sourceBuildingId, exitPosition);
+        _units.Add(unit);
+        return unit;
+    }
+
     public Building? SpawnBuilding(
         string buildingTypeName,
         Vector3 position,

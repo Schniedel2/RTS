@@ -46,6 +46,7 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.ToolActionRequest &&
             message.Type != NetworkMessageType.BuildRequest &&
             message.Type != NetworkMessageType.BuildConstructionRequest &&
+            message.Type != NetworkMessageType.TrainUnitRequest &&
             message.Type != NetworkMessageType.NotifyUnitsSelected &&
             message.Type != NetworkMessageType.GrantArmyControlRequest &&
             message.Type != NetworkMessageType.RevokeArmyControlRequest &&
@@ -68,6 +69,10 @@ public sealed class NetworkHost
             (message.ConstructionSiteId is null || message.UnitIds is null || message.UnitIds.Length == 0))
             return;
 
+        if (message.Type == NetworkMessageType.TrainUnitRequest &&
+            (message.UnitId is null || string.IsNullOrWhiteSpace(message.UnitTypeId)))
+            return;
+
         if (_requestQueue.Count >= MaximumQueuedRequests)
             return;
 
@@ -88,7 +93,7 @@ public sealed class NetworkHost
                 if (!_requestQueue.TryDequeue(out NetworkMessage? request))
                     return;
 
-                NetworkMessage command = request.Type switch
+                NetworkMessage? command = request.Type switch
                 {
                     NetworkMessageType.SpawnRequest => NetworkCommands.CreateSpawnCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.GotoRequest => NetworkCommands.CreateGotoCommand(_networkHandler.LocalPeerId, request),
@@ -102,6 +107,7 @@ public sealed class NetworkHost
                     NetworkMessageType.RequestPlayerUpdate => NetworkCommands.CreatePlayerUpdateCommand(_networkHandler.LocalPeerId, request, ConfirmPlayerSkin(request)),
                     NetworkMessageType.BuildRequest => NetworkCommands.CreateBuildCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.BuildConstructionRequest => NetworkCommands.CreateBuildConstructionCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.TrainUnitRequest => TryCreateTrainUnitCommand(request),
                     NetworkMessageType.NotifyUnitsSelected => request,
                     NetworkMessageType.GrantArmyControlRequest => NetworkCommands.CreateArmyControlCommand(_networkHandler.LocalPeerId, request, grant: true),
                     NetworkMessageType.RevokeArmyControlRequest => NetworkCommands.CreateArmyControlCommand(_networkHandler.LocalPeerId, request, grant: false),
@@ -109,6 +115,9 @@ public sealed class NetworkHost
                     NetworkMessageType.MergeArmiesRequest => NetworkCommands.CreateMergeArmiesCommand(_networkHandler.LocalPeerId, request),
                     _ => throw new InvalidOperationException($"Unsupported request type: {request.Type}")
                 };
+
+                if (command is null)
+                    continue;
 
                 _networkHandler.EnqueueLocalMessage(command);
                 await _networkHandler.BroadcastAsync(command, CancellationToken.None);
@@ -130,6 +139,35 @@ public sealed class NetworkHost
             : null;
         return NetworkCommands.CreateTransferUnitCommand(
             _networkHandler.LocalPeerId, request, recipient?.ArmyId ?? Guid.Empty);
+    }
+
+    private NetworkMessage? TryCreateTrainUnitCommand(NetworkMessage request)
+    {
+        if (request.UnitId is not Guid buildingId ||
+            string.IsNullOrWhiteSpace(request.UnitTypeId) ||
+            _world.Units.FindById(buildingId) is not Building building ||
+            !building.IsCompleted ||
+            !Globals.Game.Armies.CanControl(request.SenderId, building.ArmyId) ||
+            !building.TryGetProductionDuration(request.UnitTypeId, out float durationSeconds))
+        {
+            return null;
+        }
+
+        Guid orderId = request.ProductionOrderId ?? Guid.NewGuid();
+        Guid requestedByPlayerId = request.PlayerId ?? request.SenderId;
+        if (!building.TryQueueProduction(
+                orderId,
+                request.UnitTypeId,
+                requestedByPlayerId,
+                durationSeconds))
+        {
+            return null;
+        }
+
+        return NetworkCommands.CreateTrainUnitCommand(
+            _networkHandler.LocalPeerId,
+            request with { ProductionOrderId = orderId },
+            durationSeconds);
     }
 
     /// <summary>Grants the requested skin unless another player already owns it.</summary>
@@ -166,6 +204,8 @@ public sealed class NetworkHost
             {
                 unit.UpdateHost(gameTime);
             }
+
+            UpdateProduction((float)HostSimulationInterval);
 
             UpdateDefensiveTargets();
 
@@ -210,6 +250,51 @@ public sealed class NetworkHost
             _ = _networkHandler.BroadcastAsync(state, CancellationToken.None);
             constructionSite.MarkNetworkStateSent(_hostTime, StateHeartbeatInterval);
             sentUpdates++;
+        }
+    }
+
+    private void UpdateProduction(float elapsedSeconds)
+    {
+        foreach (Building building in _world.Units.Units.OfType<Building>().ToArray())
+        {
+            if (!building.UpdateProduction(elapsedSeconds, out ProductionOrder? completedOrder) ||
+                completedOrder is null)
+            {
+                continue;
+            }
+
+            Vector3 spawnPosition = building.TryGetProductionSpawnPosition(out Vector3 spawnPivot)
+                ? spawnPivot
+                : building.Position + Vector3.Up * 0.1f;
+
+            Vector3 exitPosition;
+            if (!building.TryGetProductionExitPosition(out exitPosition))
+            {
+                Vector3 forward = building.Transform.Forward;
+                forward.Y = 0.0f;
+                if (forward.LengthSquared() <= 0.0001f)
+                    forward = Vector3.Forward;
+                else
+                    forward.Normalize();
+
+                float exitDistance =
+                    Math.Max(building.Width, building.Length) * _world.GameGrid.CellSize * 0.5f +
+                    _world.GameGrid.CellSize * 1.5f;
+                exitPosition = building.Position + forward * exitDistance;
+            }
+
+            int terrainX = Math.Clamp((int)MathF.Floor(exitPosition.X), 0, _world.Terrain.Width - 1);
+            int terrainZ = Math.Clamp((int)MathF.Floor(exitPosition.Z), 0, _world.Terrain.Height - 1);
+            exitPosition.Y = _world.Terrain.GetHeight(terrainX, terrainZ);
+
+            NetworkMessage command = NetworkCommands.CreateProducedUnitCommand(
+                _networkHandler.LocalPeerId,
+                building,
+                completedOrder,
+                spawnPosition,
+                exitPosition);
+            _networkHandler.EnqueueLocalMessage(command);
+            _ = _networkHandler.BroadcastAsync(command, CancellationToken.None);
         }
     }
 

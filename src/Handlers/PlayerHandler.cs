@@ -94,6 +94,19 @@ public class PlayerHandler
                         _ = Globals.Game.NetworkClient.RequestStopAsync(_selectedUnits);
                     return false;
                 }
+            case UnitActionType.TrainUnit:
+                {
+                    Building? building = _selectedUnits.Count == 1
+                        ? _selectedUnits[0] as Building
+                        : null;
+                    if (building is not null && !string.IsNullOrWhiteSpace(action.TargetObjectName))
+                    {
+                        _ = Globals.Game.NetworkClient.RequestTrainUnitAsync(
+                            building.UnitId,
+                            action.TargetObjectName);
+                    }
+                    return false;
+                }
         }
 
         ActiveAction = action;        

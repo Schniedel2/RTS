@@ -168,14 +168,16 @@ public class Soldier : MobileUnit
 
         var lastUnitState = _currentUnitState;
 
-        bool isMoving = PlannedPath.Count > 0;
+        bool isMoving = PlannedPath.Count > 0 || IsLeavingBuilding;
 
         bool hasAttackOrder =
             AttackTargetId is not null ||
             AttackGroundTarget is not null;
         bool isAiming = hasAttackOrder && !isMoving;
 
-        if (isMoving)
+        if (IsLeavingBuilding)
+            _currentUnitState = UnitActionState.Spawning;
+        else if (isMoving)
             _currentUnitState = UnitActionState.Moving;
         else if (isAiming)
             _currentUnitState = UnitActionState.Aiming;
@@ -191,7 +193,7 @@ public class Soldier : MobileUnit
                 _animationPlayer.Play("idle");
             }
 
-            if (_currentUnitState == UnitActionState.Moving)
+            if (_currentUnitState is UnitActionState.Moving or UnitActionState.Spawning)
             {
                 SetRandomRunningArmsPose();
                 _animationPlayer.Play("run");
@@ -238,6 +240,18 @@ public class Soldier : MobileUnit
         _animationPlayer.ClearOverlays();
         _animationPlayer.Play(GetRandomDeathClip(), restart: true);
         return true;
+    }
+
+    protected override void OnBeginLeavingBuilding()
+    {
+        SetRandomRunningArmsPose();
+        _animationPlayer.Play("run", restart: true);
+    }
+
+    protected override void OnFinishedLeavingBuilding()
+    {
+        SetRandomArmsPose();
+        _animationPlayer.Play("idle", restart: true);
     }
 
     public override void PlayShotEffects()

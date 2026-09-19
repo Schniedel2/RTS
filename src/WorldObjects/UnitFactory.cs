@@ -16,6 +16,10 @@ public static class UnitFactory
         switch (unitTypeName.ToLower())
         {
             case "soldier":
+            case "rak-zero":
+            case "grunt":
+            case "flamer":
+            case "invasor":
                 unit = new Soldier(position, unitId);
                 break;
             case "car":

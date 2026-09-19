@@ -61,6 +61,8 @@ public enum NetworkMessageType
     BuildCommand,
     BuildConstructionRequest,
     BuildConstructionCommand,
+    TrainUnitRequest,
+    TrainUnitCommand,
     UnitStateCommand,
     NotifyUnitsSelected,
     GrantArmyControlRequest,
@@ -110,4 +112,10 @@ public sealed record NetworkMessage(
     int? PlayerSkin = null,
     uint SelectionRevision = 0,
     Guid? ArmyId = null,
-    Guid? SecondaryArmyId = null);
+    Guid? SecondaryArmyId = null,
+    Guid? ProductionOrderId = null,
+    Guid? SpawnSourceBuildingId = null,
+    float ProductionSeconds = 0.0f,
+    float ExitX = 0.0f,
+    float ExitY = 0.0f,
+    float ExitZ = 0.0f);
