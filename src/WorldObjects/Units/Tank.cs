@@ -26,12 +26,20 @@ public class Tank : MobileUnit
         new(UnitActionType.Goto, "Goto", 0, 1),
         new(UnitActionType.Attack, "Attack", 1, 1),
         new(UnitActionType.Follow, "Follow", 6, 1),
+        new(UnitActionType.LeaveContainer, "Leave", 5, 1),
         new(UnitActionType.Stop, "Stop", 7, 1)
     ];
 
     public Tank(Vector3 position, Guid unitId, IMovementProfile? movementProfile = null)
         : base(position, length: 4, width: 2, height: 2.2f, unitId, movementProfile)
     {
+        Occupancy = new OccupancyComponent(
+            this,
+            [new OccupantSlot(OccupantRole.Driver, 1, 1)],
+            OccupancyOwnershipMode.ControllerDefinesOwnership,
+            OccupantRole.Driver,
+            becomeNeutralWithoutController: true);
+        Behavior = UnitBehavior.Passive;
         MoveSpeed = 3.0f;
         RotationSpeed = 1.0f;
         HeadingSnapAngle = 0.0f;

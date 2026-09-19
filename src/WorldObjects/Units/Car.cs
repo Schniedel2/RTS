@@ -12,6 +12,7 @@ public class Car : MobileUnit
         new(UnitActionType.Goto, "Goto", 0, 1),
         new(UnitActionType.Attack, "Attack", 1, 1),
         new(UnitActionType.Follow, "Follow", 6, 1),
+        new(UnitActionType.LeaveContainer, "Leave", 5, 1),
         new(UnitActionType.Stop, "Stop", 7, 1)
     ];
         
@@ -32,6 +33,13 @@ public class Car : MobileUnit
             unitId,
             movementProfile)
     {
+        Occupancy = new OccupancyComponent(
+            this,
+            [new OccupantSlot(OccupantRole.Driver, 1, 1)],
+            OccupancyOwnershipMode.ControllerDefinesOwnership,
+            OccupantRole.Driver,
+            becomeNeutralWithoutController: true);
+        Behavior = UnitBehavior.Passive;
         MoveSpeed = 7.0f;
         RotationSpeed = 4.0f;
         WaypointArrivalRadius = 1.5f;

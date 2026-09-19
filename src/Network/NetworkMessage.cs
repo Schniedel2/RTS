@@ -63,6 +63,11 @@ public enum NetworkMessageType
     BuildConstructionCommand,
     TrainUnitRequest,
     TrainUnitCommand,
+    EnterUnitRequest,
+    EnterUnitCommand,
+    EmbarkUnitCommand,
+    LeaveContainerRequest,
+    LeaveContainerCommand,
     UnitStateCommand,
     NotifyUnitsSelected,
     GrantArmyControlRequest,
@@ -118,4 +123,6 @@ public sealed record NetworkMessage(
     float ProductionSeconds = 0.0f,
     float ExitX = 0.0f,
     float ExitY = 0.0f,
-    float ExitZ = 0.0f);
+    float ExitZ = 0.0f,
+    Guid? DriverUnitId = null,
+    OccupantRole? OccupantRole = null);

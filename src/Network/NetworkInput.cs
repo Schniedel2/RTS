@@ -84,7 +84,13 @@ public sealed class NetworkInput
         if (message.Type == NetworkMessageType.TransferUnitCommand)
         {
             if (message.UnitId is Guid unitId && message.ArmyId is Guid armyId && armyId != Guid.Empty)
-                Globals.World.Units.FindById(unitId)?.SetArmy(armyId);
+            {
+                Unit? transferredUnit = Globals.World.Units.FindById(unitId);
+                transferredUnit?.SetArmy(armyId);
+                if (transferredUnit?.Occupancy is OccupancyComponent occupancy)
+                    foreach (OccupantAssignment occupant in occupancy.Occupants)
+                        Globals.World.Units.FindById(occupant.UnitId)?.SetArmy(armyId);
+            }
             return;
         }
 
@@ -127,11 +133,20 @@ public sealed class NetworkInput
                         message.ArmyId,
                         new Vector3(message.X, message.Y, message.Z),
                         new Vector3(message.ExitX, message.ExitY, message.ExitZ),
-                        message.TargetAngleY);
+                        message.TargetAngleY,
+                        message.DriverUnitId);
                 }
                 else
                 {
-                    SpawnUnitLocally(message.UnitTypeId, playerId, unitId, message.X, message.Y, message.Z, message.TargetAngleY);
+                    SpawnUnitLocally(
+                        message.UnitTypeId,
+                        playerId,
+                        unitId,
+                        message.X,
+                        message.Y,
+                        message.Z,
+                        message.TargetAngleY,
+                        message.DriverUnitId);
                 }
             }
 
@@ -207,6 +222,31 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type == NetworkMessageType.EnterUnitCommand)
+        {
+            ExecuteEnterUnit(message);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.EmbarkUnitCommand)
+        {
+            if (message.UnitId is Guid occupantId && message.TargetId is Guid containerId)
+                Globals.World.Units.EmbarkUnit(occupantId, containerId, message.OccupantRole);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.LeaveContainerCommand)
+        {
+            if (message.UnitId is Guid containerId && message.TargetId is Guid occupantId)
+            {
+                Globals.World.Units.DisembarkUnit(
+                    containerId,
+                    occupantId,
+                    new Vector3(message.X, message.Y, message.Z));
+            }
+            return;
+        }
+
         if (message.Type == NetworkMessageType.TemporaryTargetCommand)
         {
             ExecuteTemporaryTarget(message);
@@ -244,10 +284,24 @@ public sealed class NetworkInput
         }
     }
 
-    private void SpawnUnitLocally(string unitTypeId, Guid playerId, Guid unitId, float x, float y, float z, float targetAngleY)
+    private void SpawnUnitLocally(
+        string unitTypeId,
+        Guid playerId,
+        Guid unitId,
+        float x,
+        float y,
+        float z,
+        float targetAngleY,
+        Guid? driverUnitId)
     {
         Vector3 target = new(x, y, z);
-        Globals.World.Units.SpawnUnit(unitTypeId, target, targetAngleY, unitId, playerId);
+        Globals.World.Units.SpawnUnit(
+            unitTypeId,
+            target,
+            targetAngleY,
+            unitId,
+            playerId,
+            driverUnitId);
 
         string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);
         Globals.Console.Print($"Spawned {unitTypeId} for player {playerName}.");
@@ -261,7 +315,8 @@ public sealed class NetworkInput
         Guid? armyId,
         Vector3 spawnPosition,
         Vector3 exitPosition,
-        float targetAngleY)
+        float targetAngleY,
+        Guid? driverUnitId)
     {
         MobileUnit? unit = Globals.World.Units.SpawnUnitFromBuilding(
             unitTypeId,
@@ -271,12 +326,31 @@ public sealed class NetworkInput
             unitId,
             playerId,
             armyId,
-            sourceBuildingId);
+            sourceBuildingId,
+            driverUnitId);
         if (unit is null)
             return;
 
         string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);
         Globals.Console.Print($"Produced {unitTypeId} for player {playerName}.");
+    }
+
+    private static void ExecuteEnterUnit(NetworkMessage message)
+    {
+        if (message.UnitId is not Guid occupantId ||
+            message.TargetId is not Guid containerId ||
+            Globals.World.Units.FindById(occupantId) is not MobileUnit occupant ||
+            Globals.World.Units.FindById(containerId) is not Unit container ||
+            container.Occupancy is not OccupancyComponent occupancy)
+        {
+            return;
+        }
+
+        if (!occupancy.TryReserve(occupant, message.OccupantRole, out _))
+            return;
+
+        if (!occupant.TryReceiveEnterUnitCommand(Globals.World, container))
+            occupancy.ClearReservation(occupant.UnitId);
     }
 
     private void SpawnBuildingLocally(string buildingTypeId, Guid playerId, Guid unitId, float x, float y, float z, float targetAngleY)

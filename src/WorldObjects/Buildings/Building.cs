@@ -21,6 +21,8 @@ public class Building : Unit
     /// <summary>Draw a local cloth flag when the building mesh exposes <c>pivot:flag</c>.</summary>
     public bool ShowOwnerFlag { get; set; } = true;
     public ProductionQueue ProductionQueue { get; } = new();
+    /// <summary>Optional production bonus for each embarked Crew unit (0.25 = +25%).</summary>
+    public float CrewProductionBonusPerOccupant { get; set; }
     public override string StateTypeId => "building-state";
 
     public Building(
@@ -33,6 +35,14 @@ public class Building : Unit
             height: 1,
             unitId)
     {
+        Occupancy = new OccupancyComponent(
+            this,
+            [
+                new OccupantSlot(OccupantRole.Crew, 4),
+                new OccupantSlot(OccupantRole.Garrison, 4)
+            ],
+            OccupancyOwnershipMode.CaptureOnEntry);
+        Occupancy.EntryEnabled = false;
         TotalBuildingPointsNeeded = 10000; // Default value, can be overridden by derived classes
     }
 
@@ -70,7 +80,12 @@ public class Building : Unit
             return false;
         }
 
-        bool completed = ProductionQueue.Update(elapsedSeconds, out completedOrder);
+        float efficiency = Occupancy?.OperationalEfficiency ?? 1.0f;
+        int crew = Occupancy?.Count(OccupantRole.Crew) ?? 0;
+        float crewMultiplier = 1.0f + crew * CrewProductionBonusPerOccupant;
+        bool completed = ProductionQueue.Update(
+            elapsedSeconds * efficiency * crewMultiplier,
+            out completedOrder);
         MarkStateDirty();
         return completed;
     }
@@ -131,6 +146,8 @@ public class Building : Unit
             return;
 
         ConstructionProgress = nextProgress;
+        if (Occupancy is not null)
+            Occupancy.EntryEnabled = IsCompleted;
         MarkStateDirty();
     }
 
@@ -162,6 +179,8 @@ public class Building : Unit
             payload.ConstructionProgress,
             0.0f,
             TotalBuildingPointsNeeded);
+        if (Occupancy is not null)
+            Occupancy.EntryEnabled = IsCompleted;
         ProductionQueue.ApplyState(payload.ProductionQueue);
         StateRevision = state.Revision;
         NetworkStateDirty = false;

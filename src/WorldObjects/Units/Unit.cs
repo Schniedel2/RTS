@@ -29,6 +29,10 @@ public abstract class Unit : WorldObject
     public Guid CreatorPlayerId { get; private set; }
     /// <summary>Current owner. Null represents a neutral/capturable world unit.</summary>
     public Guid? ArmyId { get; private set; }
+    public bool IsEmbarked { get; private set; }
+    public Guid? ContainerUnitId { get; private set; }
+    /// <summary>Optional seats/crew/garrison carried by this unit.</summary>
+    public OccupancyComponent? Occupancy { get; protected set; }
     public int Length { get; protected set; }
     public int Width { get; protected set; }
     public float Height { get; protected set; }
@@ -42,8 +46,8 @@ public abstract class Unit : WorldObject
     /// <summary>True while this unit is visually playing its death sequence.</summary>
     public virtual bool IsDying => false;
     /// <summary>Death ghosts remain drawable but cannot be selected or targeted.</summary>
-    public virtual bool CanBeTargeted => !IsDying;
-    public virtual bool IsSelectable => !IsDying;
+    public virtual bool CanBeTargeted => !IsDying && !IsEmbarked;
+    public virtual bool IsSelectable => !IsDying && !IsEmbarked;
     /// <summary>Lets a unit keep itself alive locally for a death animation.</summary>
     public virtual bool BeginDeathSequence() => false;
     /// <summary>Set by animated death units once their local visual has finished.</summary>
@@ -79,6 +83,29 @@ public abstract class Unit : WorldObject
     public UnitBehavior Behavior { get; set; } = UnitBehavior.Aggressive;
     protected MeshSet? _meshSet;
     private float _exhaustElapsed;
+
+    public bool TryGetEntryWorldPosition(out Vector3 position) =>
+        TryGetContainerPivotPosition("pivot:entry", "pivot:exit", out position);
+
+    public bool TryGetExitWorldPosition(out Vector3 position) =>
+        TryGetContainerPivotPosition("pivot:exit", "pivot:entry", out position);
+
+    private bool TryGetContainerPivotPosition(string primaryPivot, string fallbackPivot, out Vector3 position)
+    {
+        Matrix world = GetWorldMatrix();
+        if (_meshSet?.TryGetPivotWorldPosition(primaryPivot, world, out position) == true ||
+            _meshSet?.TryGetPivotWorldPosition(fallbackPivot, world, out position) == true)
+            return true;
+
+        Vector3 right = Transform.Right;
+        right.Y = 0.0f;
+        if (right.LengthSquared() <= 0.0001f)
+            right = Vector3.Right;
+        else
+            right.Normalize();
+        position = Position + right * (Width * Globals.World.GameGrid.CellSize * 0.5f + 1.0f);
+        return false;
+    }
 
     /// <summary>Local visual offset applied to the rendered model only.</summary>
     public Vector3 VisualRecoilOffset { get; private set; }
@@ -199,6 +226,21 @@ public abstract class Unit : WorldObject
     }
 
     internal void SetArmy(Guid? armyId) => ArmyId = armyId;
+
+    internal void Embark(Guid containerUnitId)
+    {
+        Stop();
+        IsSelected = false;
+        IsEmbarked = true;
+        ContainerUnitId = containerUnitId;
+    }
+
+    internal void Disembark(Vector3 position)
+    {
+        IsEmbarked = false;
+        ContainerUnitId = null;
+        SetPosition(position);
+    }
 
     /// <summary>Assigns one mesh and optionally derives conservative grid dimensions from it.</summary>
     protected void SetMesh(string meshName, bool deriveDimensions = false, float padding = 0.0f)
@@ -454,12 +496,20 @@ public abstract class Unit : WorldObject
     /// <summary>Central extension point for team, visibility and priority rules.</summary>
     public bool IsEnemy(Unit other)
     {
-        if (other == this || other.CreatorPlayerId == CreatorPlayerId)
+        if (other == this || ArmyId is not Guid armyId || other.ArmyId is not Guid otherArmyId)
+            return false;
+        if (armyId == otherArmyId)
             return false;
 
-        Player? owner = Globals.Game.Players.FirstOrDefault(player => player.Id == CreatorPlayerId);
-        Player? otherOwner = Globals.Game.Players.FirstOrDefault(player => player.Id == other.CreatorPlayerId);
-        return owner is not null && otherOwner is not null && owner.TeamId != otherOwner.TeamId;
+        Army? army = Globals.Game.Armies.Find(armyId);
+        Army? otherArmy = Globals.Game.Armies.Find(otherArmyId);
+        Player? owner = army is null
+            ? null
+            : Globals.Game.Players.FirstOrDefault(player => army.OwnerPlayerIds.Contains(player.Id));
+        Player? otherOwner = otherArmy is null
+            ? null
+            : Globals.Game.Players.FirstOrDefault(player => otherArmy.OwnerPlayerIds.Contains(player.Id));
+        return owner is null || otherOwner is null || owner.TeamId != otherOwner.TeamId;
     }
 
     public bool IsAlly(Unit other)
@@ -479,16 +529,27 @@ public abstract class Unit : WorldObject
 
     public bool IsSameTeam(Unit other)
     {
-        if (other == this || other.CreatorPlayerId == CreatorPlayerId)
+        if (other == this)
             return true;
-        Player? owner = Globals.Game.Players.FirstOrDefault(player => player.Id == CreatorPlayerId);
-        Player? otherOwner = Globals.Game.Players.FirstOrDefault(player => player.Id == other.CreatorPlayerId);
+        if (ArmyId is not Guid armyId || other.ArmyId is not Guid otherArmyId)
+            return false;
+        if (armyId == otherArmyId)
+            return true;
+
+        Army? army = Globals.Game.Armies.Find(armyId);
+        Army? otherArmy = Globals.Game.Armies.Find(otherArmyId);
+        Player? owner = army is null
+            ? null
+            : Globals.Game.Players.FirstOrDefault(player => army.OwnerPlayerIds.Contains(player.Id));
+        Player? otherOwner = otherArmy is null
+            ? null
+            : Globals.Game.Players.FirstOrDefault(player => otherArmy.OwnerPlayerIds.Contains(player.Id));
         return owner is not null && otherOwner is not null && owner.TeamId == otherOwner.TeamId;
     }
 
     /// <summary>Central extension point evaluated by the host before a defensive target is assigned.</summary>
     public virtual bool ShouldAttack(Unit candidate) =>
-        !IsDying && candidate.CanBeTargeted && Behavior == UnitBehavior.Aggressive && IsEnemy(candidate);
+        !IsDying && !IsEmbarked && candidate.CanBeTargeted && Behavior == UnitBehavior.Aggressive && IsEnemy(candidate);
 
     /// <summary>
     /// Advances the local mesh angle towards the current target. Call this
@@ -712,7 +773,7 @@ public abstract class Unit : WorldObject
 
     public bool TryQueueShot(double hostTime, out Unit? target)
     {
-        if (IsDying)
+        if (IsDying || IsEmbarked)
         {
             target = null;
             return false;
@@ -740,7 +801,7 @@ public abstract class Unit : WorldObject
     public bool TryQueueGroundShot(double hostTime, out Vector3 target)
     {
         target = AttackGroundTarget ?? default;
-        if (AttackGroundTarget is null)
+        if (IsEmbarked || AttackGroundTarget is null)
             return false;
 
         Vector2 offset = new(target.X - Position.X, target.Z - Position.Z);

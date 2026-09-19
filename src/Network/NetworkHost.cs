@@ -47,6 +47,8 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.BuildRequest &&
             message.Type != NetworkMessageType.BuildConstructionRequest &&
             message.Type != NetworkMessageType.TrainUnitRequest &&
+            message.Type != NetworkMessageType.EnterUnitRequest &&
+            message.Type != NetworkMessageType.LeaveContainerRequest &&
             message.Type != NetworkMessageType.NotifyUnitsSelected &&
             message.Type != NetworkMessageType.GrantArmyControlRequest &&
             message.Type != NetworkMessageType.RevokeArmyControlRequest &&
@@ -71,6 +73,13 @@ public sealed class NetworkHost
 
         if (message.Type == NetworkMessageType.TrainUnitRequest &&
             (message.UnitId is null || string.IsNullOrWhiteSpace(message.UnitTypeId)))
+            return;
+
+        if (message.Type == NetworkMessageType.EnterUnitRequest &&
+            (message.UnitId is null || message.TargetId is null))
+            return;
+
+        if (message.Type == NetworkMessageType.LeaveContainerRequest && message.UnitId is null)
             return;
 
         if (_requestQueue.Count >= MaximumQueuedRequests)
@@ -108,6 +117,8 @@ public sealed class NetworkHost
                     NetworkMessageType.BuildRequest => NetworkCommands.CreateBuildCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.BuildConstructionRequest => NetworkCommands.CreateBuildConstructionCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.TrainUnitRequest => TryCreateTrainUnitCommand(request),
+                    NetworkMessageType.EnterUnitRequest => TryCreateEnterUnitCommand(request),
+                    NetworkMessageType.LeaveContainerRequest => TryCreateLeaveContainerCommand(request),
                     NetworkMessageType.NotifyUnitsSelected => request,
                     NetworkMessageType.GrantArmyControlRequest => NetworkCommands.CreateArmyControlCommand(_networkHandler.LocalPeerId, request, grant: true),
                     NetworkMessageType.RevokeArmyControlRequest => NetworkCommands.CreateArmyControlCommand(_networkHandler.LocalPeerId, request, grant: false),
@@ -170,6 +181,42 @@ public sealed class NetworkHost
             durationSeconds);
     }
 
+    private NetworkMessage? TryCreateEnterUnitCommand(NetworkMessage request)
+    {
+        if (request.UnitId is not Guid occupantId ||
+            request.TargetId is not Guid containerId ||
+            _world.Units.FindById(occupantId) is not MobileUnit occupant ||
+            _world.Units.FindById(containerId) is not Unit container ||
+            container.Occupancy is not OccupancyComponent occupancy ||
+            !Globals.Game.Armies.CanControl(request.SenderId, occupant.ArmyId) ||
+            !occupancy.TryReserve(occupant, request.OccupantRole, out OccupantRole role))
+        {
+            return null;
+        }
+
+        return NetworkCommands.CreateEnterUnitCommand(_networkHandler.LocalPeerId, request, role);
+    }
+
+    private NetworkMessage? TryCreateLeaveContainerCommand(NetworkMessage request)
+    {
+        if (request.UnitId is not Guid containerId ||
+            _world.Units.FindById(containerId) is not Unit container ||
+            container.Occupancy?.GetPreferredOccupantToLeave() is not Guid occupantId ||
+            _world.Units.FindById(occupantId) is not MobileUnit occupant ||
+            !Globals.Game.Armies.CanControl(request.SenderId, container.ArmyId) ||
+            !TryFindDisembarkPosition(container, occupant, out Vector3 exitPosition) ||
+            !_world.Units.DisembarkUnit(containerId, occupantId, exitPosition))
+        {
+            return null;
+        }
+
+        return NetworkCommands.CreateLeaveContainerCommand(
+            _networkHandler.LocalPeerId,
+            containerId,
+            occupantId,
+            exitPosition);
+    }
+
     /// <summary>Grants the requested skin unless another player already owns it.</summary>
     private static PlayerSkin ConfirmPlayerSkin(NetworkMessage request)
     {
@@ -206,6 +253,7 @@ public sealed class NetworkHost
             }
 
             UpdateProduction((float)HostSimulationInterval);
+            UpdateContainerEntries();
 
             UpdateDefensiveTargets();
 
@@ -296,6 +344,77 @@ public sealed class NetworkHost
             _networkHandler.EnqueueLocalMessage(command);
             _ = _networkHandler.BroadcastAsync(command, CancellationToken.None);
         }
+    }
+
+    private void UpdateContainerEntries()
+    {
+        foreach (MobileUnit occupant in _world.Units.Units.OfType<MobileUnit>().ToArray())
+        {
+            if (occupant.PendingEnterContainerId is not Guid containerId ||
+                _world.Units.FindById(containerId) is not Unit container ||
+                container.Occupancy is not OccupancyComponent occupancy ||
+                !occupancy.IsReservedBy(occupant.UnitId))
+            {
+                continue;
+            }
+
+            container.TryGetEntryWorldPosition(out Vector3 entrancePosition);
+            Vector2 offset = new(
+                entrancePosition.X - occupant.Position.X,
+                entrancePosition.Z - occupant.Position.Z);
+            float arrivalDistance = Math.Max(1.25f, _world.GameGrid.CellSize * 0.75f);
+            if (offset.LengthSquared() > arrivalDistance * arrivalDistance)
+                continue;
+
+            if (!occupancy.TryGetReservedRole(occupant.UnitId, out OccupantRole role))
+                continue;
+            if (!_world.Units.EmbarkUnit(occupant.UnitId, container.UnitId, role))
+                continue;
+
+            NetworkMessage command = NetworkCommands.CreateEmbarkUnitCommand(
+                _networkHandler.LocalPeerId,
+                occupant.UnitId,
+                container.UnitId,
+                role);
+            _networkHandler.EnqueueLocalMessage(command);
+            _ = _networkHandler.BroadcastAsync(command, CancellationToken.None);
+        }
+    }
+
+    private bool TryFindDisembarkPosition(
+        Unit container,
+        MobileUnit occupant,
+        out Vector3 exitPosition)
+    {
+        container.TryGetExitWorldPosition(out Vector3 preferredPosition);
+        Point preferredCell = _world.GameGrid.ToCell(preferredPosition);
+
+        for (int radius = 0; radius <= 4; radius++)
+        {
+            for (int y = -radius; y <= radius; y++)
+            {
+                for (int x = -radius; x <= radius; x++)
+                {
+                    if (radius > 0 && Math.Abs(x) != radius && Math.Abs(y) != radius)
+                        continue;
+
+                    Point cell = new(preferredCell.X + x, preferredCell.Y + y);
+                    if (!_world.GameGrid.CanPlace(occupant, cell))
+                        continue;
+
+                    exitPosition = radius == 0
+                        ? preferredPosition
+                        : _world.GameGrid.ToWorldPosition(cell, 0.0f);
+                    int terrainX = Math.Clamp((int)MathF.Floor(exitPosition.X), 0, _world.Terrain.Width - 1);
+                    int terrainZ = Math.Clamp((int)MathF.Floor(exitPosition.Z), 0, _world.Terrain.Height - 1);
+                    exitPosition.Y = _world.Terrain.GetHeight(terrainX, terrainZ);
+                    return true;
+                }
+            }
+        }
+
+        exitPosition = Vector3.Zero;
+        return false;
     }
 
     private void UpdateDefensiveTargets()

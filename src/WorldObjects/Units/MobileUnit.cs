@@ -27,6 +27,7 @@ public class MobileUnit : Unit
     public IMovementProfile MovementProfile { get; }
     public Guid? TargetBuildingId { get; private set; }
     public bool IsBuilding { get; private set; }
+    public Guid? PendingEnterContainerId { get; private set; }
     /// <summary>
     /// True while a freshly produced unit moves from an interior spawn pivot
     /// to the building's exterior exit pivot without occupying the GameGrid.
@@ -204,6 +205,13 @@ public class MobileUnit : Unit
 
         if (_plannedPath.Count == 0)
         {
+            if (PendingEnterContainerId is not null)
+            {
+                CurrentCommand = null;
+                PathDebug("container entrance reached; waiting for host embark command");
+                return;
+            }
+
             if (TargetBuildingId is not null)
             {
                 IsBuilding = true;
@@ -359,6 +367,7 @@ public class MobileUnit : Unit
         GameWorld map,
         GotoCommand command)
     {
+        PendingEnterContainerId = null;
         TargetBuildingId = null;
         IsBuilding = false;
         CurrentCommand = command;
@@ -374,6 +383,20 @@ public class MobileUnit : Unit
 
         return true;
     }
+
+    public bool TryReceiveEnterUnitCommand(GameWorld map, Unit container)
+    {
+        container.TryGetEntryWorldPosition(out Vector3 entrancePosition);
+        entrancePosition.Y = 0.0f;
+        bool accepted = TryReceiveGotoCommand(
+            map,
+            new GotoCommand(new Vector2(entrancePosition.X, entrancePosition.Z)));
+        if (accepted)
+            PendingEnterContainerId = container.UnitId;
+        return accepted;
+    }
+
+    internal void ClearPendingEnterContainer() => PendingEnterContainerId = null;
 
     public virtual bool TryReceiveBuildConstructionCommand(
         GameWorld map,
@@ -420,6 +443,12 @@ public class MobileUnit : Unit
         if (CurrentCommand is not null || _plannedPath.Count > 0)
             PathDebug($"command cleared remainingWaypoints={_plannedPath.Count}");
         _plannedPath.Clear();
+        if (PendingEnterContainerId is Guid containerId &&
+            Globals.World.Units.FindById(containerId) is Unit container)
+        {
+            container.Occupancy?.ClearReservation(UnitId);
+        }
+        PendingEnterContainerId = null;
         TargetBuildingId = null;
         IsBuilding = false;
         base.ClearCommand();

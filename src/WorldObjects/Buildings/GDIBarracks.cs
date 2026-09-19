@@ -60,6 +60,7 @@ public class GDIBarracks : Building
                 new(UnitActionType.TrainUnit, "Flamer", 6, 1, "flamer"),
                 new(UnitActionType.TrainUnit, "Invasor", 6, 1, "invasor"),
                 new(UnitActionType.Goto, "Cancel", 0, 1),
+                new(UnitActionType.LeaveContainer, "Leave", 5, 1),
                 new(UnitActionType.Follow, "Sell", 6, 1),
                 new(UnitActionType.Stop, "Destroy", 7, 1)
             ];

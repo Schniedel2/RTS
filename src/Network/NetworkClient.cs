@@ -110,6 +110,21 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
 
+    public Task RequestNeutralSpawnAsync(
+        string unitTypeId,
+        float x,
+        float y,
+        float z,
+        CancellationToken cancellationToken = default) =>
+        _networkHandler.SendToHostAsync(
+            NetworkCommands.CreateNeutralSpawnRequest(
+                _networkHandler.LocalPeerId,
+                unitTypeId,
+                x,
+                y,
+                z),
+            cancellationToken);
+
     public Task RequestTrainUnitAsync(
         Guid buildingId,
         string unitTypeId,
@@ -166,6 +181,16 @@ public sealed class NetworkClient
             _networkHandler.LocalPeerId, units.Select(unit => unit.UnitId).ToArray(), targetId);
         return _networkHandler.SendToHostAsync(request, CancellationToken.None);
     }
+
+    public Task RequestEnterUnitAsync(Guid unitId, Guid containerId, OccupantRole? role = null) =>
+        _networkHandler.SendToHostAsync(
+            NetworkCommands.CreateEnterUnitRequest(_networkHandler.LocalPeerId, unitId, containerId, role),
+            CancellationToken.None);
+
+    public Task RequestLeaveContainerAsync(Guid containerId) =>
+        _networkHandler.SendToHostAsync(
+            NetworkCommands.CreateLeaveContainerRequest(_networkHandler.LocalPeerId, containerId),
+            CancellationToken.None);
 
     public Task RequestToolActionAsync(UnitAction action, ToolShape toolShape, int toolSize, Vector3 target)
     {

@@ -170,19 +170,34 @@ public static class NetworkCommands
             Z: z);
     }
 
+    public static NetworkMessage CreateNeutralSpawnRequest(
+        Guid senderId,
+        string unitTypeId,
+        float x,
+        float y,
+        float z) =>
+        new(NetworkMessageType.SpawnRequest, senderId,
+            PlayerId: Guid.Empty,
+            UnitTypeId: unitTypeId,
+            X: x,
+            Y: y,
+            Z: z);
+
     public static NetworkMessage CreateSpawnCommand(
         Guid hostId,
         NetworkMessage request)
     {
+        Guid playerId = request.PlayerId ?? request.SenderId;
         return new NetworkMessage(
             NetworkMessageType.SpawnCommand,
             hostId,
-            PlayerId: request.PlayerId ?? request.SenderId,
+            PlayerId: playerId,
             UnitId: request.UnitId ?? Guid.NewGuid(),
             UnitTypeId: request.UnitTypeId,
             X: request.X,
             Y: request.Y,
-            Z: request.Z);
+            Z: request.Z,
+            DriverUnitId: playerId == Guid.Empty ? null : Guid.NewGuid());
     }
 
     public static NetworkMessage CreateGotoRequest(
@@ -280,8 +295,39 @@ public static class NetworkCommands
             SpawnSourceBuildingId: building.UnitId,
             ExitX: exitPosition.X,
             ExitY: exitPosition.Y,
-            ExitZ: exitPosition.Z);
+            ExitZ: exitPosition.Z,
+            DriverUnitId: order.RequestedByPlayerId == Guid.Empty ? null : Guid.NewGuid());
     }
+
+    public static NetworkMessage CreateEnterUnitRequest(Guid senderId, Guid unitId, Guid containerId, OccupantRole? role = null) =>
+        new(NetworkMessageType.EnterUnitRequest, senderId,
+            PlayerId: senderId, UnitId: unitId, TargetId: containerId, OccupantRole: role);
+
+    public static NetworkMessage CreateEnterUnitCommand(Guid hostId, NetworkMessage request, OccupantRole role) =>
+        new(NetworkMessageType.EnterUnitCommand, hostId,
+            PlayerId: request.PlayerId ?? request.SenderId,
+            UnitId: request.UnitId,
+            TargetId: request.TargetId,
+            OccupantRole: role);
+
+    public static NetworkMessage CreateEmbarkUnitCommand(Guid hostId, Guid unitId, Guid containerId, OccupantRole role) =>
+        new(NetworkMessageType.EmbarkUnitCommand, hostId,
+            UnitId: unitId, TargetId: containerId, OccupantRole: role);
+
+    public static NetworkMessage CreateLeaveContainerRequest(Guid senderId, Guid containerId) =>
+        new(NetworkMessageType.LeaveContainerRequest, senderId, PlayerId: senderId, UnitId: containerId);
+
+    public static NetworkMessage CreateLeaveContainerCommand(
+        Guid hostId,
+        Guid containerId,
+        Guid occupantUnitId,
+        Vector3 exitPosition) =>
+        new(NetworkMessageType.LeaveContainerCommand, hostId,
+            UnitId: containerId,
+            TargetId: occupantUnitId,
+            X: exitPosition.X,
+            Y: exitPosition.Y,
+            Z: exitPosition.Z);
 
     /// <summary>Host-authoritative visual impact for an instantaneous (hitscan) weapon.</summary>
     public static NetworkMessage CreateBulletImpactCommand(Guid hostId, Guid sourceUnitId, Vector3 position) =>

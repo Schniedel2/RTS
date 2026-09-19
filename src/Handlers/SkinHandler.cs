@@ -71,6 +71,9 @@ public sealed class SkinHandler
 
     public Color GetDisplayColor(PlayerSkin skin) => Get(skin).DisplayColor;
 
+    public void DisableForEffect(Effect effect) =>
+        effect.Parameters["PlayerSkinStrength"]?.SetValue(0.0f);
+
     /// <summary>Sets the selected atlas tile for the next unit draw call.</summary>
     public void ApplyToEffect(Effect effect, PlayerSkin skin)
     {

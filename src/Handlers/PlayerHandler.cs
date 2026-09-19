@@ -107,6 +107,12 @@ public class PlayerHandler
                     }
                     return false;
                 }
+            case UnitActionType.LeaveContainer:
+                {
+                    if (_selectedUnits.Count == 1 && _selectedUnits[0].Occupancy is not null)
+                        _ = Globals.Game.NetworkClient.RequestLeaveContainerAsync(_selectedUnits[0].UnitId);
+                    return false;
+                }
         }
 
         ActiveAction = action;        
@@ -128,7 +134,9 @@ public class PlayerHandler
 
     public void Update(GameTime gameTime, Camera camera, Viewport viewport)
     {
-        if (_selectedUnits.RemoveAll(unit => !unit.IsSelectable) > 0)
+        if (_selectedUnits.RemoveAll(unit =>
+                !unit.IsSelectable ||
+                !Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, unit.ArmyId)) > 0)
         {
             ActiveAction = null;
             NotifySelectionChanged();
@@ -268,6 +276,16 @@ public class PlayerHandler
         if (ActiveAction?.Type == UnitActionType.Follow)
             return UnitActionType.Follow;
 
+        if (selectedUnits.Count == 1 &&
+            selectedUnits[0] is Soldier soldier &&
+            targetUnit.Occupancy is OccupancyComponent occupancy &&
+            !keyboardState.IsKeyDown(Keys.LeftControl) &&
+            !keyboardState.IsKeyDown(Keys.RightControl) &&
+            occupancy.CanEnter(soldier))
+        {
+            return UnitActionType.EnterUnit;
+        }
+
         if (targetUnit.IsEnemy(selectedUnits.First()))
             return UnitActionType.Attack;
 
@@ -287,9 +305,6 @@ public class PlayerHandler
 
         if (keyboardState.IsKeyDown(Keys.LeftAlt) || keyboardState.IsKeyDown(Keys.RightAlt))
             return UnitActionType.Repair;
-
-        if (targetUnit is Building)
-            return UnitActionType.EnterBuilding;
 
         return UnitActionType.None;
     }
@@ -413,6 +428,16 @@ public class PlayerHandler
             if (actionType == UnitActionType.BuildConstruction)
             {
                 Globals.Game.NetworkClient.RequestBuildConstructionAsync(_selectedUnits, targetUnit?.UnitId ?? Guid.Empty);
+                return true;
+            }
+            if (actionType == UnitActionType.EnterUnit &&
+                _selectedUnits.Count == 1 &&
+                _selectedUnits[0] is Soldier soldier &&
+                targetUnit?.Occupancy is not null)
+            {
+                _ = Globals.Game.NetworkClient.RequestEnterUnitAsync(
+                    soldier.UnitId,
+                    targetUnit.UnitId);
                 return true;
             }
             return false;

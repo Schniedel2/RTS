@@ -36,6 +36,9 @@ public class ConsoleCommands
             "spawn",
             Spawn);
         _console.RegisterCommand(
+            "spawn-neutral",
+            SpawnNeutral);
+        _console.RegisterCommand(
             "WhoAmI",
             WhoAmI);
         _console.RegisterCommand(
@@ -664,6 +667,46 @@ public class ConsoleCommands
         }
 
         _ = SendSpawnRequestAsync(unitTypeId, x, y, z);
+    }
+
+    private void SpawnNeutral(string[] args)
+    {
+        if (args.Length < 1)
+        {
+            _console.Print("Usage: spawn-neutral <unit> [x [z [y]]]");
+            return;
+        }
+
+        string unitTypeId = args[0].ToLowerInvariant();
+        Vector3 target = _localPlayer.MouseWorldPosition;
+        float x = target.X;
+        float y = target.Y;
+        float z = target.Z;
+
+        if (args.Length > 1)
+            float.TryParse(args[1], out x);
+        if (args.Length > 2)
+            float.TryParse(args[2], out z);
+        if (args.Length > 3)
+            float.TryParse(args[3], out y);
+
+        _ = SendNeutralSpawnRequestAsync(unitTypeId, x, y, z);
+    }
+
+    private async System.Threading.Tasks.Task SendNeutralSpawnRequestAsync(
+        string unitTypeId,
+        float x,
+        float y,
+        float z)
+    {
+        try
+        {
+            await _rtsGame.NetworkClient.RequestNeutralSpawnAsync(unitTypeId, x, y, z);
+        }
+        catch (Exception ex)
+        {
+            _console.Print($"Network error: {ex.Message}");
+        }
     }
 
     private async System.Threading.Tasks.Task SendSpawnRequestAsync(string unitTypeId, float x, float y, float z)
