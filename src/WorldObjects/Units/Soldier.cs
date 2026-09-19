@@ -46,8 +46,9 @@ public class Soldier : MobileUnit
 
     protected float _minigunRotationDegrees = 0.0f;
     protected float _minigunRotationSpeed = 0.0f;
-    protected float _minigunRotationMaxSpeed = 0.0f;
-    private float _nextIdlePoseTimeer = 0.0f;
+    protected float _minigunRotationMaxSpeed = 256.0f;
+    protected float _minigunRotationAcceleration = 64.0f;
+    private float _nextIdlePoseTimer = 0.0f;
     private bool _isDying;
     private float _deathElapsed;
     private float _deathAnimationDuration = 0.65f;
@@ -132,15 +133,23 @@ public class Soldier : MobileUnit
 
     public void UpdateMinigun(GameTime gameTime)
     {
+        float elapsedSeconds = (float)gameTime.ElapsedGameTime.TotalSeconds;
         if (_currentUnitState == UnitActionState.Aiming)
         {
-            _minigunRotationSpeed = Math.Min(_minigunRotationMaxSpeed, _minigunRotationSpeed + 0.1f);
+            _minigunRotationSpeed = Math.Min(
+                _minigunRotationMaxSpeed,
+                _minigunRotationSpeed + _minigunRotationAcceleration * elapsedSeconds);
         }
         else
         {
-            _minigunRotationSpeed = Math.Max(0.0f, _minigunRotationSpeed - 0.1f);
+            _minigunRotationSpeed = Math.Max(
+                0.0f,
+                _minigunRotationSpeed - _minigunRotationAcceleration * elapsedSeconds);
         }
-        _minigunRotationDegrees += _minigunRotationSpeed * (float)gameTime.ElapsedGameTime.TotalSeconds;
+
+        _minigunRotationDegrees = MathHelper.WrapAngle(MathHelper.ToRadians(
+            _minigunRotationDegrees + _minigunRotationSpeed * elapsedSeconds));
+        _minigunRotationDegrees = MathHelper.ToDegrees(_minigunRotationDegrees);
     }
 
     public override void Update(GameTime gameTime)
@@ -202,15 +211,15 @@ public class Soldier : MobileUnit
 
         if (_currentUnitState == UnitActionState.Idle)
         {
-            _nextIdlePoseTimeer -= (float)gameTime.ElapsedGameTime.TotalSeconds;
-            if (_nextIdlePoseTimeer <= 0.0f)
+            _nextIdlePoseTimer -= (float)gameTime.ElapsedGameTime.TotalSeconds;
+            if (_nextIdlePoseTimer <= 0.0f)
             {
                 if (Random.Shared.Next(10) <= 3)                
                     SetRandomArmsPose();
                 if (Random.Shared.Next(10) <= 6)
                     SetRandomHeadPose();
 
-                _nextIdlePoseTimeer = 3.0f + Random.Shared.NextSingle() * 5.0f;
+                _nextIdlePoseTimer = 3.0f + Random.Shared.NextSingle() * 5.0f;
             }
         }
 
@@ -262,6 +271,14 @@ public class Soldier : MobileUnit
             ? MathHelper.Clamp((_deathElapsed - _deathAnimationDuration) / DeathSinkDuration, 0.0f, 1.0f)
             : 0.0f;
         Matrix deathSink = Matrix.CreateTranslation(Vector3.Down * (DeathSinkDepth * sinkProgress));
+
+        // Weapon attachments own their parameters. If the equipped weapon has
+        // no pivot:barrel (or no weapon is attached), this is simply ignored.
+        _meshSet?.SetAttachmentParameter(
+            "pivot:gun",
+            "pivot:barrel",
+            MathHelper.ToRadians(_minigunRotationDegrees));
+
         _meshSet?.Draw(effect, GetVisualWorldMatrix() * deathSink, GetMeshAnimationPose());
     }
 

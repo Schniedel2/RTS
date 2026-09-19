@@ -18,12 +18,8 @@ public sealed class BuildingFlag
     private const float WindInfluence = 14.4f;
     private const float Damping = 0.94f;
     private const int ConstraintIterations = 1;
-    // At full wind, the outer edge may travel about +/- 0.28 world units.
-    // This is intentionally a strong, readable RTS-scale cloth movement.
-    private const float MaximumFlutterAmplitude = 0.28f;
     private const float FlutterSpring = 90.0f;
     private const float FlutterDamping = 8.0f;
-    private const float VerticalFlutterAmplitude = 0.13f;
     private const float VerticalFlutterSpring = 42.0f;
     private const float VerticalFlutterDamping = 6.0f;
     private const float WindOrientationThreshold = 0.05f;
@@ -44,6 +40,10 @@ public sealed class BuildingFlag
     public float MastClearance { get; set; } = 0.20f;
     /// <summary>Maximum rotation rate around the mast when the wind changes direction.</summary>
     public float WindTurnDegreesPerSecond { get; set; } = 240.0f;
+    /// <summary>Maximum sideways displacement of the free edge at full wind.</summary>
+    public float FlutterAmplitude { get; set; } = 0.36f;
+    /// <summary>Maximum vertical wave amplitude of the free edge at full wind.</summary>
+    public float VerticalFlutterAmplitude { get; set; } = 0.16f;
 
     public void Update(Building building, GameTime gameTime)
     {
@@ -80,8 +80,8 @@ public sealed class BuildingFlag
 
             // A constant wind alone creates a stable sail shape. Drive a
             // travelling target wave along the cloth normal instead. This
-            // gives the outer edge a deliberately visible +/- 0.28 movement
-            // at full wind, while the mast edge remains perfectly fixed.
+            // gives the outer edge a deliberately visible configurable
+            // movement while the mast edge remains perfectly fixed.
             if (windStrength > 0.02f)
             {
                 Vector3 clothNormal = Vector3.Cross(_up, _right);
@@ -92,7 +92,7 @@ public sealed class BuildingFlag
                     edgeFactor * 8.0f + row * 0.75f;
                 float flutter = (MathF.Sin(phase) + MathF.Sin(phase * 1.73f + 0.6f) * 0.35f) / 1.35f;
                 float windFactor = MathHelper.Clamp(windStrength / 1.2f, 0.0f, 1.0f);
-                float targetOffset = flutter * MaximumFlutterAmplitude *
+                float targetOffset = flutter * FlutterAmplitude *
                     edgeFactor * edgeFactor * windFactor;
                 float currentOffset = Vector3.Dot(
                     _positions[index] - GetRestPosition(column, row), clothNormal);
@@ -119,10 +119,12 @@ public sealed class BuildingFlag
             PinMastVertices();
             ConstrainHorizontal();
             ConstrainVertical();
+            ConstrainMaximumReach();
             ConstrainMastClearance();
             ClampVerticesBelowPivot();
         }
         PinMastVertices();
+        ConstrainMaximumReach();
         ConstrainMastClearance();
         ClampVerticesBelowPivot();
     }
@@ -247,6 +249,35 @@ public sealed class BuildingFlag
         for (int row = 0; row < Rows - 1; row++)
         for (int column = 0; column < Columns; column++)
             ConstrainPair(GetIndex(column, row), GetIndex(column, row + 1), restDistance, column == 0);
+    }
+
+    /// <summary>
+    /// Structural springs may leave a little accumulated stretch under high
+    /// wind pressure. This hard reach limit keeps every row at its authored
+    /// cloth length while still allowing it to fold and flutter.
+    /// </summary>
+    private void ConstrainMaximumReach()
+    {
+        float segmentLength = Width / (Columns - 1);
+        for (int row = 0; row < Rows; row++)
+        {
+            Vector3 fixedPoint = GetRestPosition(0, row);
+            for (int column = 1; column < Columns; column++)
+            {
+                int index = GetIndex(column, row);
+                Vector3 offset = _positions[index] - fixedPoint;
+                float distance = offset.Length();
+                float maximumDistance = segmentLength * column;
+                if (distance <= maximumDistance || distance <= 0.0001f)
+                    continue;
+
+                Vector3 direction = offset / distance;
+                _positions[index] = fixedPoint + direction * maximumDistance;
+                float outwardVelocity = Vector3.Dot(_velocities[index], direction);
+                if (outwardVelocity > 0.0f)
+                    _velocities[index] -= direction * outwardVelocity;
+            }
+        }
     }
 
     /// <summary>Keeps free cloth vertices outside a mast-sized cylinder.</summary>

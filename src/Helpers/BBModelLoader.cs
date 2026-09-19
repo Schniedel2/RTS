@@ -209,6 +209,15 @@ public static class BBModelLoader
             node.RotationAxis = Vector3.Up;
             return;
         }
+
+        // A weapon's barrel pivot rolls around the barrel's local longitudinal
+        // axis. Blockbench models in this project point forwards along -Z.
+        if (isGroup && node.Name.Equals("pivot:barrel", StringComparison.OrdinalIgnoreCase))
+        {
+            node.RotationAxis = Vector3.Forward;
+            return;
+        }
+
         if (!isGroup || !node.Name.Contains("wheel", StringComparison.OrdinalIgnoreCase))
             return;
 

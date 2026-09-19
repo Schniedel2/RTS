@@ -121,6 +121,21 @@ public sealed class MeshSet
         return true;
     }
 
+    /// <summary>
+    /// Sets a mesh parameter only on the attachment at the given pivot path.
+    /// This keeps parameters of an attached weapon separate from parameters of
+    /// the owning Unit mesh. Returns false when the attachment does not exist.
+    /// </summary>
+    public bool SetAttachmentParameter(string placeholderPath, string parameterName, float value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(parameterName);
+        if (!TryGetAttachmentAtPath(placeholderPath, out Attachment? attachment))
+            return false;
+
+        attachment.MeshSet.SetParameter(parameterName, value);
+        return true;
+    }
+
     public void SetParameter(string parameterName, float value) => _parameters[parameterName] = value;
 
     public float GetParameter(string parameterName) =>
