@@ -6,8 +6,29 @@ using System.Collections.Generic;
 namespace RTS;
 
 public class Soldier : MobileUnit
-{
+{    
+    public enum Weapon
+    {
+        //  pistol
+        Brok17 = 0,
+        UziMac10,
+        //  assault rifle
+        Ak47,
+        BredaM1935PG,
+        M16,
+        AR15,
+        StenMk2Apocalypse,
+        //  sniper / hunting rifles        
+        KraberAPSniper,
+        HuntingRifle,
+        //  minigun
+        Minigun
+    }
+
+    private static readonly Weapon[] AvailableWeapons = Enum.GetValues<Weapon>();
+
     private readonly AnimationPlayer _animationPlayer;
+    public override bool UsesHitscanWeapon => true;
     public override IReadOnlyList<UnitAction> Actions =>
     [
         new(UnitActionType.Goto, "Goto", 0, 1),
@@ -16,9 +37,27 @@ public class Soldier : MobileUnit
         new(UnitActionType.Stop, "Stop", 7, 1)
     ];
 
+    protected List<string> ArmsOverlayClips = new List<string>();
+    protected List<string> FireClips = new List<string>();
+    protected List<string> DeathClips = new List<string>();
+    protected List<string> RunArmsOverlayClips = new List<string>();
+    protected List<string> HeadOverlayClips = new List<string>();
+
+
+    protected float _minigunRotationDegrees = 0.0f;
+    protected float _minigunRotationSpeed = 0.0f;
+    protected float _minigunRotationMaxSpeed = 0.0f;
     private float _nextIdlePoseTimeer = 0.0f;
-    private bool _isMoving = false;
-    private bool _isAiming = false;
+    private bool _isDying;
+    private float _deathElapsed;
+    private float _deathAnimationDuration = 0.65f;
+    private const float DeathSinkDuration = 0.65f;
+    private const float DeathSinkDepth = 1.8f;
+
+    public override bool IsDying => _isDying;
+    public override bool HasDeathExplosion => false;
+    public override bool IsReadyForRemoval =>
+        _isDying && _deathElapsed >= _deathAnimationDuration + DeathSinkDuration;
 
     public Soldier(
         Vector3 position,
@@ -32,95 +71,136 @@ public class Soldier : MobileUnit
             unitId,
             movementProfile)            
     {
-        MoveSpeed = 2.0f;
+        MoveSpeed = 3.0f;
         RotationSpeed = MathHelper.TwoPi;
         // Infantry has no independently rotating turret. While attacking, the
         // body itself tracks the target at the same speed as normal turning.
         RotateBodyTowardsTarget = true;
         TargetAngleDegreesPerSecond = MathHelper.ToDegrees(RotationSpeed);
 
-        //SetMesh("Soldier-1", deriveDimensions: true);
+        HeadOverlayClips = new List<string> { "head:idle0", "head:idle1", "head:idle2", "head:idle3" };
+        DeathClips = new List<string> { "die0", "die1", "die2" };        
         SetMesh("Soldier-2", deriveDimensions: true);
 
         //turret mount point for the weapon
-        int weapon = Random.Shared.Next(7);
-        weapon = 0;
-        if (weapon == 0)
-            _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["ak47"]);
-        if (weapon == 1)
-            _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["breda-m1935pg"]);
-        if (weapon == 2)
-            _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["brok17"]);
-        if (weapon == 3)
-            _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["kraber-ap-sniper"]);
-        if (weapon == 4)
-            _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["m16"]);
-        if (weapon == 5)
-            _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["uzi-mac-10"]);
-        if (weapon == 6)
-            _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["minigun"]);
-        
-        this.AttackCooldown = 0.2f;
+        Weapon weapon = AvailableWeapons[Random.Shared.Next(AvailableWeapons.Length)];
+        SetWeapon(weapon);
 
         _animationPlayer = new AnimationPlayer(_meshSet!.RootMesh.Animations);        
+        if (_meshSet.RootMesh.Animations.TryGetValue("die0", out MeshAnimationClip? deathClip))
+            _deathAnimationDuration = Math.Max(0.05f, deathClip.DurationSeconds);
         _animationPlayer.Play("idle");
         _animationPlayer.SetRandomAnimationTime();
         _animationPlayer.Speed = 0.9f + Random.Shared.NextSingle() * 0.2f;
         //_animationPlayer.AddOverlay("pose:idleRifle", weight: 1.0f);        
 
-        _animationPlayer.AddOverlay("arms:idleRifle0");
-        _animationPlayer.AddOverlay("head:idle0");
         SetRandomArmsPose();
+        SetRandomArmsPose();
+        SetRandomHeadPose();
         SetRandomHeadPose();
     }
 
     public void SetRandomArmsPose()
-    {
-        int i = Random.Shared.Next(4);
-        _animationPlayer.AddOverlayTransition("arms", "arms:idleRifle" + i, 0.4f + Random.Shared.NextSingle() * 0.2f);
+    {                
+        string clipName = ArmsOverlayClips[Random.Shared.Next(ArmsOverlayClips.Count)];
+        _animationPlayer.AddOverlayTransition("arms", clipName, 0.4f + Random.Shared.NextSingle() * 0.2f);
     }
+
+    public void SetRandomRunningArmsPose()
+    {
+        string clipName = RunArmsOverlayClips[Random.Shared.Next(RunArmsOverlayClips.Count)];
+        _animationPlayer.AddOverlayTransition("arms", clipName, 0.3f + Random.Shared.NextSingle() * 0.2f);
+    }
+
+    public string GetRandomFireClip()
+    {
+        string clipName = FireClips[Random.Shared.Next(FireClips.Count)];
+        return clipName;
+    }
+
+    public string GetRandomDeathClip()
+    {
+        string clipName = DeathClips[Random.Shared.Next(DeathClips.Count)];
+        return clipName;
+    }
+
     public void SetRandomHeadPose()
     {
-        int i = Random.Shared.Next(4);
-        _animationPlayer.AddOverlayTransition("head", "head:idle" + i, 0.3f + Random.Shared.NextSingle() * 0.2f);
+        string clipName = HeadOverlayClips[Random.Shared.Next(HeadOverlayClips.Count)];
+        _animationPlayer.AddOverlayTransition("head", clipName, 0.3f + Random.Shared.NextSingle() * 0.2f);
+    }
+
+    public void UpdateMinigun(GameTime gameTime)
+    {
+        if (_currentUnitState == UnitActionState.Aiming)
+        {
+            _minigunRotationSpeed = Math.Min(_minigunRotationMaxSpeed, _minigunRotationSpeed + 0.1f);
+        }
+        else
+        {
+            _minigunRotationSpeed = Math.Max(0.0f, _minigunRotationSpeed - 0.1f);
+        }
+        _minigunRotationDegrees += _minigunRotationSpeed * (float)gameTime.ElapsedGameTime.TotalSeconds;
     }
 
     public override void Update(GameTime gameTime)
     {
+        if (_isDying)
+        {
+            _currentUnitState = UnitActionState.Dying;
+            _deathElapsed += (float)gameTime.ElapsedGameTime.TotalSeconds;
+            _animationPlayer.Update((float)gameTime.ElapsedGameTime.TotalSeconds);
+            return;
+        }
+
+        UpdateMinigun(gameTime);
         base.Update(gameTime);
 
-        bool wasAiming = _isAiming;
-        bool wasMoving = _isMoving;
 
-        _isMoving = PlannedPath.Count > 0;
+        var lastUnitState = _currentUnitState;
+
+        bool isMoving = PlannedPath.Count > 0;
 
         bool hasAttackOrder =
             AttackTargetId is not null ||
             AttackGroundTarget is not null;
-        _isAiming = hasAttackOrder && !_isMoving;
+        bool isAiming = hasAttackOrder && !isMoving;
 
-        if (wasAiming && !_isAiming)
+        if (isMoving)
+            _currentUnitState = UnitActionState.Moving;
+        else if (isAiming)
+            _currentUnitState = UnitActionState.Aiming;
+        else
+            _currentUnitState = UnitActionState.Idle;
+
+        if (lastUnitState != _currentUnitState)
         {
-            SetRandomArmsPose();
-            SetRandomHeadPose();
+            if (lastUnitState == UnitActionState.Aiming)
+            {
+                _animationPlayer.AddOverlayTransition("arms", _animationPlayer.CurrentClipName, 0.0f); // <- force this clip as the transition-
+                //SetRandomArmsPose();
+                _animationPlayer.Play("idle");
+            }
+
+            if (_currentUnitState == UnitActionState.Moving)
+            {
+                SetRandomRunningArmsPose();
+                _animationPlayer.Play("run");
+            }
+            else if (_currentUnitState == UnitActionState.Idle)
+            {
+                SetRandomArmsPose();
+                _animationPlayer.Play("idle");
+            }
+            else if (_currentUnitState == UnitActionState.Aiming)
+            {
+                _animationPlayer.RemoveOverlayLayer("arms");
+                _animationPlayer.RemoveOverlayLayer("head");
+                _animationPlayer.Play(GetRandomFireClip());
+            }
         }
 
-        if (!wasAiming && _isAiming)
-        {
-            _animationPlayer.RemoveOverlayLayer("arms");
-            _animationPlayer.RemoveOverlayLayer("head");
-        }
-
-        if (_isMoving && !wasMoving)
-            _animationPlayer.AddOverlayTransition("arms", "arms:idleRifle1", 0.5f);
-
-        string anim = "idle";
-        if (_isAiming)
-            anim = "fire:rifle0";
-        if (_isMoving)
-            anim = "run";
-
-        if (anim == "idle") 
+        if (_currentUnitState == UnitActionState.Idle)
         {
             _nextIdlePoseTimeer -= (float)gameTime.ElapsedGameTime.TotalSeconds;
             if (_nextIdlePoseTimeer <= 0.0f)
@@ -134,13 +214,27 @@ public class Soldier : MobileUnit
             }
         }
 
-        _animationPlayer.Play(anim);
-        //_animationPlayer.AddOverlay("pose:idleRifle", weight: 1.0f);
         _animationPlayer.Update((float)gameTime.ElapsedGameTime.TotalSeconds);
+    }
+
+    public override bool BeginDeathSequence()
+    {
+        if (_isDying)
+            return true;
+
+        _isDying = true;
+        _deathElapsed = 0.0f;
+        IsSelected = false;
+        Stop();
+        _animationPlayer.ClearOverlays();
+        _animationPlayer.Play(GetRandomDeathClip(), restart: true);
+        return true;
     }
 
     public override void PlayShotEffects()
     {
+        if (_isDying)
+            return;
         TriggerVisualRecoil(new Vector3(0.0f, 0.0f, 0.0f), -5.0f);
         Vector3 localBarrelDirection = Vector3.TransformNormal(
             Vector3.Forward,
@@ -164,8 +258,100 @@ public class Soldier : MobileUnit
 
     public override void Draw(Effect effect)
     {
-        _meshSet?.Draw(effect, GetVisualWorldMatrix(), GetMeshAnimationPose());
+        float sinkProgress = _isDying
+            ? MathHelper.Clamp((_deathElapsed - _deathAnimationDuration) / DeathSinkDuration, 0.0f, 1.0f)
+            : 0.0f;
+        Matrix deathSink = Matrix.CreateTranslation(Vector3.Down * (DeathSinkDepth * sinkProgress));
+        _meshSet?.Draw(effect, GetVisualWorldMatrix() * deathSink, GetMeshAnimationPose());
     }
 
     protected override AnimationPose GetMeshAnimationPose() => _animationPlayer.EvaluatePose();
+    
+    void SetWeaponType_Rifle()
+    {        
+        ArmsOverlayClips = new List<string> { "arms:idleRifle0", "arms:idleRifle1", "arms:idleRifle2", "arms:idleRifle3" };
+        RunArmsOverlayClips = new List<string> { "arms:idleRifle1", "arms:idleRifle2" };
+        FireClips = new List<string> { "fire:Rifle0", "fire:Rifle1" };
+    }
+
+    void SetWeaponType_Pistol()
+    {        
+        ArmsOverlayClips = new List<string> { "arms:idlePistol0", "arms:idlePistol1", "arms:idlePistol2" };
+        RunArmsOverlayClips = new List<string> { "arms:idlePistol2" };
+        FireClips = new List<string> { "fire:Pistol0", "fire:Pistol1" };
+    }
+
+    void SetWeaponType_Minigun()
+    {        
+        ArmsOverlayClips = new List<string> { "arms:idleMinigun0", "arms:idleMinigun1", "arms:idleMinigun2" };
+        RunArmsOverlayClips = new List<string> { "arms:idleMinigun1", "arms:idleMinigun2" };
+        FireClips = new List<string> { "fire:Minigun0"};
+    }
+
+    public void SetWeapon(Weapon weaponType)
+    {        
+        switch (weaponType)
+        {
+            case Weapon.Ak47:
+                SetWeaponType_Rifle();
+                _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["ak47"]);
+                this.AttackCooldown = 0.2f;
+                this.AttackDamage = 25.0f;
+                break;
+            case Weapon.BredaM1935PG:
+                SetWeaponType_Rifle();
+                _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["breda-m1935pg"]);
+                this.AttackCooldown = 0.2f;
+                this.AttackDamage = 15.0f;
+                break;
+            case Weapon.Brok17:
+                SetWeaponType_Pistol();
+                _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["brok17"]);
+                this.AttackCooldown = 0.5f;
+                this.AttackDamage = 25.0f;
+                break;
+            case Weapon.KraberAPSniper:
+                SetWeaponType_Rifle();
+                _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["kraber-ap-sniper"]);
+                this.AttackCooldown = 5.0f;
+                this.AttackDamage = 200.0f;
+                break;                
+            case Weapon.HuntingRifle:
+                SetWeaponType_Rifle();
+                _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["hunting"]);
+                this.AttackCooldown = 5.0f;
+                this.AttackDamage = 200.0f;
+                break;                
+            case Weapon.M16:
+                SetWeaponType_Rifle();
+                _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["m16"]);
+                this.AttackCooldown = 0.2f;
+                this.AttackDamage = 25.0f;
+                break;
+            case Weapon.AR15:
+                SetWeaponType_Rifle();
+                _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["ar-15"]);
+                this.AttackCooldown = 0.2f;
+                this.AttackDamage = 25.0f;
+                break;
+            case Weapon.StenMk2Apocalypse:
+                SetWeaponType_Rifle();
+                _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["sten-mk2-apocalypse"]);
+                this.AttackCooldown = 0.2f;
+                this.AttackDamage = 25.0f;
+                break;
+            case Weapon.UziMac10:
+                SetWeaponType_Pistol();
+                _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["uzi-mac-10"]);
+                this.AttackCooldown = 0.3f;
+                this.AttackDamage = 15.0f;
+                break;
+            case Weapon.Minigun:
+                SetWeaponType_Minigun();
+                _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["minigun"]);
+                this.AttackCooldown = 0.01f;
+                this.AttackDamage = 25.0f;
+                break;
+        }
+    }
 }

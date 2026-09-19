@@ -115,6 +115,12 @@ public class PlayerHandler
 
     public void Update(GameTime gameTime, Camera camera, Viewport viewport)
     {
+        if (_selectedUnits.RemoveAll(unit => !unit.IsSelectable) > 0)
+        {
+            ActiveAction = null;
+            NotifySelectionChanged();
+        }
+
         _isDrag = false;        
 
         MouseState mouse = Mouse.GetState();
@@ -307,6 +313,8 @@ public class PlayerHandler
 
         foreach (Unit unit in _map.Units.Units)
         {
+            if (!unit.IsSelectable)
+                continue;
             Rectangle unitBounds = unit.GetScreenBounds(
                 camera.View,
                 camera.Projection,
@@ -462,7 +470,7 @@ public class PlayerHandler
 
         private Unit? FindUnitAt(Camera camera, Viewport viewport, Point screenPosition)
         {
-            return _map.Units.Units.FirstOrDefault(unit => unit.GetScreenBounds(
+            return _map.Units.Units.FirstOrDefault(unit => unit.IsSelectable && unit.GetScreenBounds(
                 camera.View, camera.Projection, viewport).Contains(screenPosition));
         }
 

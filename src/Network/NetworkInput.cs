@@ -149,6 +149,12 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type == NetworkMessageType.BulletImpactCommand)
+        {
+            ExecuteBulletImpact(message);
+            return;
+        }
+
         if (message.Type == NetworkMessageType.AttackTargetCommand)
         {
             ExecuteAttackTarget(message);
@@ -268,10 +274,17 @@ public sealed class NetworkInput
                 continue;
 
             attacker.PlayShotEffects();
+            if (attacker.UsesHitscanWeapon)
+                continue;
             if (!attacker.TryGetMuzzleWorldPosition(out Vector3 start))
                 start = attacker.Position + Vector3.Up * (attacker.Height * 0.75f);
             Globals.World.Projectiles.Fire(start, target);
         }
+    }
+
+    private static void ExecuteBulletImpact(NetworkMessage message)
+    {
+        Globals.World.Particles.EmitBulletImpact(new Vector3(message.X, message.Y, message.Z));
     }
 
     private void ExecuteAttackTarget(NetworkMessage message)
@@ -330,7 +343,8 @@ public sealed class NetworkInput
             Globals.World.Units.FindById(unitId) is not Unit unit)
             return;
 
-        Globals.World.Particles.EmitExplosion(unit.Position + Vector3.Up);
+        if (unit.HasDeathExplosion)
+            Globals.World.Particles.EmitExplosion(unit.Position + Vector3.Up);
         Globals.World.Units.Destroy(unitId);
     }
 

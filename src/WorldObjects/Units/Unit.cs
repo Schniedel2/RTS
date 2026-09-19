@@ -14,6 +14,14 @@ public enum UnitBehavior
 
 public abstract class Unit : WorldObject
 {
+    public enum UnitActionState
+    {
+        Idle,
+        Moving,
+        Aiming,
+        Dying
+    }
+    protected UnitActionState _currentUnitState = UnitActionState.Idle;    
     public Guid UnitId { get; }
     public float HitPoints { get; set; }
     public float MaxHitPoints { get; }
@@ -30,13 +38,35 @@ public abstract class Unit : WorldObject
     public Vector3 FootprintLocalCenter { get; protected set; }
     public bool IsSelected { get; set; }
     public GotoCommand? CurrentCommand { get; protected set; }
+    /// <summary>True while this unit is visually playing its death sequence.</summary>
+    public virtual bool IsDying => false;
+    /// <summary>Death ghosts remain drawable but cannot be selected or targeted.</summary>
+    public bool CanBeTargeted => !IsDying;
+    public bool IsSelectable => !IsDying;
+    /// <summary>Lets a unit keep itself alive locally for a death animation.</summary>
+    public virtual bool BeginDeathSequence() => false;
+    /// <summary>Set by animated death units once their local visual has finished.</summary>
+    public virtual bool IsReadyForRemoval => false;
+    /// <summary>Whether generic destruction should create the large explosion effect.</summary>
+    public virtual bool HasDeathExplosion => true;
     public virtual IReadOnlyList<UnitAction> Actions =>
     [
         new(UnitActionType.Goto, "Goto", 0, 0)
     ];
     public override string StateTypeId => "unit";
     public float AttackRange { get; set; } = 12.0f;
+    /// <summary>
+    /// Base damage caused by one successful attack. This is deliberately a
+    /// plain field for now; individual unit constructors can simply assign
+    /// their own fixed value.
+    /// </summary>
+    public float AttackDamage = 25.0f;
     public float AttackCooldown { get; set; } = 0.75f; // in seconds
+    /// <summary>
+    /// Hitscan weapons have no visible travelling projectile. The host sends a
+    /// separate impact position to peers after triggering the muzzle effect.
+    /// </summary>
+    public virtual bool UsesHitscanWeapon => false;
     public Guid? AttackTargetId { get; private set; }
     public Vector3? AttackGroundTarget { get; private set; }
     /// <summary>Unit to keep within <see cref="FollowDistance"/> world units of.</summary>
@@ -319,6 +349,25 @@ public abstract class Unit : WorldObject
     }
 
     /// <summary>
+    /// Clears commands and visual targeting that refer to a unit which has
+    /// just been removed from the world. Called centrally by UnitHandler so
+    /// host and clients converge as soon as a DestroyUnitCommand is applied.
+    /// </summary>
+    public void ClearReferencesToDestroyedUnit(Guid destroyedUnitId)
+    {
+        if (AttackTargetId == destroyedUnitId)
+            AttackTargetId = null;
+
+        if (FollowUnitId == destroyedUnitId)
+            ClearFollowUnit();
+
+        if (TargetUnitId == destroyedUnitId)
+            ClearTarget();
+        else if (TemporaryTargetUnitId == destroyedUnitId)
+            ClearTemporaryTarget();
+    }
+
+    /// <summary>
     /// Starts a non-attacking follow order. The spacing is captured when the
     /// host command is applied, so the unit preserves the player's formation.
     /// </summary>
@@ -438,7 +487,7 @@ public abstract class Unit : WorldObject
 
     /// <summary>Central extension point evaluated by the host before a defensive target is assigned.</summary>
     public virtual bool ShouldAttack(Unit candidate) =>
-        Behavior == UnitBehavior.Aggressive && IsEnemy(candidate);
+        !IsDying && candidate.CanBeTargeted && Behavior == UnitBehavior.Aggressive && IsEnemy(candidate);
 
     /// <summary>
     /// Advances the local mesh angle towards the current target. Call this
@@ -544,6 +593,8 @@ public abstract class Unit : WorldObject
 
     public bool IsReadyToShoot(double hostTime) // this is a host function
     {
+        if (IsDying)
+            return false;
         if (hostTime < _nextShotTime)
             return false;
 
@@ -660,9 +711,15 @@ public abstract class Unit : WorldObject
 
     public bool TryQueueShot(double hostTime, out Unit? target)
     {
+        if (IsDying)
+        {
+            target = null;
+            return false;
+        }
+
         Guid? targetId = AttackTargetId ?? TemporaryTargetUnitId;
         target = targetId is Guid id ? Globals.World.Units.FindById(id) : null;
-        if (target is null)
+        if (target is null || !target.CanBeTargeted)
         {
             if (AttackTargetId is not null)
                 AttackTargetId = null;

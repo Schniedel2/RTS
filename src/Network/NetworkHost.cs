@@ -277,16 +277,25 @@ public sealed class NetworkHost
     private async Task ResolveGroundAttackAsync(NetworkMessage request)
     {
         const float attackRadius = 1.5f;
-        const float damagePerAttacker = 25.0f;
         Vector3 impactPosition = new(request.X, request.Y, request.Z);
 
         foreach (Guid attackerId in request.UnitIds ?? Array.Empty<Guid>())
         {
-            if (_world.Units.FindById(attackerId) is not Unit)
+            if (_world.Units.FindById(attackerId) is not Unit attacker || attacker.IsDying)
                 continue;
+
+            if (attacker.UsesHitscanWeapon)
+            {
+                NetworkMessage impactCommand = NetworkCommands.CreateBulletImpactCommand(
+                    _networkHandler.LocalPeerId, attackerId, impactPosition);
+                _networkHandler.EnqueueLocalMessage(impactCommand);
+                await _networkHandler.BroadcastAsync(impactCommand, CancellationToken.None);
+            }
 
             Unit? target = _world.Units.Units.FirstOrDefault(unit =>
             {
+                if (!unit.CanBeTargeted)
+                    return false;
                 Vector2 offset = new(
                     unit.Position.X - impactPosition.X,
                     unit.Position.Z - impactPosition.Z);
@@ -296,14 +305,14 @@ public sealed class NetworkHost
             if (target is null)
                 continue;
 
-            HitInfo hit = new(attackerId, impactPosition, damagePerAttacker);
+            HitInfo hit = new(attackerId, impactPosition, attacker.AttackDamage);
             bool destroyed = target.OnHit(hit);
             NetworkMessage hitCommand = NetworkCommands.CreateUnitHitCommand(
                 _networkHandler.LocalPeerId,
                 target.UnitId,
                 attackerId,
                 impactPosition,
-                damagePerAttacker,
+                attacker.AttackDamage,
                 target.HitPoints);
             _networkHandler.EnqueueLocalMessage(hitCommand);
             await _networkHandler.BroadcastAsync(hitCommand, CancellationToken.None);

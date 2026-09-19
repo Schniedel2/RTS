@@ -36,6 +36,8 @@ public static class Globals
     public static MeshHandler MeshHandler = null!;
     public static SkinHandler SkinHandler = null!;
     public static TextureHandler TextureHandler = null!;
+    /// <summary>Dedicated atlas set for per-mesh material masks.</summary>
+    public static TextureHandler MaterialMaskTextureHandler = null!;
     public static TilemapHandler TilemapHandler = null!;
     public static Texture2D ActionIcons = null!;
     public static Texture2D UnitsTexture = null!;

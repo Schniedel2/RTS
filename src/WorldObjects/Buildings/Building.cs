@@ -10,11 +10,14 @@ namespace RTS;
 public class Building : Unit
 {
     private sealed record BuildingState(float ConstructionProgress);
+    private readonly BuildingFlag _ownerFlag = new();
 
     public float ConstructionProgress { get; private set; }
     public float ConstructionPercentage => ConstructionProgress / TotalBuildingPointsNeeded;
     public float TotalBuildingPointsNeeded { get; set; }
     public float RemainingBuildingPoints => TotalBuildingPointsNeeded - ConstructionProgress;
+    /// <summary>Draw a local cloth flag when the building mesh exposes <c>pivot:flag</c>.</summary>
+    public bool ShowOwnerFlag { get; set; } = true;
     public override string StateTypeId => "building-state";
 
     public Building(
@@ -31,6 +34,29 @@ public class Building : Unit
     }
 
     public bool IsCompleted => ConstructionProgress >= TotalBuildingPointsNeeded;
+
+    internal bool TryGetFlagPivotWorldTransform(out Matrix pivotWorld) =>
+        _meshSet?.TryGetPivotWorldTransform("pivot:flag", GetWorldMatrix(), out pivotWorld) ??
+        SetMissingFlagPivot(out pivotWorld);
+
+    internal void DrawOwnerFlag(Effect effect, Color color)
+    {
+        if (ShowOwnerFlag && ArmyId is not null)
+            _ownerFlag.Draw(effect, color);
+    }
+
+    public override void DrawShadow(Effect effect)
+    {
+        base.DrawShadow(effect);
+        if (ShowOwnerFlag && ArmyId is not null)
+            _ownerFlag.DrawShadow(effect);
+    }
+
+    private static bool SetMissingFlagPivot(out Matrix pivotWorld)
+    {
+        pivotWorld = Matrix.Identity;
+        return false;
+    }
 
     public void AdvanceConstruction(float buildPoints)
     {
@@ -146,5 +172,7 @@ public class Building : Unit
     public override void Update(GameTime gameTime)
     {
         base.Update(gameTime);
+        if (ShowOwnerFlag && ArmyId is not null)
+            _ownerFlag.Update(this, gameTime);
     }
 }

@@ -38,6 +38,7 @@ public enum NetworkMessageType
     StopCommand,
     AttackRequest,
     AttackCommand,
+    BulletImpactCommand,
     AttackTargetRequest,
     AttackTargetCommand,
     AttackGroundRequest,

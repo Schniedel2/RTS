@@ -22,12 +22,13 @@ public class GDIBarracks : Building
 
         TotalBuildingPointsNeeded = 2500;
         HitPoints = 2500;
+
+        SetMesh("barracks-1", deriveDimensions: true);
     }
 
     public override void Draw(Effect effect)
     {
-        Matrix world = GetWorldMatrix();
-        Globals.MeshHandler.DrawMesh(effect, "gdi-barracks", world);
+        base.Draw(effect);
     }
 
     public IReadOnlyList<UnitAction> GetUnitActions()

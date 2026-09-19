@@ -71,7 +71,11 @@ public class UnitHandler
     public void Update(GameTime gameTime)
     {
         foreach (Unit unit in _units)
-                unit.Update(gameTime);
+            unit.Update(gameTime);
+
+        for (int index = _units.Count - 1; index >= 0; index--)
+            if (_units[index].IsReadyForRemoval)
+                RemoveImmediately(_units[index]);
     }
 
     public void DrawShadow(Effect effect)
@@ -92,7 +96,22 @@ public class UnitHandler
             Globals.SkinHandler.ApplyToEffect(effect, owner?.Skin ?? PlayerSkin.Green);
             effect.Parameters["UnitTextureUVOffset"]?.SetValue(unit.UnitTextureUVOffset);
             unit.Draw(effect);
+            unit.DrawOwnerFlag(effect, ResolveArmyFlagColor(unit));
         }
+    }
+
+    private static Color ResolveArmyFlagColor(Unit unit)
+    {
+        Player? owner = null;
+        if (unit.ArmyId is Guid armyId)
+        {
+            Army? army = Globals.Game.Armies.Find(armyId);
+            Guid? colorOwnerId = army?.OwnerPlayerIds.OrderBy(id => id).FirstOrDefault();
+            if (colorOwnerId is Guid playerId && playerId != Guid.Empty)
+                owner = Globals.Game.Players.FirstOrDefault(player => player.Id == playerId);
+        }
+        owner ??= Globals.Game.Players.FirstOrDefault(player => player.Id == unit.CreatorPlayerId);
+        return Globals.SkinHandler.GetDisplayColor(owner?.Skin ?? PlayerSkin.Green);
     }
 
     public void DrawMobileUnits(Effect effect)
@@ -116,9 +135,27 @@ public class UnitHandler
         if (unit is null)
             return false;
 
+        // A repeated destroy command while the local death animation is still
+        // running must not make the ghost vanish prematurely.
+        if (unit.IsDying)
+            return true;
+
+        // An attack target may disappear before the next host simulation
+        // tick. Clear every reference immediately, on host and clients alike.
+        foreach (Unit other in _units)
+            if (other != unit)
+                other.ClearReferencesToDestroyedUnit(unitId);
+
+        Globals.World.GameGrid.Remove(unit);
+        if (!unit.BeginDeathSequence())
+            _units.Remove(unit);
+        return true;
+    }
+
+    private void RemoveImmediately(Unit unit)
+    {
         Globals.World.GameGrid.Remove(unit);
         _units.Remove(unit);
-        return true;
     }
 
     public void Draw2D(SpriteBatch spriteBatch, Camera camera, Viewport viewport)

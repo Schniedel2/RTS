@@ -183,6 +183,77 @@ public sealed class ParticleSystem
         }
     }
 
+    /// <summary>
+    /// Renders the small, local visual impact of a hitscan bullet. The host
+    /// replicates the position; the surface-dependent presentation stays local
+    /// and can be refined without affecting simulation or networking.
+    /// </summary>
+    public void EmitBulletImpact(Vector3 impactPosition)
+    {
+        Terrain terrain = Globals.World.Terrain;
+        int x = Math.Clamp((int)MathF.Floor(impactPosition.X), 0, terrain.Width - 1);
+        int z = Math.Clamp((int)MathF.Floor(impactPosition.Z), 0, terrain.Height - 1);
+        impactPosition.Y = terrain.GetHeight(x, z) + 0.025f;
+
+        TerrainTile surface = terrain.GetTile(x, z);
+        Color dustColor = surface switch
+        {
+            TerrainTile.Sand => new Color(208, 180, 116),
+            TerrainTile.Dirt => new Color(121, 90, 57),
+            TerrainTile.Grass => new Color(102, 119, 65),
+            TerrainTile.Stones or TerrainTile.Rock => new Color(145, 145, 140),
+            _ => Color.LightGray
+        };
+
+        // Tiny solid fragments make a bullet strike readable even at a
+        // distance. Their tint follows the surface, they have no wind or
+        // buoyancy, and disappear before they can look like an explosion.
+        if (Globals.TilemapHandler.TryGet("Sparks", out TilemapHandler.Tilemap fragments))
+        {
+            for (int index = 0; index < 4 && HasParticleCapacity; index++)
+            {
+                float angle = Random.Shared.NextSingle() * MathHelper.TwoPi;
+                Vector3 direction = new(MathF.Cos(angle), 0.0f, MathF.Sin(angle));
+                _smokeParticles.Add(new SmokeParticle(
+                    position: impactPosition + Vector3.Up * 0.025f,
+                    velocity: direction * (0.65f + Random.Shared.NextSingle() * 0.65f) + Vector3.Up * (0.35f + Random.Shared.NextSingle() * 0.25f),
+                    tilemap: fragments,
+                    tileIndex: Random.Shared.Next(fragments.TileCount),
+                    startSize: 0.395f + Random.Shared.NextSingle() * 0.045f,
+                    endSize: 0.012f,
+                    lifetime: 0.12f + Random.Shared.NextSingle() * 0.07f,
+                    rotationRadians: Random.Shared.NextSingle() * MathHelper.TwoPi,
+                    rotationSpeedRadians: 0.0f,
+                    color: dustColor,
+                    opacity: 0.95f,
+                    windInfluence: 0.0f,
+                    buoyancy: 0.0f));
+            }
+        }
+
+        // A couple of extremely short, tinted dust billboards form the base
+        // effect. They may drift a little after the initial impact, unlike the
+        // muzzle flash, because they represent loose surface material.
+        EmitSmoke(impactPosition, Vector3.Up, new SmokeEmissionSettings
+        {
+            ParticleCount = 2,
+            Intensity = 0.55f,
+            EmissionLength = 0.08f,
+            ForwardSpeed = 0.20f,
+            ForwardSpeedVariation = 0.12f,
+            SidewaysSpread = 0.32f,
+            UpwardSpeed = 0.45f,
+            UpwardSpeedVariation = 0.15f,
+            StartSize = 0.07f,
+            EndSize = 0.18f,
+            Lifetime = 0.22f,
+            LifetimeVariation = 0.06f,
+            Color = dustColor,
+            Opacity = 0.58f,
+            WindInfluence = 0.20f
+        });
+    }
+
     /// <summary>Emits a configurable smoke burst in an arbitrary world direction.</summary>
     public void EmitSmoke(
         Vector3 position,

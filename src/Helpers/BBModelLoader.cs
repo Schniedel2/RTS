@@ -14,6 +14,7 @@ public static class BBModelLoader
     private sealed record ImportedTexture(
         TextureHandler.TextureRegion Visible,
         TextureHandler.TextureRegion? MaterialMask);
+    private sealed record EmbeddedTextureEntry(int Index, int? Id, string? FileName, string? Source);
 
     public static Mesh Load(string path, Color? color = null)
     {
@@ -84,7 +85,9 @@ public static class BBModelLoader
                 string groupName = groupNameValue.GetString()!;
                 MeshAnimationTrack track = new();
                 ReadKeyframes(animator, "rotation", track.RotationKeys);
-                ReadKeyframes(animator, "position", track.PositionKeys);
+                // Blockbench position keys use model pixels, while imported
+                // mesh coordinates are converted to world units.
+                ReadKeyframes(animator, "position", track.PositionKeys, ModelScale);
                 ReadKeyframes(animator, "scale", track.ScaleKeys);
                 if (track.RotationKeys.Count > 0 || track.PositionKeys.Count > 0 || track.ScaleKeys.Count > 0)
                     clip.Tracks[groupName] = track;
@@ -93,7 +96,11 @@ public static class BBModelLoader
         }
     }
 
-    private static void ReadKeyframes(JsonElement animator, string channel, List<MeshAnimationKeyframe> destination)
+    private static void ReadKeyframes(
+        JsonElement animator,
+        string channel,
+        List<MeshAnimationKeyframe> destination,
+        float valueScale = 1.0f)
     {
         if (!animator.TryGetProperty("keyframes", out JsonElement keyframes) || keyframes.ValueKind != JsonValueKind.Array)
             return;
@@ -109,7 +116,7 @@ public static class BBModelLoader
             JsonElement point = points[0];
             if (!TryReadAnimationVector(point, out Vector3 value))
                 continue;
-            destination.Add(new MeshAnimationKeyframe(time, value));
+            destination.Add(new MeshAnimationKeyframe(time, value * valueScale));
         }
         destination.Sort((left, right) => left.TimeSeconds.CompareTo(right.TimeSeconds));
     }
@@ -158,6 +165,11 @@ public static class BBModelLoader
             if (!elementsByUuid.TryGetValue(item.GetString()!, out SubMesh? subMesh))
                 return null;
             MeshNode leaf = new(subMesh.Name, subMesh.Pivot);
+            // Blockbench animation tracks address groups/bones, never mesh
+            // elements.  Keeping leaves out of pose lookup avoids applying a
+            // group animation twice when names only differ in casing, e.g.
+            // group "head" with mesh element "Head".
+            leaf.ReceivesAnimationPose = false;
             leaf.SubMeshes.Add(subMesh);
             ApplyRotationParameter(leaf, isGroup: false);
             return leaf;
@@ -466,6 +478,7 @@ public static class BBModelLoader
             return regions;
 
         string modelDirectory = Path.GetDirectoryName(Path.GetFullPath(modelPath))!;
+        List<EmbeddedTextureEntry> entries = [];
         int index = 0;
         foreach (JsonElement texture in textures.EnumerateArray())
         {
@@ -479,49 +492,83 @@ public static class BBModelLoader
             string? embeddedSource = texture.TryGetProperty("source", out JsonElement sourceElement)
                 ? sourceElement.GetString()
                 : null;
-            bool hasEmbeddedSource = !string.IsNullOrWhiteSpace(embeddedSource) &&
-                embeddedSource.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase);
+            int? id = texture.TryGetProperty("id", out JsonElement idElement) &&
+                int.TryParse(idElement.GetString(), out int parsedId)
+                ? parsedId
+                : null;
+            entries.Add(new EmbeddedTextureEntry(index, id, textureFileName, embeddedSource));
+            index++;
+        }
 
+        Dictionary<string, EmbeddedTextureEntry> embeddedMasks = new(StringComparer.OrdinalIgnoreCase);
+        foreach (EmbeddedTextureEntry entry in entries)
+            if (IsMaterialMaskFileName(entry.FileName) && IsEmbeddedImage(entry.Source))
+                embeddedMasks[GetTextureBaseName(entry.FileName)] = entry;
+
+        foreach (EmbeddedTextureEntry entry in entries)
+        {
             // BBModels are self-contained assets: only their embedded images
             // are used for visible mesh textures. In particular, do not fall
             // back to a PNG next to the model merely because it has the same
             // filename as a Blockbench texture entry.
-            if (!hasEmbeddedSource)
-            {
-                index++;
+            if (IsMaterialMaskFileName(entry.FileName) || !IsEmbeddedImage(entry.Source))
                 continue;
-            }
 
             // The model's full path makes this key unique across BBModels, so
             // two models may both embed e.g. "texture.png" without sharing or
             // overwriting an atlas region. The index distinguishes multiple
             // textures inside one model.
-            string embeddedKey = $"bbmodel:{Path.GetFullPath(modelPath)}:texture:{index}";
+            string embeddedKey = $"bbmodel:{Path.GetFullPath(modelPath)}:texture:{entry.Index}";
             TextureHandler.TextureRegion region = Globals.TextureHandler.TryGetTextureRegionByCacheKey(embeddedKey, out TextureHandler.TextureRegion existing)
                 ? existing
-                : Globals.TextureHandler.AddTextureFromDataUri(embeddedKey, embeddedSource!);
+                : Globals.TextureHandler.AddTextureFromDataUri(embeddedKey, entry.Source!);
             TextureHandler.TextureRegion? mask = null;
-            if (!string.IsNullOrWhiteSpace(textureFileName))
+            if (embeddedMasks.TryGetValue(GetTextureBaseName(entry.FileName), out EmbeddedTextureEntry? embeddedMask))
             {
-                string texturePath = Path.GetFullPath(Path.Combine(modelDirectory, textureFileName));
+                string maskKey = $"bbmodel:{Path.GetFullPath(modelPath)}:material-mask:{embeddedMask.Index}";
+                mask = Globals.MaterialMaskTextureHandler.TryGetTextureRegionByCacheKey(maskKey, out TextureHandler.TextureRegion existingMask)
+                    ? existingMask
+                    : Globals.MaterialMaskTextureHandler.AddTextureFromDataUri(maskKey, embeddedMask.Source!);
+            }
+            else if (!string.IsNullOrWhiteSpace(entry.FileName))
+            {
+                // Existing external masks remain supported while models are
+                // gradually migrated to self-contained BBModel assets.
+                string texturePath = Path.GetFullPath(Path.Combine(modelDirectory, entry.FileName));
                 string maskPath = Path.Combine(
                     Path.GetDirectoryName(texturePath)!,
                     $"{Path.GetFileNameWithoutExtension(texturePath)}-MaterialMask.png");
                 mask = File.Exists(maskPath)
-                    ? (Globals.TextureHandler.TryGetTextureRegion(maskPath, out TextureHandler.TextureRegion existingMask)
+                    ? (Globals.MaterialMaskTextureHandler.TryGetTextureRegion(maskPath, out TextureHandler.TextureRegion existingMask)
                         ? existingMask
-                        : Globals.TextureHandler.AddTexture(maskPath))
+                        : Globals.MaterialMaskTextureHandler.AddTexture(maskPath))
                     : null;
             }
             ImportedTexture importedTexture = new(region, mask);
-            regions[index] = importedTexture;
+            regions[entry.Index] = importedTexture;
 
-            if (texture.TryGetProperty("id", out JsonElement idElement) &&
-                int.TryParse(idElement.GetString(), out int id))
+            if (entry.Id is int id)
                 regions[id] = importedTexture;
-            index++;
         }
         return regions;
+    }
+
+    private static bool IsEmbeddedImage(string? source) =>
+        !string.IsNullOrWhiteSpace(source) &&
+        source.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsMaterialMaskFileName(string? fileName) =>
+        !string.IsNullOrWhiteSpace(fileName) &&
+        Path.GetFileNameWithoutExtension(fileName)
+            .EndsWith("-MaterialMask", StringComparison.OrdinalIgnoreCase);
+
+    private static string GetTextureBaseName(string? fileName)
+    {
+        string stem = Path.GetFileNameWithoutExtension(fileName ?? string.Empty);
+        const string suffix = "-MaterialMask";
+        return stem.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+            ? stem[..^suffix.Length]
+            : stem;
     }
 
     private static ImportedTexture? ReadFaceTextureRegion(

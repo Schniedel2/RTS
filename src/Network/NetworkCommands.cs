@@ -252,6 +252,14 @@ public static class NetworkCommands
             Z: request.Z);
     }
 
+    /// <summary>Host-authoritative visual impact for an instantaneous (hitscan) weapon.</summary>
+    public static NetworkMessage CreateBulletImpactCommand(Guid hostId, Guid sourceUnitId, Vector3 position) =>
+        new(NetworkMessageType.BulletImpactCommand, hostId,
+            UnitId: sourceUnitId,
+            X: position.X,
+            Y: position.Y,
+            Z: position.Z);
+
     public static NetworkMessage CreateAttackTargetRequest(Guid senderId, Guid[] unitIds, Guid targetId)
     {
         return new NetworkMessage(NetworkMessageType.AttackTargetRequest, senderId,

@@ -17,12 +17,12 @@ public sealed class MeshAnimationClip(string name, float durationSeconds, bool l
 public sealed class MeshAnimationTrack
 {
     public List<MeshAnimationKeyframe> RotationKeys { get; } = [];
-    // Read now to preserve the BBModel data model. Rendering support for
-    // translation/scale can be enabled as soon as a model needs it.
+    // Position keys are local offsets in already-converted world units.
     public List<MeshAnimationKeyframe> PositionKeys { get; } = [];
     public List<MeshAnimationKeyframe> ScaleKeys { get; } = [];
 
     public Vector3 EvaluateRotation(float timeSeconds) => Evaluate(RotationKeys, timeSeconds, Vector3.Zero);
+    public Vector3 EvaluatePosition(float timeSeconds) => Evaluate(PositionKeys, timeSeconds, Vector3.Zero);
 
     private static Vector3 Evaluate(List<MeshAnimationKeyframe> keys, float time, Vector3 fallback)
     {
@@ -122,14 +122,14 @@ public sealed class AnimationPlayer
         return true;
     }
 
-    public bool RemoveOverlayLayer(string layerTag)
+    public void RemoveOverlayLayer(string layerTag)
     {
         int index = _overlays.FindIndex(layer =>
             string.Equals(layer.ClipName.Split(":")[0], layerTag, StringComparison.OrdinalIgnoreCase));
         if (index < 0)
-            return false;
+            return;
         _overlays.RemoveAt(index);
-        return true;
+        RemoveOverlayLayer(layerTag);
     }
 
     public void ClearOverlays() => _overlays.Clear();
@@ -146,12 +146,18 @@ public sealed class AnimationPlayer
 
     private void AddOverlayTransition(string layerTag, string? fromClipName, string? toClipName, float duration)
     {
+        if (toClipName == null)
+        {
+            
+        }
+
         if (fromClipName is null && toClipName is null)
             return;
 
         if (string.Equals(fromClipName, toClipName, StringComparison.OrdinalIgnoreCase))
             return;
 
+        RemoveOverlayLayer(layerTag);
         if (fromClipName is not null)
             AddOverlay(fromClipName, 1.0f);
         if (toClipName is not null)
@@ -214,7 +220,11 @@ public sealed class AnimationPlayer
         AnimationPose pose = new();
         if (CurrentClipName is not null && _clips.TryGetValue(CurrentClipName, out MeshAnimationClip? clip))
             foreach ((string groupName, MeshAnimationTrack track) in clip.Tracks)
+            {
                 pose.SetRotation(groupName, track.EvaluateRotation(TimeSeconds));
+                if (track.PositionKeys.Count > 0)
+                    pose.SetPosition(groupName, track.EvaluatePosition(TimeSeconds));
+            }
         foreach (OverlayLayer layer in _overlays)
         {
             if (!_clips.TryGetValue(layer.ClipName, out MeshAnimationClip? overlayClip) || layer.Weight <= 0.0f)
@@ -223,6 +233,11 @@ public sealed class AnimationPlayer
             {
                 Vector3 baseRotation = pose.GetRotationOrDefault(groupName);
                 pose.SetRotation(groupName, Vector3.Lerp(baseRotation, track.EvaluateRotation(layer.TimeSeconds), layer.Weight));
+                if (track.PositionKeys.Count > 0)
+                {
+                    Vector3 basePosition = pose.GetPositionOrDefault(groupName);
+                    pose.SetPosition(groupName, Vector3.Lerp(basePosition, track.EvaluatePosition(layer.TimeSeconds), layer.Weight));
+                }
             }
         }
         return pose;
@@ -241,8 +256,13 @@ public sealed class AnimationPlayer
 public sealed class AnimationPose
 {
     private readonly Dictionary<string, Vector3> _rotationDegrees = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Vector3> _positions = new(StringComparer.OrdinalIgnoreCase);
     public void SetRotation(string groupName, Vector3 degrees) => _rotationDegrees[groupName] = degrees;
     public bool TryGetRotation(string groupName, out Vector3 degrees) => _rotationDegrees.TryGetValue(groupName, out degrees);
     public Vector3 GetRotationOrDefault(string groupName) =>
         _rotationDegrees.TryGetValue(groupName, out Vector3 degrees) ? degrees : Vector3.Zero;
+    public void SetPosition(string groupName, Vector3 position) => _positions[groupName] = position;
+    public bool TryGetPosition(string groupName, out Vector3 position) => _positions.TryGetValue(groupName, out position);
+    public Vector3 GetPositionOrDefault(string groupName) =>
+        _positions.TryGetValue(groupName, out Vector3 position) ? position : Vector3.Zero;
 }

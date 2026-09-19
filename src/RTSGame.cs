@@ -37,6 +37,7 @@ public class RTSGame
         Globals.ModelsDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Models");
 
         Globals.TextureHandler = new TextureHandler(Globals.GraphicsDevice);
+        Globals.MaterialMaskTextureHandler = new TextureHandler(Globals.GraphicsDevice);
         Globals.TilemapHandler = new TilemapHandler();
         Globals.SkinHandler = new SkinHandler();
         Globals.SkinHandler.LoadSkinTextures();

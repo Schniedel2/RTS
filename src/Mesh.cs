@@ -63,6 +63,13 @@ public sealed class MeshNode(string name, Vector3 pivot)
 {
     public string Name { get; } = name;
     public Vector3 Pivot { get; } = pivot;
+    /// <summary>
+    /// Only Blockbench groups are animation targets. Geometry leaves can have
+    /// names that differ from a parent group merely by casing (for example
+    /// <c>head</c> and <c>Head</c>), while animation names intentionally use
+    /// case-insensitive lookup.
+    /// </summary>
+    public bool ReceivesAnimationPose { get; set; } = true;
     /// <summary>Authored Blockbench group rotation, preserved independently of animation.</summary>
     public Vector3 BaseRotationDegrees { get; set; }
     public List<MeshNode> Children { get; } = [];
@@ -75,7 +82,11 @@ public sealed class MeshNode(string name, Vector3 pivot)
     public Matrix GetLocalTransform(IReadOnlyDictionary<string, float> parameters, AnimationPose? pose = null)
     {
         Matrix rotation = GetRotationTransform(parameters, pose);
-        return Matrix.CreateTranslation(-Pivot) * rotation * Matrix.CreateTranslation(Pivot);
+        Vector3 animationPosition = ReceivesAnimationPose
+            ? pose?.GetPositionOrDefault(Name) ?? Vector3.Zero
+            : Vector3.Zero;
+        return Matrix.CreateTranslation(-Pivot) * rotation * Matrix.CreateTranslation(Pivot) *
+            Matrix.CreateTranslation(animationPosition);
     }
 
     private Matrix GetRotationTransform(IReadOnlyDictionary<string, float> parameters, AnimationPose? pose)
@@ -93,7 +104,7 @@ public sealed class MeshNode(string name, Vector3 pivot)
         // This makes an animated shoulder behave correctly when its rest pose
         // has been turned, for example ±90 degrees for a T-pose.
         Matrix animationRotation = Matrix.Identity;
-        if (pose is not null && pose.TryGetRotation(Name, out Vector3 animationDegrees))
+        if (ReceivesAnimationPose && pose is not null && pose.TryGetRotation(Name, out Vector3 animationDegrees))
             animationRotation =
                 Matrix.CreateRotationX(MathHelper.ToRadians(animationDegrees.X)) *
                 Matrix.CreateRotationY(MathHelper.ToRadians(animationDegrees.Y)) *
@@ -137,7 +148,7 @@ public sealed class MeshNode(string name, Vector3 pivot)
             return;
         }
 
-        effect.Parameters["MaterialMaskTexture"]?.SetValue(Globals.TextureHandler.GetAtlas(mask.AtlasIndex));
+        effect.Parameters["MaterialMaskTexture"]?.SetValue(Globals.MaterialMaskTextureHandler.GetAtlas(mask.AtlasIndex));
         effect.Parameters["MaterialMaskSourceUVOffset"]?.SetValue(texture.UVOffset);
         effect.Parameters["MaterialMaskUVOffset"]?.SetValue(mask.UVOffset);
         effect.Parameters["MaterialMaskUVScale"]?.SetValue(new Vector2(
@@ -160,7 +171,11 @@ public sealed class MeshNode(string name, Vector3 pivot)
         // An attached mesh has its own local origin at this node's pivot.
         // It therefore needs the node's full authored + animated rotation,
         // followed by the pivot translation (but not T(-pivot)).
-        return GetRotationTransform(parameters, pose) * Matrix.CreateTranslation(Pivot) * parentWorld;
+        Vector3 animationPosition = ReceivesAnimationPose
+            ? pose?.GetPositionOrDefault(Name) ?? Vector3.Zero
+            : Vector3.Zero;
+        return GetRotationTransform(parameters, pose) * Matrix.CreateTranslation(Pivot) *
+            Matrix.CreateTranslation(animationPosition) * parentWorld;
     }
 
     internal static Matrix GetAttachmentWorldFromPath(

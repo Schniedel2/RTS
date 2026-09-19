@@ -125,7 +125,7 @@ public static class SmokeEmissionPresets
         Lifetime = 1.45f,
         LifetimeVariation = 0.20f,
         Opacity = 0.68f,
-        Color = new Color(48, 48, 48),
+        Color = new Color(220, 220, 220),
         WindInfluence = 0.95f
     };
 
