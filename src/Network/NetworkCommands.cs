@@ -267,6 +267,50 @@ public static class NetworkCommands
             Z: request.Z);
     }
 
+    public static NetworkMessage CreateProjectileSpawnCommand(
+        Guid hostId,
+        Guid projectileId,
+        Guid attackerId,
+        ProjectileKind kind,
+        Vector3 position,
+        Vector3 velocity,
+        double serverTime) =>
+        new(
+            NetworkMessageType.ProjectileSpawnCommand,
+            hostId,
+            UnitId: attackerId,
+            ProjectileId: projectileId,
+            ProjectileKind: kind,
+            X: position.X,
+            Y: position.Y,
+            Z: position.Z,
+            VelocityX: velocity.X,
+            VelocityY: velocity.Y,
+            VelocityZ: velocity.Z,
+            ServerTime: serverTime);
+
+    public static NetworkMessage CreateProjectileImpactCommand(
+        Guid hostId,
+        Guid projectileId,
+        Guid attackerId,
+        Vector3 position,
+        Vector3 normal,
+        Guid? hitUnitId,
+        double serverTime) =>
+        new(
+            NetworkMessageType.ProjectileImpactCommand,
+            hostId,
+            UnitId: attackerId,
+            TargetId: hitUnitId,
+            ProjectileId: projectileId,
+            X: position.X,
+            Y: position.Y,
+            Z: position.Z,
+            NormalX: normal.X,
+            NormalY: normal.Y,
+            NormalZ: normal.Z,
+            ServerTime: serverTime);
+
     public static NetworkMessage CreateProducedUnitCommand(
         Guid hostId,
         Building building,

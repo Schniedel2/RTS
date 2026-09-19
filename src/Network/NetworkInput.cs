@@ -204,6 +204,18 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type == NetworkMessageType.ProjectileSpawnCommand)
+        {
+            ExecuteProjectileSpawn(message);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.ProjectileImpactCommand)
+        {
+            ExecuteProjectileImpact(message);
+            return;
+        }
+
         if (message.Type == NetworkMessageType.AttackTargetCommand)
         {
             ExecuteAttackTarget(message);
@@ -407,6 +419,12 @@ public sealed class NetworkInput
             if (Globals.World.Units.FindById(unitId) is not Unit attacker)
                 continue;
 
+            // The exact launch pitch of a rocket is contained in the
+            // following ProjectileSpawnCommand. Defer its local firing effect
+            // until that vector has been applied to the unit.
+            if (attacker.ProjectileKind == ProjectileKind.Rocket)
+                continue;
+
             attacker.PlayShotEffects();
             if (attacker.UsesHitscanWeapon)
                 continue;
@@ -427,6 +445,44 @@ public sealed class NetworkInput
     private static void ExecuteBulletImpact(NetworkMessage message)
     {
         Globals.World.Particles.EmitBulletImpact(new Vector3(message.X, message.Y, message.Z));
+    }
+
+    private static void ExecuteProjectileSpawn(NetworkMessage message)
+    {
+        if (message.ProjectileId is not Guid projectileId ||
+            message.ProjectileKind is not ProjectileKind kind)
+            return;
+
+        Vector3 velocity = new(
+            message.VelocityX,
+            message.VelocityY,
+            message.VelocityZ);
+
+        // This is the exact launch vector calculated by the host, including
+        // any ballistic elevation correction. Make its pitch available to the
+        // firing unit before this frame is drawn.
+        if (message.UnitId is Guid attackerId &&
+            Globals.World.Units.FindById(attackerId) is Unit attacker)
+        {
+            attacker.SetProjectileLaunchVelocity(velocity);
+            if (kind == ProjectileKind.Rocket)
+                attacker.PlayShotEffects();
+        }
+
+        Globals.World.Projectiles.SpawnReplicated(
+            projectileId,
+            new Vector3(message.X, message.Y, message.Z),
+            velocity,
+            kind);
+    }
+
+    private static void ExecuteProjectileImpact(NetworkMessage message)
+    {
+        if (message.ProjectileId is not Guid projectileId)
+            return;
+        Globals.World.Projectiles.ApplyAuthoritativeImpact(
+            projectileId,
+            new Vector3(message.X, message.Y, message.Z));
     }
 
     private void ExecuteAttackTarget(NetworkMessage message)

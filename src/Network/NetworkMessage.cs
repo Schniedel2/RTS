@@ -38,6 +38,8 @@ public enum NetworkMessageType
     StopCommand,
     AttackRequest,
     AttackCommand,
+    ProjectileSpawnCommand,
+    ProjectileImpactCommand,
     BulletImpactCommand,
     AttackTargetRequest,
     AttackTargetCommand,
@@ -125,4 +127,13 @@ public sealed record NetworkMessage(
     float ExitY = 0.0f,
     float ExitZ = 0.0f,
     Guid? DriverUnitId = null,
-    OccupantRole? OccupantRole = null);
+    OccupantRole? OccupantRole = null,
+    Guid? ProjectileId = null,
+    ProjectileKind? ProjectileKind = null,
+    float VelocityX = 0.0f,
+    float VelocityY = 0.0f,
+    float VelocityZ = 0.0f,
+    float NormalX = 0.0f,
+    float NormalY = 0.0f,
+    float NormalZ = 0.0f,
+    double ServerTime = 0.0);

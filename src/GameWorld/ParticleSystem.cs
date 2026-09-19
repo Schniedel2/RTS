@@ -18,18 +18,36 @@ public sealed class ParticleSystem
     /// </summary>
     public int MaximumParticles { get; set; } = 2048;
 
+    /// <summary>
+    /// World-space distance between consecutive rocket-trail emission points.
+    /// Because emission is distance based, trail density is independent of
+    /// frame rate and projectile speed.
+    /// </summary>
+    public float RocketTrailSpacing { get; set; } = 0.1f;
+
     public int ActiveParticleCount =>
         _particles.Count + _smokeParticles.Count + _debrisParticles.Count;
 
     private bool HasParticleCapacity => ActiveParticleCount < MaximumParticles;
 
-    public void EmitRocketTrail(Vector3 position, Vector3 direction, bool emitSmoke)
+    public void EmitRocketTrail(
+        Vector3 position,
+        Vector3 direction,
+        float exhaustStrength,
+        bool motorActive)
     {
         if (!HasParticleCapacity)
             return;
 
+        exhaustStrength = MathHelper.Clamp(exhaustStrength, 0.0f, 1.0f);
+        bool emitSmoke = exhaustStrength > 0.015f;
         if (emitSmoke)
-            EmitSmoke(position, direction, SmokeEmissionPresets.RocketTrail());
+            EmitSmoke(position, direction, SmokeEmissionPresets.RocketTrail(exhaustStrength));
+
+        // Residual smoke eases out after burnout, but the hot core exists only
+        // while the motor is physically producing thrust.
+        if (!motorActive)
+            return;
 
         Vector3 velocity = new(
             Random.Shared.NextSingle() - 0.5f,
@@ -39,8 +57,8 @@ public sealed class ParticleSystem
             position,
             velocity,
             emitSmoke ? Color.OrangeRed : Color.Orange,
-            emitSmoke ? 0.16f : 0.25f,
-            emitSmoke ? 0.10f : 0.18f,
+            emitSmoke ? 0.10f + 0.08f * exhaustStrength : 0.25f,
+            emitSmoke ? 0.06f + 0.05f * exhaustStrength : 0.18f,
             windInfluence: emitSmoke ? 0.0f : 0.25f));
     }
 

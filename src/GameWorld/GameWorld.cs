@@ -71,6 +71,7 @@ public class GameWorld
         try
         {
             Units.DrawShadow(effect);
+            Projectiles.DrawShadow(effect);
         }
         finally
         {

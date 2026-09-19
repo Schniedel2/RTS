@@ -163,21 +163,22 @@ public static class SmokeEmissionPresets
         WindInfluence = 0.75f
     };
 
-    public static SmokeEmissionSettings RocketTrail() => new()
+    public static SmokeEmissionSettings RocketTrail(float exhaustStrength = 1.0f) => new()
     {
-        ParticleCount = 1,
-        Intensity = 0.7f,
-        EmissionLength = 0.03f,
-        ForwardSpeed = 0.18f,
-        ForwardSpeedVariation = 0.08f,
-        SidewaysSpread = 0.12f,
-        UpwardSpeed = 0.08f,
-        StartSize = 0.16f,
-        EndSize = 0.48f,
-        Lifetime = 0.9f,
-        Opacity = 0.62f,
-        Color = new Color(125, 125, 120),
-        WindInfluence = 0.75f
+        ParticleCount = exhaustStrength >= 0.55f ? 2 : 1,
+        Intensity = 0.25f + exhaustStrength * 1.15f,
+        EmissionLength = 0.07f,
+        ForwardSpeed = 0.32f,
+        ForwardSpeedVariation = 0.14f,
+        SidewaysSpread = 0.24f,
+        UpwardSpeed = 0.10f,
+        StartSize = 0.20f,
+        EndSize = 0.72f,
+        Lifetime = 1.25f,
+        LifetimeVariation = 0.18f,
+        Opacity = 0.72f,
+        Color = new Color(250, 250, 250),
+        WindInfluence = 0.82f
     };
 
     public static SmokeEmissionSettings ReactorExhaust() => new()

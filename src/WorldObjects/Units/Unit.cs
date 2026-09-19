@@ -76,6 +76,13 @@ public abstract class Unit : WorldObject
         UsesHitscanWeapon ? ProjectileKind.None : ProjectileKind.BallisticShell;
     /// <summary>Visual and authoritative travel speed in world units per second.</summary>
     public virtual float ProjectileSpeed => 35.0f;
+    /// <summary>
+    /// Elevation angle of the most recently spawned projectile relative to
+    /// the horizontal plane. Positive values point upward, negative values
+    /// downward. This is pitch (not yaw) and can be used to align a firing
+    /// animation with the host-authoritative launch direction.
+    /// </summary>
+    public float LastProjectilePitchDegrees { get; private set; }
     public Guid? AttackTargetId { get; private set; }
     public Vector3? AttackGroundTarget { get; private set; }
     /// <summary>Unit to keep within <see cref="FollowDistance"/> world units of.</summary>
@@ -364,6 +371,31 @@ public abstract class Unit : WorldObject
 
     /// <summary>Runs local visual/audio feedback when the host replicated a shot.</summary>
     public virtual void PlayShotEffects()
+    {
+    }
+
+    /// <summary>
+    /// Records the actual replicated launch direction of a projectile. The
+    /// horizontal component is X/Z; Y determines its elevation.
+    /// </summary>
+    internal void SetProjectileLaunchVelocity(Vector3 velocity)
+    {
+        float horizontalSpeed = MathF.Sqrt(
+            velocity.X * velocity.X + velocity.Z * velocity.Z);
+
+        if (horizontalSpeed <= 0.0001f && MathF.Abs(velocity.Y) <= 0.0001f)
+            return;
+
+        LastProjectilePitchDegrees = MathHelper.ToDegrees(
+            MathF.Atan2(velocity.Y, horizontalSpeed));
+        OnProjectilePitchChanged(LastProjectilePitchDegrees);
+    }
+
+    /// <summary>
+    /// Optional visual hook for units that want to immediately apply the
+    /// launch pitch to an animation or mesh node.
+    /// </summary>
+    protected virtual void OnProjectilePitchChanged(float pitchDegrees)
     {
     }
 

@@ -432,6 +432,7 @@ public class Soldier : MobileUnit
                 _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["rpg"]);
                 this.AttackCooldown = 2.00f;
                 this.AttackDamage = 150.0f;
+                this.AttackRange = 50;
                 break;
         }
     }

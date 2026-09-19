@@ -21,13 +21,35 @@ public sealed class NetworkHost
     private const double StateHeartbeatInterval = 3.0;
     private double _hostTime;
     private double _simulationAccumulator;
-    private readonly List<PendingProjectileImpact> _pendingProjectileImpacts = [];
+    private readonly List<HostProjectile> _hostProjectiles = [];
+    private readonly List<ProjectileImpact> _projectileImpacts = [];
 
-    private sealed record PendingProjectileImpact(
+    private sealed class HostProjectile(
+        Guid projectileId,
+        Guid attackerId,
+        Vector3 start,
+        Vector3 initialVelocity,
+        ProjectileKind kind,
+        float damage)
+    {
+        public Guid ProjectileId { get; } = projectileId;
+        public Guid AttackerId { get; } = attackerId;
+        public Vector3 Start { get; } = start;
+        public Vector3 InitialVelocity { get; } = initialVelocity;
+        public ProjectileKind Kind { get; } = kind;
+        public float Damage { get; } = damage;
+        public ProjectileFlightProfile Profile { get; } = ProjectileFlightProfile.For(kind);
+        public float Age { get; set; }
+    }
+
+    private sealed record ProjectileImpact(
+        Guid ProjectileId,
         Guid AttackerId,
         Vector3 Position,
+        Vector3 Normal,
+        Guid? HitUnitId,
         float Damage,
-        double ImpactTime);
+        float ExplosionRadius);
 
     public NetworkHost(
         NetworkHandler networkHandler,
@@ -104,7 +126,7 @@ public sealed class NetworkHost
         try
         {
             UpdateHostSimulation(gameTime);
-            await ResolvePendingProjectileImpactsAsync();
+            await PublishProjectileImpactsAsync();
 
             for (int index = 0; index < MaximumRequestsPerUpdate; index++)
             {
@@ -263,6 +285,7 @@ public sealed class NetworkHost
 
             UpdateProduction((float)HostSimulationInterval);
             UpdateContainerEntries();
+            SimulateHostProjectiles((float)HostSimulationInterval);
 
             UpdateDefensiveTargets();
 
@@ -272,10 +295,11 @@ public sealed class NetworkHost
                     continue;
                 if (!unit.TryQueueShot(_hostTime, out Unit? target) || target is null)
                     continue;
+                Vector3 aimPosition = target.Position + Vector3.Up * (target.Height * 0.5f);
                 _requestQueue.Enqueue(NetworkCommands.CreateAttackRequest(
                     _networkHandler.LocalPeerId,
                     [unit.UnitId],
-                    target.Position.X, target.Position.Y, target.Position.Z));
+                    aimPosition.X, aimPosition.Y, aimPosition.Z));
             }
 
             foreach (Unit unit in _world.Units.Units.OfType<Unit>())
@@ -501,15 +525,33 @@ public sealed class NetworkHost
                 Vector3 launchPosition = attacker.TryGetProjectileLaunchWorldTransform(out Matrix launchTransform)
                     ? launchTransform.Translation
                     : attacker.Position + Vector3.Up * (attacker.Height * 0.75f);
-                double travelSeconds = Math.Max(
-                    0.05,
-                    Vector3.Distance(launchPosition, impactPosition) /
-                    Math.Max(0.1f, attacker.ProjectileSpeed));
-                _pendingProjectileImpacts.Add(new PendingProjectileImpact(
-                    attackerId,
+                ProjectileFlightProfile profile = ProjectileFlightProfile.For(ProjectileKind.Rocket);
+                Vector3 launchDirection = CalculateRocketLaunchDirection(
+                    launchPosition,
                     impactPosition,
-                    attacker.AttackDamage,
-                    _hostTime + travelSeconds));
+                    attacker.ProjectileSpeed,
+                    profile,
+                    attacker.Transform.Forward);
+                Vector3 initialVelocity = launchDirection * attacker.ProjectileSpeed;
+                Guid projectileId = Guid.NewGuid();
+                _hostProjectiles.Add(new HostProjectile(
+                    projectileId,
+                    attackerId,
+                    launchPosition,
+                    initialVelocity,
+                    ProjectileKind.Rocket,
+                    attacker.AttackDamage));
+
+                NetworkMessage spawnCommand = NetworkCommands.CreateProjectileSpawnCommand(
+                    _networkHandler.LocalPeerId,
+                    projectileId,
+                    attackerId,
+                    ProjectileKind.Rocket,
+                    launchPosition,
+                    initialVelocity,
+                    _hostTime);
+                _networkHandler.EnqueueLocalMessage(spawnCommand);
+                await _networkHandler.BroadcastAsync(spawnCommand, CancellationToken.None);
                 continue;
             }
 
@@ -525,16 +567,222 @@ public sealed class NetworkHost
         }
     }
 
-    private async Task ResolvePendingProjectileImpactsAsync()
+    private void SimulateHostProjectiles(float elapsedSeconds)
     {
-        for (int index = _pendingProjectileImpacts.Count - 1; index >= 0; index--)
+        for (int index = _hostProjectiles.Count - 1; index >= 0; index--)
         {
-            PendingProjectileImpact impact = _pendingProjectileImpacts[index];
-            if (impact.ImpactTime > _hostTime)
+            HostProjectile projectile = _hostProjectiles[index];
+            ProjectileTrajectory.Evaluate(
+                projectile.Start,
+                projectile.InitialVelocity,
+                projectile.Age,
+                projectile.Profile,
+                out Vector3 start,
+                out _);
+            float nextAge = projectile.Age + elapsedSeconds;
+            ProjectileTrajectory.Evaluate(
+                projectile.Start,
+                projectile.InitialVelocity,
+                nextAge,
+                projectile.Profile,
+                out Vector3 end,
+                out _);
+
+            bool collided = TryFindProjectileCollision(
+                projectile.AttackerId,
+                start,
+                end,
+                out Vector3 impactPosition,
+                out Vector3 impactNormal,
+                out Guid? hitUnitId);
+            if (collided || nextAge >= projectile.Profile.MaximumLifetime)
+            {
+                if (!collided)
+                {
+                    impactPosition = end;
+                    impactNormal = Vector3.Up;
+                }
+
+                _projectileImpacts.Add(new ProjectileImpact(
+                    projectile.ProjectileId,
+                    projectile.AttackerId,
+                    impactPosition,
+                    impactNormal,
+                    hitUnitId,
+                    projectile.Damage,
+                    projectile.Profile.ExplosionRadius));
+                _hostProjectiles.RemoveAt(index);
+                continue;
+            }
+
+            projectile.Age = nextAge;
+        }
+    }
+
+    private static Vector3 CalculateRocketLaunchDirection(
+        Vector3 start,
+        Vector3 target,
+        float initialSpeed,
+        ProjectileFlightProfile profile,
+        Vector3 fallbackDirection)
+    {
+        Vector2 horizontalOffset = new(target.X - start.X, target.Z - start.Z);
+        float averagePoweredSpeed = Math.Max(
+            0.1f,
+            initialSpeed + profile.MotorAcceleration * profile.MotorBurnDuration * 0.5f);
+        float estimatedFlightTime = horizontalOffset.Length() / averagePoweredSpeed;
+        Vector3 compensatedTarget = target + Vector3.Up *
+            (0.5f * profile.Gravity * estimatedFlightTime * estimatedFlightTime);
+        Vector3 direction = compensatedTarget - start;
+        if (direction.LengthSquared() > 0.0001f)
+            return Vector3.Normalize(direction);
+
+        fallbackDirection.Y = 0.0f;
+        return fallbackDirection.LengthSquared() > 0.0001f
+            ? Vector3.Normalize(fallbackDirection)
+            : Vector3.Forward;
+    }
+
+    private async Task PublishProjectileImpactsAsync()
+    {
+        if (_projectileImpacts.Count == 0)
+            return;
+
+        ProjectileImpact[] impacts = [.. _projectileImpacts];
+        _projectileImpacts.Clear();
+        foreach (ProjectileImpact impact in impacts)
+        {
+            NetworkMessage impactCommand = NetworkCommands.CreateProjectileImpactCommand(
+                _networkHandler.LocalPeerId,
+                impact.ProjectileId,
+                impact.AttackerId,
+                impact.Position,
+                impact.Normal,
+                impact.HitUnitId,
+                _hostTime);
+            _networkHandler.EnqueueLocalMessage(impactCommand);
+            await _networkHandler.BroadcastAsync(impactCommand, CancellationToken.None);
+            await ApplyExplosionDamageAsync(impact);
+        }
+    }
+
+    private bool TryFindProjectileCollision(
+        Guid attackerId,
+        Vector3 start,
+        Vector3 end,
+        out Vector3 position,
+        out Vector3 normal,
+        out Guid? hitUnitId)
+    {
+        float closestT = float.MaxValue;
+        position = default;
+        normal = Vector3.Up;
+        hitUnitId = null;
+
+        Vector3 segment = end - start;
+        float distance = segment.Length();
+        int samples = Math.Max(1, (int)MathF.Ceiling(distance / 0.2f));
+        for (int sample = 1; sample <= samples; sample++)
+        {
+            float t = (float)sample / samples;
+            Vector3 point = Vector3.Lerp(start, end, t);
+            int terrainX = (int)MathF.Floor(point.X);
+            int terrainZ = (int)MathF.Floor(point.Z);
+            if (terrainX < 0 || terrainZ < 0 ||
+                terrainX >= _world.Terrain.Width || terrainZ >= _world.Terrain.Height)
+                continue;
+            float terrainHeight = _world.Terrain.GetHeight(terrainX, terrainZ);
+            if (point.Y > terrainHeight + 0.03f)
+                continue;
+            closestT = t;
+            position = new Vector3(point.X, terrainHeight, point.Z);
+            break;
+        }
+
+        foreach (Unit unit in _world.Units.Units)
+        {
+            if (unit.UnitId == attackerId || !unit.CanBeTargeted)
                 continue;
 
-            _pendingProjectileImpacts.RemoveAt(index);
-            await ApplyImpactDamageAsync(impact.AttackerId, impact.Position, impact.Damage);
+            float footprintRadius = Math.Max(unit.Width, unit.Length) *
+                _world.GameGrid.CellSize * 0.45f;
+            float radius = Math.Max(0.35f, Math.Min(footprintRadius, unit.Height * 0.65f));
+            Vector3 center = unit.Position + Vector3.Up * (unit.Height * 0.5f);
+            if (!TrySegmentSphere(start, end, center, radius, out float t) || t >= closestT)
+                continue;
+
+            closestT = t;
+            position = Vector3.Lerp(start, end, t);
+            normal = position - center;
+            normal = normal.LengthSquared() > 0.0001f ? Vector3.Normalize(normal) : Vector3.Up;
+            hitUnitId = unit.UnitId;
+        }
+
+        return closestT != float.MaxValue;
+    }
+
+    private static bool TrySegmentSphere(
+        Vector3 start,
+        Vector3 end,
+        Vector3 center,
+        float radius,
+        out float t)
+    {
+        Vector3 segment = end - start;
+        float lengthSquared = segment.LengthSquared();
+        if (lengthSquared <= 0.000001f)
+        {
+            t = 0.0f;
+            return Vector3.DistanceSquared(start, center) <= radius * radius;
+        }
+
+        t = MathHelper.Clamp(Vector3.Dot(center - start, segment) / lengthSquared, 0.0f, 1.0f);
+        return Vector3.DistanceSquared(Vector3.Lerp(start, end, t), center) <= radius * radius;
+    }
+
+    private async Task ApplyExplosionDamageAsync(ProjectileImpact impact)
+    {
+        Unit[] targets = _world.Units.Units
+            .Where(unit => unit.CanBeTargeted)
+            .Where(unit =>
+            {
+                float x = unit.Position.X - impact.Position.X;
+                float z = unit.Position.Z - impact.Position.Z;
+                return x * x + z * z <= impact.ExplosionRadius * impact.ExplosionRadius;
+            })
+            .ToArray();
+
+        foreach (Unit target in targets)
+        {
+            float horizontalDistance = Vector2.Distance(
+                new Vector2(target.Position.X, target.Position.Z),
+                new Vector2(impact.Position.X, impact.Position.Z));
+            float damageFactor = MathHelper.Lerp(
+                1.0f,
+                0.25f,
+                MathHelper.Clamp(horizontalDistance / impact.ExplosionRadius, 0.0f, 1.0f));
+            float damage = impact.Damage * damageFactor;
+            HitInfo hit = new(impact.AttackerId, impact.Position, damage);
+            bool destroyed = target.OnHit(hit);
+            NetworkMessage hitCommand = NetworkCommands.CreateUnitHitCommand(
+                _networkHandler.LocalPeerId,
+                target.UnitId,
+                impact.AttackerId,
+                impact.Position,
+                damage,
+                target.HitPoints);
+            _networkHandler.EnqueueLocalMessage(hitCommand);
+            await _networkHandler.BroadcastAsync(hitCommand, CancellationToken.None);
+
+            if (!destroyed)
+                continue;
+
+            _world.Units.Destroy(target.UnitId);
+            NetworkMessage destroyCommand = NetworkCommands.CreateDestroyUnitCommand(
+                _networkHandler.LocalPeerId,
+                target.UnitId);
+            _networkHandler.EnqueueLocalMessage(destroyCommand);
+            await _networkHandler.BroadcastAsync(destroyCommand, CancellationToken.None);
         }
     }
 
