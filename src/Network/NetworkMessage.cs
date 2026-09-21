@@ -79,7 +79,9 @@ public enum NetworkMessageType
     TransferUnitRequest,
     TransferUnitCommand,
     MergeArmiesRequest,
-    MergeArmiesCommand
+    MergeArmiesCommand,
+    SetRallyPointRequest,
+    SetRallyPointCommand
 }
 
 public sealed record WorldData(
@@ -136,4 +138,5 @@ public sealed record NetworkMessage(
     float NormalX = 0.0f,
     float NormalY = 0.0f,
     float NormalZ = 0.0f,
-    double ServerTime = 0.0);
+    double ServerTime = 0.0,
+    RallyPointState? RallyPoint = null);

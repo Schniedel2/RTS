@@ -24,6 +24,34 @@ public abstract class Unit : WorldObject
     }
     protected UnitActionState _currentUnitState = UnitActionState.Idle;    
     public Guid UnitId { get; }
+    public virtual bool SupportsRallyPoint => false;
+    public Vector3? RallyPoint { get; private set; }
+    public uint RallyPointRevision { get; private set; }
+
+    public RallyPointState GetRallyPointState() => RallyPoint is Vector3 position
+        ? new(RallyPointRevision, true, position.X, position.Y, position.Z)
+        : new(RallyPointRevision, false);
+
+    // Gameplay mutation: called only after host validation.
+    internal void SetRallyPoint(Vector3? position)
+    {
+        if (!SupportsRallyPoint)
+            return;
+        ApplyRallyPointState(position is Vector3 point
+            ? new(RallyPointRevision + 1, true, point.X, point.Y, point.Z)
+            : new(RallyPointRevision + 1, false));
+        StateRevision++;
+        NetworkStateDirty = true;
+    }
+
+    public void ApplyRallyPointState(RallyPointState state)
+    {
+        if (!SupportsRallyPoint || state.Revision < RallyPointRevision ||
+            (state.HasPosition && (!float.IsFinite(state.X) || !float.IsFinite(state.Y) || !float.IsFinite(state.Z))))
+            return;
+        RallyPoint = state.HasPosition ? new Vector3(state.X, state.Y, state.Z) : null;
+        RallyPointRevision = state.Revision;
+    }
     public float HitPoints { get; set; }
     public float MaxHitPoints { get; }
     public Guid CreatorPlayerId { get; private set; }

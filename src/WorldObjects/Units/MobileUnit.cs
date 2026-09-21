@@ -35,6 +35,41 @@ public class MobileUnit : Unit
     public bool IsLeavingBuilding { get; private set; }
     public Guid? SpawnSourceBuildingId { get; private set; }
     public Vector3 SpawnExitPosition { get; private set; }
+    private Vector2? _productionRallyPoint;
+
+    internal void SetProductionRallyPoint(RallyPointState? state) =>
+        _productionRallyPoint = state is { HasPosition: true } point ? new Vector2(point.X, point.Z) : null;
+
+    private void MoveToProductionRallyPoint()
+    {
+        Vector2? target = _productionRallyPoint;
+        _productionRallyPoint = null;
+        if (target is not Vector2 position || CurrentCommand is not null)
+            return;
+
+        GameWorld world = Globals.World;
+        Point center = world.GameGrid.ToCell(new Vector3(position.X, 0, position.Y));
+        // Earlier recruits may already occupy the marker. Gather around it
+        // instead of abandoning every subsequent order at the building exit.
+        for (int radius = 0; radius <= 6; radius++)
+        {
+            for (int y = -radius; y <= radius; y++)
+            {
+                for (int x = -radius; x <= radius; x++)
+                {
+                    if (Math.Max(Math.Abs(x), Math.Abs(y)) != radius)
+                        continue;
+                    Point cell = center + new Point(x, y);
+                    if (!MovementProfile.CanEnter(world, this, cell) || !world.GameGrid.IsPathfindingAllowed(this, cell))
+                        continue;
+                    Vector3 cellPosition = world.GameGrid.ToWorldPosition(cell, 0);
+                    Vector2 destination = radius == 0 ? position : new Vector2(cellPosition.X, cellPosition.Z);
+                    TryReceiveGotoCommand(world, new GotoCommand(destination));
+                    return;
+                }
+            }
+        }
+    }
     public override bool IsSelectable => base.IsSelectable && !IsLeavingBuilding;
     public override bool CanBeTargeted => base.CanBeTargeted && !IsLeavingBuilding;
     public IReadOnlyList<Point> PlannedPath => _plannedPath;
@@ -313,6 +348,7 @@ public class MobileUnit : Unit
         SpawnSourceBuildingId = null;
         _currentUnitState = UnitActionState.Idle;
         OnFinishedLeavingBuilding();
+        MoveToProductionRallyPoint();
         PathDebug("building exit reached; normal grid movement enabled");
         return true;
     }
@@ -367,6 +403,7 @@ public class MobileUnit : Unit
         GameWorld map,
         GotoCommand command)
     {
+        _productionRallyPoint = null;
         PendingEnterContainerId = null;
         TargetBuildingId = null;
         IsBuilding = false;
@@ -448,6 +485,7 @@ public class MobileUnit : Unit
         {
             container.Occupancy?.ClearReservation(UnitId);
         }
+        _productionRallyPoint = null;
         PendingEnterContainerId = null;
         TargetBuildingId = null;
         IsBuilding = false;

@@ -77,6 +77,7 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.BuildRequest &&
             message.Type != NetworkMessageType.BuildConstructionRequest &&
             message.Type != NetworkMessageType.TrainUnitRequest &&
+            message.Type != NetworkMessageType.SetRallyPointRequest &&
             message.Type != NetworkMessageType.EnterUnitRequest &&
             message.Type != NetworkMessageType.LeaveContainerRequest &&
             message.Type != NetworkMessageType.NotifyUnitsSelected &&
@@ -148,6 +149,7 @@ public sealed class NetworkHost
                     NetworkMessageType.BuildRequest => NetworkCommands.CreateBuildCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.BuildConstructionRequest => NetworkCommands.CreateBuildConstructionCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.TrainUnitRequest => TryCreateTrainUnitCommand(request),
+                    NetworkMessageType.SetRallyPointRequest => TryCreateSetRallyPointCommand(request),
                     NetworkMessageType.EnterUnitRequest => TryCreateEnterUnitCommand(request),
                     NetworkMessageType.LeaveContainerRequest => TryCreateLeaveContainerCommand(request),
                     NetworkMessageType.NotifyUnitsSelected => request,
@@ -181,6 +183,33 @@ public sealed class NetworkHost
             : null;
         return NetworkCommands.CreateTransferUnitCommand(
             _networkHandler.LocalPeerId, request, recipient?.ArmyId ?? Guid.Empty);
+    }
+
+    private NetworkMessage? TryCreateSetRallyPointCommand(NetworkMessage request)
+    {
+        if (request.UnitId is not Guid unitId || request.RallyPoint is not RallyPointState requested ||
+            _world.Units.FindById(unitId) is not Unit unit || !unit.SupportsRallyPoint || unit.IsDying ||
+            !Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId))
+            return null;
+
+        Vector3? position = null;
+        if (requested.HasPosition)
+        {
+            if (!float.IsFinite(requested.X) || !float.IsFinite(requested.Y) || !float.IsFinite(requested.Z) ||
+                requested.X < 0 || requested.Z < 0 ||
+                requested.X >= _world.Terrain.Width - 1 || requested.Z >= _world.Terrain.Height - 1)
+                return null;
+            Point cell = _world.GameGrid.ToCell(new Vector3(requested.X, 0, requested.Z));
+            if (!_world.GameGrid.Contains(cell))
+                return null;
+            GridCell data = _world.GameGrid.GetCell(cell);
+            if (!data.HasTerrain || data.IsBlocked || data.ExcludeFromPathfinding ||
+                data.AllowedMovement == MovementModes.None || _world.GameGrid.GetOccupant(cell) is Building)
+                return null;
+            position = new Vector3(requested.X, _world.Terrain.GetHeight((int)requested.X, (int)requested.Z), requested.Z);
+        }
+        unit.SetRallyPoint(position);
+        return NetworkCommands.CreateSetRallyPointCommand(_networkHandler.LocalPeerId, unit);
     }
 
     private NetworkMessage? TryCreateTrainUnitCommand(NetworkMessage request)

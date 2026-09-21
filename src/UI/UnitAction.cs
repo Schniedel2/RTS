@@ -31,6 +31,8 @@ public enum UnitActionType
     TilePreview,
     AdjustToolSize,
     AdjustTerrainSize,
+    SetRallyPoint,
+    ClearRallyPoint,
     max
 
 }

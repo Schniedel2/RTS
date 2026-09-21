@@ -125,6 +125,10 @@ public sealed class NetworkClient
                 z),
             cancellationToken);
 
+    public Task RequestSetRallyPointAsync(Guid unitId, Vector3? position, CancellationToken cancellationToken = default) =>
+        _networkHandler.SendToHostAsync(
+            NetworkCommands.CreateSetRallyPointRequest(_networkHandler.LocalPeerId, unitId, position), cancellationToken);
+
     public Task RequestTrainUnitAsync(
         Guid buildingId,
         string unitTypeId,

@@ -11,7 +11,8 @@ public class Building : Unit
 {
     private sealed record BuildingState(
         float ConstructionProgress,
-        ProductionQueueState ProductionQueue);
+        ProductionQueueState ProductionQueue,
+        RallyPointState? RallyPoint = null);
     private readonly BuildingFlag _ownerFlag = new();
 
     public float ConstructionProgress { get; private set; }
@@ -157,7 +158,7 @@ public class Building : Unit
     public override UnitState GetState()
     {
         byte[] payload = JsonSerializer.SerializeToUtf8Bytes(
-            new BuildingState(ConstructionProgress, ProductionQueue.GetState()));
+            new BuildingState(ConstructionProgress, ProductionQueue.GetState(), GetRallyPointState()));
         return new UnitState(
             UnitId,
             StateRevision,
@@ -185,6 +186,8 @@ public class Building : Unit
         if (Occupancy is not null)
             Occupancy.EntryEnabled = IsCompleted;
         ProductionQueue.ApplyState(payload.ProductionQueue);
+        if (payload.RallyPoint is RallyPointState rallyPoint)
+            ApplyRallyPointState(rallyPoint);
         StateRevision = state.Revision;
         NetworkStateDirty = false;
     }

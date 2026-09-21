@@ -7,6 +7,8 @@ namespace RTS;
 
 public class GDIBarracks : Building
 {
+    public override bool SupportsRallyPoint => true;
+
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
 
     public GDIBarracks(
@@ -48,6 +50,8 @@ public class GDIBarracks : Building
     {
         IReadOnlyList<UnitAction> actions =
         [
+            new(UnitActionType.SetRallyPoint, "Set rally point", 0, 1),
+            new(UnitActionType.ClearRallyPoint, "Clear rally point", 7, 1),
             new(UnitActionType.Goto, "Cancel", 0, 1)
         ];
     
@@ -59,6 +63,8 @@ public class GDIBarracks : Building
                 new(UnitActionType.TrainUnit, "Grunt", 6, 1, "grunt"),
                 new(UnitActionType.TrainUnit, "Flamer", 6, 1, "flamer"),
                 new(UnitActionType.TrainUnit, "Invasor", 6, 1, "invasor"),
+                new(UnitActionType.SetRallyPoint, "Set rally point", 0, 1),
+                new(UnitActionType.ClearRallyPoint, "Clear rally point", 7, 1),
                 new(UnitActionType.Goto, "Cancel", 0, 1),
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1),
                 new(UnitActionType.Follow, "Sell", 6, 1),

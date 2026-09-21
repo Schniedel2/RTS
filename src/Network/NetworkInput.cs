@@ -134,7 +134,8 @@ public sealed class NetworkInput
                         new Vector3(message.X, message.Y, message.Z),
                         new Vector3(message.ExitX, message.ExitY, message.ExitZ),
                         message.TargetAngleY,
-                        message.DriverUnitId);
+                        message.DriverUnitId,
+                        message.RallyPoint);
                 }
                 else
                 {
@@ -150,6 +151,16 @@ public sealed class NetworkInput
                 }
             }
 
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.SetRallyPointCommand)
+        {
+            // A client may request a change, but may not inject its own confirmation on the host.
+            if (Globals.Game.Network.IsHost && message.SenderId != Globals.Game.Network.LocalPeerId)
+                return;
+            if (message.UnitId is Guid rallyUnitId && message.RallyPoint is RallyPointState rallyPoint)
+                Globals.World.Units.FindById(rallyUnitId)?.ApplyRallyPointState(rallyPoint);
             return;
         }
 
@@ -328,7 +339,8 @@ public sealed class NetworkInput
         Vector3 spawnPosition,
         Vector3 exitPosition,
         float targetAngleY,
-        Guid? driverUnitId)
+        Guid? driverUnitId,
+        RallyPointState? rallyPoint)
     {
         MobileUnit? unit = Globals.World.Units.SpawnUnitFromBuilding(
             unitTypeId,
@@ -343,6 +355,7 @@ public sealed class NetworkInput
         if (unit is null)
             return;
 
+        unit.SetProductionRallyPoint(rallyPoint);
         string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);
         Globals.Console.Print($"Produced {unitTypeId} for player {playerName}.");
     }

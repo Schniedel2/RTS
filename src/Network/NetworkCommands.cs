@@ -311,6 +311,13 @@ public static class NetworkCommands
             NormalZ: normal.Z,
             ServerTime: serverTime);
 
+    public static NetworkMessage CreateSetRallyPointRequest(Guid senderId, Guid unitId, Vector3? position) =>
+        new(NetworkMessageType.SetRallyPointRequest, senderId, UnitId: unitId,
+            RallyPoint: position is Vector3 point ? new(0, true, point.X, point.Y, point.Z) : new(0, false));
+
+    public static NetworkMessage CreateSetRallyPointCommand(Guid hostId, Unit unit) =>
+        new(NetworkMessageType.SetRallyPointCommand, hostId, UnitId: unit.UnitId, RallyPoint: unit.GetRallyPointState());
+
     public static NetworkMessage CreateProducedUnitCommand(
         Guid hostId,
         Building building,
@@ -340,7 +347,8 @@ public static class NetworkCommands
             ExitX: exitPosition.X,
             ExitY: exitPosition.Y,
             ExitZ: exitPosition.Z,
-            DriverUnitId: order.RequestedByPlayerId == Guid.Empty ? null : Guid.NewGuid());
+            DriverUnitId: order.RequestedByPlayerId == Guid.Empty ? null : Guid.NewGuid(),
+            RallyPoint: building.GetRallyPointState());
     }
 
     public static NetworkMessage CreateEnterUnitRequest(Guid senderId, Guid unitId, Guid containerId, OccupantRole? role = null) =>

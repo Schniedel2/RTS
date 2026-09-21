@@ -1,3 +1,5 @@
+using RTS.Network;
+using System.Text.Json;
 using Microsoft.Xna.Framework;
 using RTS;
 using System.Reflection;
@@ -183,4 +185,111 @@ building.TotalBuildingPointsNeeded = 100;
 Check(building.GetScreenBounds(view, projection, viewport) == ExpectedBounds(), "Selection follows construction scale");
 building.SetTransform(Matrix.CreateRotationY(-0.9f) * Matrix.CreateTranslation(-2, 0, 1));
 Check(building.GetScreenBounds(view, projection, viewport) == ExpectedBounds(), "Selection follows changed world transform");
-Console.WriteLine($"Passed {checks} navigation and selection checks.");
+// Host validation, network serialization, replay and production rally behavior.
+grid = new GameGrid(12, 12, 1);
+world = World(grid);
+terrain = Terrain(12, 12);
+grid.BindTerrain(terrain);
+Field(world, typeof(GameWorld), "_terrain", terrain);
+var units = new UnitHandler();
+Field(world, typeof(GameWorld), "<Units>k__BackingField", units);
+Field(world, typeof(GameWorld), "<PathfindingManager>k__BackingField", new PathfindingManager(world));
+Globals.World = world;
+var game = Empty<RTSGame>();
+var armies = new ArmyHandler();
+Field(game, typeof(RTSGame), "<Armies>k__BackingField", armies);
+Globals.Game = game;
+var transport = Empty<NetworkHandler>();
+Guid hostId = Guid.NewGuid(), ownerId = Guid.NewGuid(), armyId = Guid.NewGuid();
+Field(transport, typeof(NetworkHandler), "<LocalPeerId>k__BackingField", hostId);
+Field(transport, typeof(NetworkHandler), "<IsHost>k__BackingField", true);
+Field(game, typeof(RTSGame), "<Network>k__BackingField", transport);
+armies.EnsureArmy(armyId, ownerId);
+GDIBarracks Barracks(Guid id)
+{
+    var result = Empty<GDIBarracks>();
+    Field(result, typeof(Unit), "<UnitId>k__BackingField", id);
+    Field(result, typeof(Unit), "<ArmyId>k__BackingField", armyId);
+    Field(result, typeof(Building), "<ProductionQueue>k__BackingField", new ProductionQueue());
+    result.SetTransform(Matrix.Identity);
+    return result;
+}
+var barracks = Barracks(Guid.NewGuid());
+((List<Unit>)units.Units).Add(barracks);
+var input = new NetworkInput(transport);
+var host = new NetworkHost(transport, input, world);
+NetworkMessage? Request(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost)
+    .GetMethod("TryCreateSetRallyPointCommand", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
+NetworkMessage Wire(NetworkMessage message) => JsonSerializer.Deserialize<NetworkMessage>(JsonSerializer.Serialize(message))!;
+void Deliver(NetworkMessage command) => typeof(NetworkInput)
+    .GetMethod("HandleNetworkMessage", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(input, new object[] { Wire(command) });
+Vector3 rallyTarget = new(8.5f, 99, 7.5f);
+var request = NetworkCommands.CreateSetRallyPointRequest(ownerId, barracks.UnitId, rallyTarget);
+Check(Request(request with { SenderId = Guid.NewGuid() }) is null, "Foreign player cannot set rally point");
+Check(Request(request with { UnitId = Guid.NewGuid() }) is null, "Unknown rally owner rejected");
+foreach (Vector3 bad in new[] { new Vector3(float.NaN, 0, 2), new Vector3(-1, 0, 2), new Vector3(12, 0, 2) })
+    Check(Request(NetworkCommands.CreateSetRallyPointRequest(ownerId, barracks.UnitId, bad)) is null, "Invalid rally coordinates rejected");
+grid.GetCell(8, 7).IsBlocked = true;
+Check(Request(request) is null, "Blocked rally target rejected");
+grid.GetCell(8, 7).IsBlocked = false;
+grid.GetCell(8, 7).ExcludeFromPathfinding = true;
+Check(Request(request) is null, "Excluded rally target rejected");
+grid.GetCell(8, 7).ExcludeFromPathfinding = false;
+NetworkMessage confirmed = Request(Wire(request))!;
+Check(confirmed.Type == NetworkMessageType.SetRallyPointCommand && confirmed.SenderId == hostId, "Host confirms rally point");
+Check(barracks.RallyPoint == new Vector3(8.5f, 0, 7.5f) && barracks.RallyPointRevision == 1, "Host sets terrain height and revision");
+Check(barracks.Actions.Any(action => action.Type == UnitActionType.SetRallyPoint), "Barracks exposes rally action");
+Check(!Unit().SupportsRallyPoint, "Ordinary units opt out");
+var replica = Barracks(barracks.UnitId);
+((List<Unit>)units.Units)[0] = replica;
+Field(transport, typeof(NetworkHandler), "<IsHost>k__BackingField", false);
+Deliver(confirmed);
+Check(replica.RallyPoint == barracks.RallyPoint && replica.RallyPointRevision == barracks.RallyPointRevision, "Client applies serialized host confirmation");
+replica.ApplyRallyPointState(new RallyPointState(0, false));
+Check(replica.RallyPoint is not null, "Old rally update cannot overwrite confirmed point");
+var lateReplica = Barracks(barracks.UnitId);
+lateReplica.ApplyState(barracks.GetState());
+Check(lateReplica.RallyPoint == barracks.RallyPoint, "Building state restores rally point");
+((List<Unit>)units.Units)[0] = barracks;
+Field(transport, typeof(NetworkHandler), "<IsHost>k__BackingField", true);
+Deliver(confirmed with { SenderId = ownerId, RallyPoint = new RallyPointState(100, false) });
+Check(barracks.RallyPoint is not null && barracks.RallyPointRevision == 1, "Host rejects forged client confirmation");
+barracks.ProductionQueue.Enqueue(Guid.NewGuid(), "grunt", ownerId, 5);
+var spawn = Wire(NetworkCommands.CreateProducedUnitCommand(hostId, barracks, barracks.ProductionQueue.ActiveOrder!, Vector3.Zero, new Vector3(2.5f, 0, 2.5f)));
+Check(spawn.RallyPoint == barracks.GetRallyPointState(), "Production transmits rally snapshot");
+var cleared = Request(NetworkCommands.CreateSetRallyPointRequest(ownerId, barracks.UnitId, null))!;
+Check(barracks.RallyPoint is null && cleared.RallyPoint is { HasPosition: false, Revision: 2 }, "Host can clear rally point");
+Check(spawn.RallyPoint is { HasPosition: true }, "Existing production snapshot survives later rally changes");
+replica.ApplyRallyPointState(cleared.RallyPoint!.Value);
+replica.ApplyState(barracks.GetState());
+Check(replica.RallyPoint is null, "Clear survives state synchronization");
+
+// Run the actual building-exit transition without graphics or model loading.
+var produced = new MobileUnit(new Vector3(2.5f, 0, 2.5f), 1, 1, 1, Guid.NewGuid());
+void SetSpawnRally(MobileUnit unit) => typeof(MobileUnit)
+    .GetMethod("SetProductionRallyPoint", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(unit, new object?[] { spawn.RallyPoint });
+void FinishExit(MobileUnit unit) => typeof(MobileUnit)
+    .GetMethod("UpdateLeavingBuilding", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(unit, new object[] { new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.1)) });
+produced.BeginLeavingBuilding(barracks.UnitId, produced.Position);
+SetSpawnRally(produced);
+Check(produced.CurrentCommand is null && world.PathfindingManager.PendingRequests == 0, "Rally waits for exit");
+FinishExit(produced);
+Check(!produced.IsLeavingBuilding && produced.CurrentCommand?.Target == new Vector2(8.5f, 7.5f) && world.PathfindingManager.PendingRequests == 1, "After exit unit requests normal rally path");
+grid.Remove(produced);
+produced = new MobileUnit(new Vector3(2.5f, 0, 2.5f), 1, 1, 1, Guid.NewGuid());
+produced.BeginLeavingBuilding(barracks.UnitId, produced.Position);
+SetSpawnRally(produced);
+produced.Stop();
+FinishExit(produced);
+Check(produced.CurrentCommand is null && world.PathfindingManager.PendingRequests == 1, "Manual stop cancels pending rally order");
+grid.Remove(produced);
+var waitingSoldier = Unit();
+waitingSoldier.SetPosition(new Vector3(8.5f, 0, 7.5f));
+Check(grid.TryMove(waitingSoldier, new Point(8, 7)), "First recruit occupies rally cell");
+produced = new MobileUnit(new Vector3(2.5f, 0, 2.5f), 1, 1, 1, Guid.NewGuid());
+produced.BeginLeavingBuilding(barracks.UnitId, produced.Position);
+SetSpawnRally(produced);
+FinishExit(produced);
+Check(produced.CurrentCommand is GotoCommand nearby && nearby.Target != new Vector2(8.5f, 7.5f) &&
+    Vector2.Distance(nearby.Target, new Vector2(8.5f, 7.5f)) < 2, "Later recruit gathers beside occupied rally point");
+Console.WriteLine($"Passed {checks} navigation, selection and rally point checks.");

@@ -107,6 +107,10 @@ public class PlayerHandler
                     }
                     return false;
                 }
+            case UnitActionType.ClearRallyPoint:
+                foreach (Unit unit in _selectedUnits.Where(unit => unit.SupportsRallyPoint))
+                    _ = Globals.Game.NetworkClient.RequestSetRallyPointAsync(unit.UnitId, null);
+                return false;
             case UnitActionType.LeaveContainer:
                 {
                     if (_selectedUnits.Count == 1 && _selectedUnits[0].Occupancy is not null)
@@ -448,6 +452,13 @@ public class PlayerHandler
             if (_selectedUnits.Count == 0)
                 return;
 
+            if (action.Type == UnitActionType.SetRallyPoint)
+            {
+                foreach (Unit unit in _selectedUnits.Where(unit => unit.SupportsRallyPoint))
+                    _ = Globals.Game.NetworkClient.RequestSetRallyPointAsync(unit.UnitId, targetPosition);
+                ActiveAction = null;
+                return;
+            }
             if (action.Type == UnitActionType.Goto)
             {
                 Globals.Game.NetworkClient.RequestGotoAsync(_selectedUnits, targetPosition);
@@ -637,6 +648,21 @@ public class PlayerHandler
                 Color.Transparent,
                 Color.White,
                 borderThickness: 2);
+        }
+
+        foreach (Unit unit in _selectedUnits)
+        {
+            if (unit.RallyPoint is not Vector3 point)
+                continue;
+            point.Y = _map.Terrain.GetHeight((int)point.X, (int)point.Z) + 0.1f;
+            Vector3 screen = viewport.Project(point, camera.Projection, camera.View, Matrix.Identity);
+            if (screen.Z < 0 || screen.Z > 1)
+                continue;
+            Globals.RenderHelper.DrawRectangle(spriteBatch,
+                new Rectangle((int)screen.X - 5, (int)screen.Y - 5, 10, 10),
+                Color.Gold * 0.35f, Color.Gold, borderThickness: 2);
+            RenderHelper.DrawTextCentered(spriteBatch, Globals._debugFont, "Rally point",
+                new Vector2(screen.X, screen.Y - 18), Color.Gold);
         }
 
         if (_isSelectingUnits)
