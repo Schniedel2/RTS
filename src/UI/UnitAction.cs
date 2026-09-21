@@ -16,6 +16,7 @@ public enum UnitActionType
     RaiseTerrain,
     LowerTerrain,
     FlattenTerrain,
+    SharpenTerrain,
     SmoothTerrain,
     IncToolSize,
     DecToolSize,

@@ -471,7 +471,8 @@ public class PlayerHandler
             if ((action.Type == UnitActionType.RaiseTerrain) || 
                 (action.Type == UnitActionType.FlattenTerrain) || 
                 (action.Type == UnitActionType.SmoothTerrain) || 
-                (action.Type == UnitActionType.LowerTerrain))
+                (action.Type == UnitActionType.LowerTerrain) ||
+                (action.Type == UnitActionType.SharpenTerrain))
             {
                 Globals.Game.NetworkClient.RequestToolActionAsync(action, _toolShape, _toolSize, targetPosition);
             }
@@ -562,6 +563,7 @@ public class PlayerHandler
             (ActiveAction.Type == UnitActionType.LowerTerrain) || 
             (ActiveAction.Type == UnitActionType.SmoothTerrain) || 
             (ActiveAction.Type == UnitActionType.FlattenTerrain) ||
+            (ActiveAction.Type == UnitActionType.SharpenTerrain) ||
             (ActiveAction.Type == UnitActionType.SetTerrainTile) ||
             (ActiveAction.Type == UnitActionType.FillTile) 
             )

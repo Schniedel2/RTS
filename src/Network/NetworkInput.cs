@@ -585,6 +585,10 @@ public sealed class NetworkInput
                 TerrainHelper.FlattenTerrain(Globals.World.Terrain, message.X, message.Z, message.Y, message.ToolShape ?? ToolShape.Circle, message.ToolSize, 0.5f);
                 // Handle FlattenTerrain action
                 break;
+            case UnitActionType.SharpenTerrain:
+                TerrainHelper.SharpenTerrain(Globals.World.Terrain, message.X, message.Z, message.Y, message.ToolShape ?? ToolShape.Circle, message.ToolSize, 0.5f);
+                // Handle SharpenTerrain action
+                break;
             case UnitActionType.SmoothTerrain:
                 // Handle SmoothTerrain action
                 TerrainHelper.SmoothTerrain(Globals.World.Terrain, message.X, message.Z, message.ToolShape ?? ToolShape.Circle, message.ToolSize, 0.5f);
@@ -596,6 +600,11 @@ public sealed class NetworkInput
                 if (message.TerrainTile is not { } tile)
                     break;
                 TerrainHelper.SetTile(Globals.World.Terrain, message.X, message.Z, message.ToolShape ?? ToolShape.Circle, message.ToolSize, tile);
+                break;
+            case UnitActionType.FillTile:
+                if (message.TerrainTile is not { } fillTile)
+                    break;
+                TerrainHelper.FillTile(Globals.World.Terrain, message.X, message.Z, fillTile);
                 break;
             default:
                 // Handle other actions or do nothing

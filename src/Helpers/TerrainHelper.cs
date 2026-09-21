@@ -72,12 +72,35 @@ public static class TerrainHelper
     {
         Point[] affectedCells = GetCells(_terrain, new Vector2(x, z), toolShape, toolSize);
         float averageHeight = targetHeight;
+        float minHeight = affectedCells.Length > 0 ? _terrain.GetHeight(affectedCells[0].X, affectedCells[0].Y) : 0;
+        float maxHeight = affectedCells.Length > 0 ? _terrain.GetHeight(affectedCells[0].X, affectedCells[0].Y) : 0;
+
         foreach (Point cell in affectedCells)
         {
-            float distance = Vector2.Distance(new Vector2(cell.X, cell.Y), new Vector2(x, z));
             float h = _terrain.GetHeight(cell.X, cell.Y);
-            h += (averageHeight - h) * amount * MathF.Max(0, 1 - distance / toolSize);
+            if (h < minHeight) minHeight = h;
+            if (h > maxHeight) maxHeight = h;
+        }
+
+        float midHeight = (maxHeight + minHeight) / 2.0f;
+
+        foreach (Point cell in affectedCells)
+        {
+            float h = _terrain.GetHeight(cell.X, cell.Y);
+            float distance = Vector2.Distance(new Vector2(cell.X, cell.Y), new Vector2(x, z));
+
+            //  increase "contrast" for height
+            float distH = 0f;
+            if (h < midHeight) // drag to minHeight
+                distH = minHeight- h; // drag to minHeight
+            else
+                distH = maxHeight - h;
+
+            h +=distH * amount * MathF.Max(0, 1 - distance / toolSize);
             _terrain.SetHeight(cell.X, cell.Y, h);
+
+            _terrain.SetHeight(cell.X, cell.Y, h);
+
         }
         _terrain.BuildTerrainMesh();
     }
@@ -111,4 +134,43 @@ public static class TerrainHelper
         _terrain.UpdateTilemapTexture();
     }    
     
+    public static void FillTile(Terrain _terrain, float x, float z, TerrainTile terrainTile)
+    {
+        const float heightTolerance = 1.0f;
+
+        int startX = (int)x;
+        int startZ = (int)z;
+        if (!IsInsideMap(_terrain, startX, startZ))
+            return;
+
+        float referenceHeight = _terrain.GetHeight(startX, startZ);
+
+        bool[,] visited = new bool[_terrain.Width, _terrain.Height];
+        Queue<Point> queue = new Queue<Point>();
+        queue.Enqueue(new Point(startX, startZ));
+        visited[startX, startZ] = true;
+
+        Point[] neighbours = { new Point(1, 0), new Point(-1, 0), new Point(0, 1), new Point(0, -1) };
+
+        while (queue.Count > 0)
+        {
+            Point cell = queue.Dequeue();
+            _terrain.SetTile(cell.X, cell.Y, terrainTile);
+
+            foreach (Point offset in neighbours)
+            {
+                int nx = cell.X + offset.X;
+                int nz = cell.Y + offset.Y;
+                if (!IsInsideMap(_terrain, nx, nz) || visited[nx, nz])
+                    continue;
+                if (MathF.Abs(_terrain.GetHeight(nx, nz) - referenceHeight) > heightTolerance)
+                    continue;
+
+                visited[nx, nz] = true;
+                queue.Enqueue(new Point(nx, nz));
+            }
+        }
+
+        _terrain.UpdateTilemapTexture();
+    }    
 }

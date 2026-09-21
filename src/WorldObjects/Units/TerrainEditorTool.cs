@@ -14,6 +14,7 @@ public class TerrainEditorTool : Soldier
         new(UnitActionType.LowerTerrain, "Lower Terrain", 1, 5),
         new(UnitActionType.FlattenTerrain, "Flatten Terrain", 2, 5),
         new(UnitActionType.SmoothTerrain, "Smooth Terrain", 2, 5), // icon needed
+        new(UnitActionType.SharpenTerrain, "Sharpen Terrain", 2, 5), // icon needed
         new(UnitActionType.SetTerrainTile, "Set Tiles", 3, 5),
         new(UnitActionType.FillTile, "Fill Tiles", 2, 9),
         new(UnitActionType.SelectToolCircle, "Change to circle shaped tool", 8, 6),
