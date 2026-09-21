@@ -68,6 +68,20 @@ public static class TerrainHelper
         _terrain.BuildTerrainMesh();
     }
 
+    public static void SharpenTerrain(Terrain _terrain, float x, float z, float targetHeight, ToolShape toolShape, int toolSize, float amount)
+    {
+        Point[] affectedCells = GetCells(_terrain, new Vector2(x, z), toolShape, toolSize);
+        float averageHeight = targetHeight;
+        foreach (Point cell in affectedCells)
+        {
+            float distance = Vector2.Distance(new Vector2(cell.X, cell.Y), new Vector2(x, z));
+            float h = _terrain.GetHeight(cell.X, cell.Y);
+            h += (averageHeight - h) * amount * MathF.Max(0, 1 - distance / toolSize);
+            _terrain.SetHeight(cell.X, cell.Y, h);
+        }
+        _terrain.BuildTerrainMesh();
+    }
+
     public static void SmoothTerrain(Terrain _terrain, float x, float z, ToolShape toolShape, int toolSize, float amount)
     {
         Point[] affectedCells = GetCells(_terrain, new Vector2(x, z), toolShape, toolSize);

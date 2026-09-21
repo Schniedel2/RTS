@@ -15,7 +15,10 @@ public class Building : Unit
     private readonly BuildingFlag _ownerFlag = new();
 
     public float ConstructionProgress { get; private set; }
-    public float ConstructionPercentage => ConstructionProgress / TotalBuildingPointsNeeded;
+    // Buildings without construction costs are immediately complete; avoid 0 / 0 in their world matrix.
+    public float ConstructionPercentage => TotalBuildingPointsNeeded <= 0.0f
+        ? 1.0f
+        : ConstructionProgress / TotalBuildingPointsNeeded;
     public float TotalBuildingPointsNeeded { get; set; }
     public float RemainingBuildingPoints => TotalBuildingPointsNeeded - ConstructionProgress;
     /// <summary>Draw a local cloth flag when the building mesh exposes <c>pivot:flag</c>.</summary>

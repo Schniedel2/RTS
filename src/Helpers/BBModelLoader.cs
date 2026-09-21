@@ -14,7 +14,7 @@ public static class BBModelLoader
     private sealed record ImportedTexture(
         TextureHandler.TextureRegion Visible,
         TextureHandler.TextureRegion? MaterialMask);
-    private sealed record EmbeddedTextureEntry(int Index, int? Id, string? FileName, string? Source);
+    private sealed record EmbeddedTextureEntry(int Index, int? Id, string? FileName, string? Source, string? SharedName);
 
     public static Mesh Load(string path, Color? color = null)
     {
@@ -505,7 +505,12 @@ public static class BBModelLoader
                 int.TryParse(idElement.GetString(), out int parsedId)
                 ? parsedId
                 : null;
-            entries.Add(new EmbeddedTextureEntry(index, id, textureFileName, embeddedSource));
+            string? sharedName = name?.StartsWith("shared:", StringComparison.OrdinalIgnoreCase) == true
+                ? name["shared:".Length..]
+                : null;
+            if (sharedName is not null && string.IsNullOrWhiteSpace(sharedName))
+                throw new InvalidDataException($"Empty shared texture name in '{modelPath}'.");
+            entries.Add(new EmbeddedTextureEntry(index, id, textureFileName, embeddedSource, sharedName));
             index++;
         }
 
@@ -516,21 +521,28 @@ public static class BBModelLoader
 
         foreach (EmbeddedTextureEntry entry in entries)
         {
-            // BBModels are self-contained assets: only their embedded images
+            // Apart from explicit shared references, BBModels are self-contained: embedded images
             // are used for visible mesh textures. In particular, do not fall
             // back to a PNG next to the model merely because it has the same
             // filename as a Blockbench texture entry.
-            if (IsMaterialMaskFileName(entry.FileName) || !IsEmbeddedImage(entry.Source))
+            if (IsMaterialMaskFileName(entry.FileName))
                 continue;
 
-            // The model's full path makes this key unique across BBModels, so
+            // Shared names are global. Otherwise the full path makes the key unique, so
             // two models may both embed e.g. "texture.png" without sharing or
             // overwriting an atlas region. The index distinguishes multiple
             // textures inside one model.
-            string embeddedKey = $"bbmodel:{Path.GetFullPath(modelPath)}:texture:{entry.Index}";
-            TextureHandler.TextureRegion region = Globals.TextureHandler.TryGetTextureRegionByCacheKey(embeddedKey, out TextureHandler.TextureRegion existing)
-                ? existing
-                : Globals.TextureHandler.AddTextureFromDataUri(embeddedKey, entry.Source!);
+            string embeddedKey = entry.SharedName ?? $"bbmodel:{Path.GetFullPath(modelPath)}:texture:{entry.Index}";
+            if (!Globals.TextureHandler.TryGetTextureRegionByCacheKey(embeddedKey, out TextureHandler.TextureRegion region))
+            {
+                if (!IsEmbeddedImage(entry.Source))
+                {
+                    if (entry.SharedName is not null)
+                        throw new InvalidDataException($"Shared texture '{entry.SharedName}' in '{modelPath}' is not registered and has no embedded image.");
+                    continue;
+                }
+                region = Globals.TextureHandler.AddTextureFromDataUri(embeddedKey, entry.Source!);
+            }
             TextureHandler.TextureRegion? mask = null;
             if (embeddedMasks.TryGetValue(GetTextureBaseName(entry.FileName), out EmbeddedTextureEntry? embeddedMask))
             {
@@ -539,7 +551,7 @@ public static class BBModelLoader
                     ? existingMask
                     : Globals.MaterialMaskTextureHandler.AddTextureFromDataUri(maskKey, embeddedMask.Source!);
             }
-            else if (!string.IsNullOrWhiteSpace(entry.FileName))
+            else if (!string.IsNullOrWhiteSpace(entry.FileName) && !entry.FileName.StartsWith("shared:", StringComparison.OrdinalIgnoreCase))
             {
                 // Existing external masks remain supported while models are
                 // gradually migrated to self-contained BBModel assets.

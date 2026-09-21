@@ -12,7 +12,7 @@ public static class BuildingFactory
         Guid unitId,
         Guid creatorPlayerId)
     {
-        Building building;            
+        Building? building = null;
         switch (buildingTypeName.ToLower())
         {
             case "gdi-barracks":
@@ -24,9 +24,16 @@ public static class BuildingFactory
             case "reaktor":
                 building = new Reaktor(position, unitId);
                 break;
+            case "building-4x3x4":
+            case "building-1":
+                building = new GenericBuilding(position, unitId, "building-1");
+                break;
             default:
                 return null;
         }
+        if (building is null)
+            return null;
+            
         building.SetCreatorPlayer(creatorPlayerId);
         building.SetArmy(creatorPlayerId == Guid.Empty ? null : creatorPlayerId);
         building.SetRotationYDegrees(RotateYDegrees);

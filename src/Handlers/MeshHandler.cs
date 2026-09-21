@@ -37,21 +37,16 @@ public class MeshHandler
         Meshes["rpg"] = BBModelLoader.Load(Path.Combine(directory, "guns/rpg.bbmodel"), Color.White);
 
         Meshes["rpg-projectile"] = BBModelLoader.Load(Path.Combine(directory, "guns/rpg-projectile.bbmodel"), Color.White);
-        
-        // Attachments inherit Soldier-1's 0.3 local scale. Rifle-1's authored
-        // geometry is correspondingly smaller, so scale it back up locally.
-        // Because its root pivot is (0,0,0), this does not move the attachment
-        // point itself.
-        Meshes["Rifle-1"].LocalTransform = Matrix.CreateScale(3.0f);
 
         Meshes["default"] = BBModelLoader.Load(Path.Combine(directory, "Soldier-1.bbmodel"), Color.White);
         
         Meshes["Soldier-2"] = BBModelLoader.Load(Path.Combine(directory, "Soldier-2.bbmodel"), Color.White);
-        Meshes["Soldier-2"].LocalTransform = Matrix.CreateScale(0.3f);
+        Meshes["Soldier-2"].LocalTransform = Matrix.CreateScale(0.2f);
 
         Meshes["reaktor"] = BBModelLoader.Load(Path.Combine(directory, "reaktor.bbmodel"), Color.White);
         Meshes["gdi-base"] = BBModelLoader.Load(Path.Combine(directory, "gdi-base.bbmodel"), Color.White);
         Meshes["barracks-1"] = BBModelLoader.Load(Path.Combine(directory, "buildings/barracks-1.bbmodel"), Color.White);
+        Meshes["building-1"] = BBModelLoader.Load(Path.Combine(directory, "buildings/building-1.bbmodel"), Color.White);
 
         Meshes["TankBody-1"] = BBModelLoader.Load(Path.Combine(directory, "TankBody-1.bbmodel"), Color.White);
 

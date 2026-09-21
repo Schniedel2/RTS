@@ -115,10 +115,22 @@ public sealed class TextureHandler : IDisposable
         return AddTexture(fullPath, source);
     }
 
+    /// <summary>Registers a shared name. The first registration wins across all atlases.</summary>
+    public TextureRegion AddTexture(string name, string filename)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        if (TryGetTextureRegionByCacheKey(name, out TextureRegion existing))
+            return existing;
+        using Texture2D source = LoadTexture(Path.GetFullPath(filename));
+        return AddTexture(name, source);
+    }
+
     /// <summary>Adds a Blockbench-style <c>data:image/...;base64,...</c> texture to an atlas.</summary>
     public TextureRegion AddTextureFromDataUri(string cacheKey, string dataUri)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(cacheKey);
+        if (TryGetTextureRegionByCacheKey(cacheKey, out TextureRegion existing))
+            return existing;
         ArgumentException.ThrowIfNullOrWhiteSpace(dataUri);
 
         int separator = dataUri.IndexOf(',');
