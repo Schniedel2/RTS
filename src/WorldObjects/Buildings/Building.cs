@@ -21,6 +21,11 @@ public class Building : Unit
         ? 1.0f
         : ConstructionProgress / TotalBuildingPointsNeeded;
     public float TotalBuildingPointsNeeded { get; set; }
+    /// <summary>Maximum total terrain height range under the rotated footprint, in world units.</summary>
+    public float MaximumTerrainHeightDifference { get; set; } = 0.5f;
+
+    public BuildingPlacement EvaluatePlacement(GameWorld world, Vector3 position, float rotationDegrees) =>
+        BuildingPlacement.Evaluate(world, this, position, rotationDegrees, MaximumTerrainHeightDifference);
     public float RemainingBuildingPoints => TotalBuildingPointsNeeded - ConstructionProgress;
     /// <summary>Draw a local cloth flag when the building mesh exposes <c>pivot:flag</c>.</summary>
     public bool ShowOwnerFlag { get; set; } = true;

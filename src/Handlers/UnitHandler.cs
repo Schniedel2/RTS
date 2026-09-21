@@ -30,6 +30,8 @@ public class UnitHandler
         if (unit == null)
             return null;
 
+        if (unit is Building building && !building.EvaluatePlacement(Globals.World, position, RotateYDegrees).IsAllowed)
+            return null;
         AssignCurrentArmy(unit, creatorPlayerId);
         if (SetFootprints(unit, RotateYDegrees))
         {
@@ -93,6 +95,8 @@ public class UnitHandler
         if (unit is null)
             return null;
 
+        if (unit is Building building && !building.EvaluatePlacement(Globals.World, position, RotateYDegrees).IsAllowed)
+            return null;
         AssignCurrentArmy(unit, creatorPlayerId);
         if (SetFootprints(unit, RotateYDegrees))
         {

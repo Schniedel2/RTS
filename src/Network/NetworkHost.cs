@@ -12,6 +12,7 @@ public sealed class NetworkHost
 {
     private readonly NetworkHandler _networkHandler;
     private readonly GameWorld _world;
+    private readonly EarthworkController _earthworks;
     private readonly ConcurrentQueue<NetworkMessage> _requestQueue = new();
     private readonly SemaphoreSlim _updateGate = new(1, 1);
     private const int MaximumQueuedRequests = 1024;
@@ -58,6 +59,11 @@ public sealed class NetworkHost
     {
         _networkHandler = networkHandler;
         _world = world;
+        _earthworks = new EarthworkController(world, networkHandler.LocalPeerId, command =>
+        {
+            networkHandler.EnqueueLocalMessage(command);
+            _ = networkHandler.BroadcastAsync(command, CancellationToken.None);
+        });
         networkInput.MessageReceived += HandleMessage;
     }
 
@@ -78,6 +84,7 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.BuildConstructionRequest &&
             message.Type != NetworkMessageType.TrainUnitRequest &&
             message.Type != NetworkMessageType.SetRallyPointRequest &&
+            message.Type != NetworkMessageType.EarthworkRequest &&
             message.Type != NetworkMessageType.EnterUnitRequest &&
             message.Type != NetworkMessageType.LeaveContainerRequest &&
             message.Type != NetworkMessageType.NotifyUnitsSelected &&
@@ -134,6 +141,7 @@ public sealed class NetworkHost
                 if (!_requestQueue.TryDequeue(out NetworkMessage? request))
                     return;
 
+                _earthworks.CancelForRequest(request);
                 NetworkMessage? command = request.Type switch
                 {
                     NetworkMessageType.SpawnRequest => NetworkCommands.CreateSpawnCommand(_networkHandler.LocalPeerId, request),
@@ -146,10 +154,11 @@ public sealed class NetworkHost
                     NetworkMessageType.TextRequest => NetworkCommands.CreateTextCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.ToolActionRequest => NetworkCommands.CreateToolActionCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.RequestPlayerUpdate => NetworkCommands.CreatePlayerUpdateCommand(_networkHandler.LocalPeerId, request, ConfirmPlayerSkin(request)),
-                    NetworkMessageType.BuildRequest => NetworkCommands.CreateBuildCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.BuildRequest => TryCreateBuildCommand(request),
                     NetworkMessageType.BuildConstructionRequest => NetworkCommands.CreateBuildConstructionCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.TrainUnitRequest => TryCreateTrainUnitCommand(request),
                     NetworkMessageType.SetRallyPointRequest => TryCreateSetRallyPointCommand(request),
+                    NetworkMessageType.EarthworkRequest => _earthworks.Start(request),
                     NetworkMessageType.EnterUnitRequest => TryCreateEnterUnitCommand(request),
                     NetworkMessageType.LeaveContainerRequest => TryCreateLeaveContainerCommand(request),
                     NetworkMessageType.NotifyUnitsSelected => request,
@@ -183,6 +192,25 @@ public sealed class NetworkHost
             : null;
         return NetworkCommands.CreateTransferUnitCommand(
             _networkHandler.LocalPeerId, request, recipient?.ArmyId ?? Guid.Empty);
+    }
+
+    private NetworkMessage? TryCreateBuildCommand(NetworkMessage request)
+    {
+        if (string.IsNullOrWhiteSpace(request.UnitTypeId) ||
+            !float.IsFinite(request.X) || !float.IsFinite(request.Y) || !float.IsFinite(request.Z) ||
+            !float.IsFinite(request.TargetAngleY) || request.X < 0 || request.Z < 0 ||
+            request.X >= _world.Terrain.Width - 1 || request.Z >= _world.Terrain.Height - 1)
+            return null;
+        Guid unitId = request.UnitId ?? Guid.NewGuid();
+        if (unitId == Guid.Empty || _world.Units.FindById(unitId) is not null)
+            return null;
+        Vector3 position = new(request.X, _world.Terrain.GetHeight((int)request.X, (int)request.Z), request.Z);
+        // Register immediately so another request in this host tick cannot
+        // claim the same footprint before the replicated command is processed.
+        Building? building = _world.Units.SpawnBuilding(request.UnitTypeId, position,
+            request.TargetAngleY, unitId, request.SenderId);
+        return building is null ? null : NetworkCommands.CreateBuildCommand(_networkHandler.LocalPeerId,
+            request with { UnitId = unitId, PlayerId = request.SenderId, Y = position.Y });
     }
 
     private NetworkMessage? TryCreateSetRallyPointCommand(NetworkMessage request)
@@ -312,6 +340,7 @@ public sealed class NetworkHost
                 unit.UpdateHost(gameTime);
             }
 
+            _earthworks.Update((float)HostSimulationInterval);
             UpdateProduction((float)HostSimulationInterval);
             UpdateContainerEntries();
             SimulateHostProjectiles((float)HostSimulationInterval);

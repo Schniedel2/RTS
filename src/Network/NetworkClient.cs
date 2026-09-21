@@ -125,6 +125,10 @@ public sealed class NetworkClient
                 z),
             cancellationToken);
 
+    public Task RequestEarthworkAsync(Guid unitId, Vector3 target, EarthworkKind kind) =>
+        _networkHandler.SendToHostAsync(new NetworkMessage(NetworkMessageType.EarthworkRequest,
+            _networkHandler.LocalPeerId, UnitId: unitId, X: target.X, Z: target.Z, EarthworkKind: kind), CancellationToken.None);
+
     public Task RequestSetRallyPointAsync(Guid unitId, Vector3? position, CancellationToken cancellationToken = default) =>
         _networkHandler.SendToHostAsync(
             NetworkCommands.CreateSetRallyPointRequest(_networkHandler.LocalPeerId, unitId, position), cancellationToken);

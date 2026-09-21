@@ -154,6 +154,19 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type is NetworkMessageType.EarthworkStartCommand or NetworkMessageType.EarthworkCellCommand or NetworkMessageType.EarthworkEndCommand)
+        {
+            if (Globals.Game.Network.IsHost && message.SenderId != Globals.Game.Network.LocalPeerId) return;
+            if (message.UnitId is not Guid id || Globals.World.Units.FindById(id) is not GDIBulldozer worker) return;
+            if (message.Type == NetworkMessageType.EarthworkStartCommand && message.EarthworkOrder is EarthworkOrder order)
+                worker.BeginEarthwork(order);
+            else if (message.Type == NetworkMessageType.EarthworkCellCommand && message.EarthworkOrderId is Guid orderId)
+                worker.ApplyEarthworkCell(Globals.World, orderId, message.EarthworkSequence, new(message.CellX, message.CellZ));
+            else if (message.Type == NetworkMessageType.EarthworkEndCommand && worker.EarthworkOrder?.Id == message.EarthworkOrderId)
+                worker.EndEarthwork();
+            return;
+        }
+
         if (message.Type == NetworkMessageType.SetRallyPointCommand)
         {
             // A client may request a change, but may not inject its own confirmation on the host.
@@ -380,8 +393,12 @@ public sealed class NetworkInput
 
     private void SpawnBuildingLocally(string buildingTypeId, Guid playerId, Guid unitId, float x, float y, float z, float targetAngleY)
     {
+        // Host placement already reserves the site; repeated confirmations are idempotent.
+        if (Globals.World.Units.FindById(unitId) is not null)
+            return;
         Vector3 target = new(x, y, z);
-        Globals.World.Units.SpawnBuilding(buildingTypeId, target, targetAngleY, unitId, playerId);
+        if (Globals.World.Units.SpawnBuilding(buildingTypeId, target, targetAngleY, unitId, playerId) is null)
+            return;
 
         string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);
         Globals.Console.Print($"Spawned {buildingTypeId} for player {playerName}.");
@@ -394,11 +411,16 @@ public sealed class NetworkInput
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
         {
             MobileUnit? unit = Globals.World.Units.FindMobileUnitById(unitId);
+            if (message.EarthworkOrderId is Guid orderId &&
+                (unit is not GDIBulldozer worker || worker.EarthworkOrder?.Id != orderId)) continue;
+            // The host already issued its own work movement before broadcasting it.
+            if (message.EarthworkOrderId is not null && Globals.Game.Network.IsHost) continue;
             unit?.ClearFollowUnit();
             unit?.TryReceiveGotoCommand(Globals.World, command);
         }
 
-        Globals.Game.World.Markers.ShowGotoMarker(new Vector3(message.X, message.Y, message.Z));
+        if (message.EarthworkOrderId is null)
+            Globals.Game.World.Markers.ShowGotoMarker(new Vector3(message.X, message.Y, message.Z));
     }
 
     private static void ApplyArmyControl(NetworkMessage message, bool grant)
@@ -599,7 +621,7 @@ public sealed class NetworkInput
                 // Handle FlattenTerrain action
                 break;
             case UnitActionType.SharpenTerrain:
-                TerrainHelper.SharpenTerrain(Globals.World.Terrain, message.X, message.Z, message.Y, message.ToolShape ?? ToolShape.Circle, message.ToolSize, 0.5f);
+                TerrainHelper.SharpenTerrain(Globals.World.Terrain, message.X, message.Z, message.Y, message.ToolShape ?? ToolShape.Circle, message.ToolSize, 0.02f);
                 // Handle SharpenTerrain action
                 break;
             case UnitActionType.SmoothTerrain:

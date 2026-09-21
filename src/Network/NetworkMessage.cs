@@ -81,7 +81,11 @@ public enum NetworkMessageType
     MergeArmiesRequest,
     MergeArmiesCommand,
     SetRallyPointRequest,
-    SetRallyPointCommand
+    SetRallyPointCommand,
+    EarthworkRequest,
+    EarthworkStartCommand,
+    EarthworkCellCommand,
+    EarthworkEndCommand
 }
 
 public sealed record WorldData(
@@ -139,4 +143,10 @@ public sealed record NetworkMessage(
     float NormalY = 0.0f,
     float NormalZ = 0.0f,
     double ServerTime = 0.0,
-    RallyPointState? RallyPoint = null);
+    RallyPointState? RallyPoint = null,
+    EarthworkOrder? EarthworkOrder = null,
+    EarthworkKind? EarthworkKind = null,
+    Guid? EarthworkOrderId = null,
+    int EarthworkSequence = 0,
+    int CellX = 0,
+    int CellZ = 0);

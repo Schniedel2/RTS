@@ -44,6 +44,8 @@ public class PlayerHandler
     private double _nextAllowedActionTime;
     public TerrainTile _currentTerrainTile = TerrainTile.Grass;
     private float _buildPreviewDegree;
+    private BuildingPlacement? _buildPlacementPreview;
+    private EarthworkPreview? _earthworkPreview;
 
     public bool SelectAction(UnitAction action, bool alternateAction)
     {
@@ -76,8 +78,8 @@ public class PlayerHandler
                 else
                     _currentTerrainTile++;
                 if (_currentTerrainTile > TerrainTile.Max)
-                    _currentTerrainTile = TerrainTile.Min;
-                if (_currentTerrainTile < TerrainTile.Min)
+                    _currentTerrainTile = 0;
+                if (_currentTerrainTile < 0)
                     _currentTerrainTile = TerrainTile.Max;
                 return false;
             case UnitActionType.AdjustToolSize:
@@ -452,6 +454,15 @@ public class PlayerHandler
             if (_selectedUnits.Count == 0)
                 return;
 
+            if (action.Type is UnitActionType.LevelAndConcrete or UnitActionType.RemoveConcrete)
+            {
+                if (_selectedUnits.Count != 1 || _selectedUnits[0] is not GDIBulldozer worker) return;
+                EarthworkKind kind = action.Type == UnitActionType.LevelAndConcrete ? EarthworkKind.LevelAndConcrete : EarthworkKind.RemoveConcrete;
+                if (!Earthwork.Preview(_map, worker, _map.GameGrid.ToCell(targetPosition), kind).IsAllowed) return;
+                _ = Globals.Game.NetworkClient.RequestEarthworkAsync(worker.UnitId, targetPosition, kind);
+                ActiveAction = null;
+                return;
+            }
             if (action.Type == UnitActionType.SetRallyPoint)
             {
                 foreach (Unit unit in _selectedUnits.Where(unit => unit.SupportsRallyPoint))
@@ -474,6 +485,10 @@ public class PlayerHandler
                 _ = Globals.Game.NetworkClient.RequestFollowAsync(_selectedUnits, targetUnit.UnitId);
             if (action.Type == UnitActionType.Build)
             {
+                Building? preview = BuildingFactory.SpawnBuilding(action.TargetObjectName, targetPosition,
+                    targetAngleY, Guid.Empty, Guid.Empty);
+                if (preview is null || !preview.EvaluatePlacement(_map, targetPosition, targetAngleY).IsAllowed)
+                    return;
                 Guid buildingId = Guid.NewGuid();
                 Globals.Game.NetworkClient.RequestBuildAsync(action.TargetObjectName, targetPosition, targetAngleY, buildingId);
                 Globals.Game.NetworkClient.RequestBuildConstructionAsync(_selectedUnits, buildingId);
@@ -588,6 +603,8 @@ public class PlayerHandler
 
     public void Draw3D(Camera camera)
     {
+        _buildPlacementPreview = null;
+        _earthworkPreview = null;
         //  render editor-tool
         if (IsMouseOnTerrain)
         {
@@ -603,6 +620,30 @@ public class PlayerHandler
                 }
             }
 
+            if (ActiveAction?.Type is UnitActionType.LevelAndConcrete or UnitActionType.RemoveConcrete &&
+                _selectedUnits.Count == 1 && _selectedUnits[0] is GDIBulldozer worker)
+            {
+                EarthworkKind kind = ActiveAction.Type == UnitActionType.LevelAndConcrete ? EarthworkKind.LevelAndConcrete : EarthworkKind.RemoveConcrete;
+                _earthworkPreview = Earthwork.Preview(_map, worker, _map.GameGrid.ToCell(MouseWorldPosition), kind);
+                _renderStates.PushState();
+                Globals.GraphicsDevice.DepthStencilState = DepthStencilState.None;
+                Rectangle area = _earthworkPreview.Order.Area;
+                if (kind == EarthworkKind.LevelAndConcrete)
+                    for (int z = area.Top - 1; z <= area.Bottom; z++)
+                        for (int x = area.Left - 1; x <= area.Right; x++)
+                            if (!area.Contains(x, z)) DrawWorkCell(new Point(x, z), new Color(255, 180, 40, 65));
+                foreach (EarthworkCell cell in _earthworkPreview.Cells)
+                    DrawWorkCell(cell.Cell, !cell.Allowed ? new Color(255, 40, 40, 140)
+                        : cell.NeedsWork ? new Color(40, 220, 80, 95) : new Color(160, 160, 160, 70));
+                _renderStates.PopState();
+
+                void DrawWorkCell(Point cell, Color color)
+                {
+                    int size = _map.GameGrid.CellSize;
+                    for (int z = cell.Y * size; z < (cell.Y + 1) * size; z++)
+                        for (int x = cell.X * size; x < (cell.X + 1) * size; x++) _map.Terrain.HighlightCell(camera, x, z, color);
+                }
+            }
             if (ActiveAction is not null)
             {
                 //  render the active action's visual representation at the mouse world position
@@ -615,6 +656,7 @@ public class PlayerHandler
                     Building? unit = BuildingFactory.SpawnBuilding(ActiveAction.TargetObjectName, pos, _buildPreviewDegree, Guid.Empty, Guid.Empty);
                     if (unit is not null)
                     {
+                        _buildPlacementPreview = unit.EvaluatePlacement(_map, pos, _buildPreviewDegree);
                         GraphicsDevice graphicsDevice = Globals.GraphicsDevice;
                         _renderStates.PushState();
 
@@ -623,6 +665,18 @@ public class PlayerHandler
                         Globals._unitEffect.Parameters["Opacity"]?.SetValue(0.75f);
                         unit.DrawPreview(Globals._unitEffect);
                         Globals._unitEffect.Parameters["Opacity"]?.SetValue(1.0f);
+                        // Render annotations after the ghost, including cells hidden by an obstacle.
+                        graphicsDevice.DepthStencilState = DepthStencilState.None;
+                        foreach (PlacementCell cell in _buildPlacementPreview.Cells)
+                        {
+                            Color tint = cell.Issues == PlacementIssue.None
+                                ? new Color(40, 220, 80, 100) : new Color(255, 40, 40, 150);
+                            int left = cell.Cell.X * _map.GameGrid.CellSize;
+                            int top = cell.Cell.Y * _map.GameGrid.CellSize;
+                            for (int z = top; z < top + _map.GameGrid.CellSize; z++)
+                                for (int x = left; x < left + _map.GameGrid.CellSize; x++)
+                                    _map.Terrain.HighlightCell(camera, x, z, tint);
+                        }
                         _renderStates.PopState();
                     }
                 }
@@ -635,6 +689,21 @@ public class PlayerHandler
         Camera camera,
         Viewport viewport)
     {                
+        if (ActiveAction?.Type is UnitActionType.LevelAndConcrete or UnitActionType.RemoveConcrete && _earthworkPreview is EarthworkPreview preview)
+        {
+            Point mouse = Mouse.GetState().Position;
+            string label = preview.IsAllowed ? (preview.Order.Kind == EarthworkKind.LevelAndConcrete
+                ? $"8 x 8 | Height {preview.Order.TargetHeight:0.00}" : "8 x 8 | Remove concrete") : "Cannot work here";
+            RenderHelper.DrawTextCentered(spriteBatch, Globals._debugFont, label, new Vector2(mouse.X, mouse.Y + 28),
+                preview.IsAllowed ? Color.LimeGreen : Color.Red);
+        }
+        if (ActiveAction?.Type == UnitActionType.Build && _buildPlacementPreview is BuildingPlacement placement)
+        {
+            Point mouse = Mouse.GetState().Position;
+            string status = placement.IsAllowed ? "Build here" : "Cannot build here";
+            RenderHelper.DrawTextCentered(spriteBatch, Globals._debugFont, status,
+                new Vector2(mouse.X, mouse.Y + 28), placement.IsAllowed ? Color.LimeGreen : Color.Red);
+        }
         foreach (Unit unit in _selectedUnits)
         {
             Rectangle unitBounds = unit.GetScreenBounds(

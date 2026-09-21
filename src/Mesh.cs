@@ -14,7 +14,8 @@ public sealed class SubMesh(
     Vector3 pivot,
     int? textureAtlasIndex = null,
     TextureHandler.TextureRegion? textureRegion = null,
-    TextureHandler.TextureRegion? materialMaskRegion = null)
+    TextureHandler.TextureRegion? materialMaskRegion = null,
+    string? sharedTextureName = null)
 {
     public string Name { get; } = name;
     public VertexPositionColorNormalTexture[] Vertices { get; } = vertices;
@@ -25,6 +26,8 @@ public sealed class SubMesh(
     public TextureHandler.TextureRegion? TextureRegion { get; } = textureRegion;
     public TextureHandler.TextureRegion? MaterialMaskRegion { get; private set; } = materialMaskRegion;
     public bool UsesFullSkinMask { get; private set; }
+    public string? SharedTextureName { get; } = sharedTextureName;
+    public bool RepeatSharedTexture { get; internal set; }
 
     public void SetMaterialMask(TextureHandler.TextureRegion materialMaskRegion)
     {
@@ -134,7 +137,17 @@ public sealed class MeshNode(string name, Vector3 pivot)
             if (subMesh.TextureAtlasIndex is int atlasIndex)
                 effect.Parameters["UnitTexture"]?.SetValue(Globals.TextureHandler.GetAtlas(atlasIndex));
             ApplyMaterialMask(effect, subMesh);
+            if (subMesh.RepeatSharedTexture && subMesh.TextureRegion is TextureHandler.TextureRegion region)
+            {
+                effect.Parameters["SharedTextureRepeat"]?.SetValue(1.0f);
+                effect.Parameters["SharedTextureUVOffset"]?.SetValue(region.UVOffset);
+                effect.Parameters["SharedTextureUVScale"]?.SetValue(region.UVScale);
+                effect.Parameters["SharedTextureHalfTexel"]?.SetValue(new Vector2(0.5f / region.AtlasWidth, 0.5f / region.AtlasHeight));
+            }
+            else
+                effect.Parameters["SharedTextureRepeat"]?.SetValue(0.0f);
             RenderHelper.DrawMesh(effect, subMesh.Vertices, subMesh.Indices);
+            effect.Parameters["SharedTextureRepeat"]?.SetValue(0.0f);
         }
         drawAttachments?.Invoke(Name, GetAttachmentWorld(parentWorld, parameters, pose));
         foreach (MeshNode child in Children)
@@ -356,13 +369,12 @@ public class Mesh
         return new BoundingBox(transformedMin, transformedMax);
     }
 
-    /// <summary>
-    /// Replaces UV coordinates on every sub-mesh using one shared set of mesh
-    /// bounds. Use <see cref="SubMesh.ApplyCubeMapping"/> for independent UV
-    /// projection per individual part.
-    /// </summary>
-    public void ApplyCubeMapping(UVMapping mapping) =>
-        CubeMapping.Apply(this, mapping);
+    /// <summary>Box-projects only shared textures at a fixed texel density. Call after setting LocalTransform.</summary>
+    public void ApplySharedTextureMapping(float pixelsPerUnit = 32.0f) =>
+        SharedTextureMapping.Apply(this, pixelsPerUnit);
+
+    /// <summary>Replaces UV coordinates on every sub-mesh using the complete mesh bounds.</summary>
+    public void ApplyCubeMapping(UVMapping mapping) => CubeMapping.Apply(this, mapping);
 
     public void Draw(Effect effect, Matrix world) => Draw(effect, world, parameters);
 

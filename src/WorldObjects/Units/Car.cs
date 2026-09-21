@@ -50,7 +50,7 @@ public class Car : MobileUnit
     public override bool TryReceiveGotoCommand(GameWorld map, GotoCommand command)
     {
         bool accepted = base.TryReceiveGotoCommand(map, command);
-        _isManeuvering = accepted && CanOnlyMoveForward;
+        _isManeuvering = accepted && CanOnlyMoveForward && !CanTurnInPlace;
 
         return accepted;
     }

@@ -33,6 +33,8 @@ public enum UnitActionType
     AdjustTerrainSize,
     SetRallyPoint,
     ClearRallyPoint,
+    LevelAndConcrete,
+    RemoveConcrete,
     max
 
 }

@@ -21,6 +21,10 @@ texture MaterialMaskTexture;
 // Per-unit offsets into the respective texture atlases. They are intentionally
 // independent: a mesh variant may use a different material-mask layout.
 float2 UnitTextureUVOffset;
+float SharedTextureRepeat;
+float2 SharedTextureUVOffset;
+float2 SharedTextureUVScale;
+float2 SharedTextureHalfTexel;
 float2 MaterialMaskUVOffset;
 float2 MaterialMaskSourceUVOffset;
 float2 MaterialMaskUVScale;
@@ -185,8 +189,15 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
     // -------------------------------------------------
 
     float2 unitTextureUv = input.TexCoord + UnitTextureUVOffset;
+    if (SharedTextureRepeat > 0.5)
+    {
+        float2 repeated = frac((input.TexCoord - SharedTextureUVOffset) / SharedTextureUVScale);
+        unitTextureUv = clamp(SharedTextureUVOffset + repeated * SharedTextureUVScale,
+            SharedTextureUVOffset + SharedTextureHalfTexel,
+            SharedTextureUVOffset + SharedTextureUVScale - SharedTextureHalfTexel);
+    }
     float2 materialMaskUv = MaterialMaskUVOffset +
-        (input.TexCoord + UnitTextureUVOffset - MaterialMaskSourceUVOffset) * MaterialMaskUVScale;
+        (unitTextureUv - MaterialMaskSourceUVOffset) * MaterialMaskUVScale;
     float2 localSkinUv = frac(input.TexCoord * PlayerSkinUVRepeat);
     float2 playerSkinUv = PlayerSkinUVOffset + localSkinUv * PlayerSkinUVScale;
 

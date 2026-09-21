@@ -101,6 +101,7 @@ public static class CubeMapping
         Vector3 minimum,
         Vector3 maximum)
     {
+        subMesh.RepeatSharedTexture = false;
         for (int index = 0; index < subMesh.Vertices.Length; index++)
         {
             VertexPositionColorNormalTexture vertex = subMesh.Vertices[index];

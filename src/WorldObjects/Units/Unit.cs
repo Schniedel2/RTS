@@ -325,33 +325,12 @@ public abstract class Unit : WorldObject
     public bool CanPlace(
         Vector3 position,
         float rotationDegrees,
-        float maximumTerrainHeightDifference = 2.0f)
+        float? maximumTerrainHeightDifference = null)
     {
-        if (maximumTerrainHeightDifference < 0.0f)
-            throw new ArgumentOutOfRangeException(nameof(maximumTerrainHeightDifference));
-
-        GameGrid grid = Globals.World.GameGrid;
-        if (!grid.CanPlace(this, position, rotationDegrees))
-            return false;
-
-        IReadOnlyList<Point> footprintCells = grid.GetFootprintCells(this, position, rotationDegrees);
-        if (footprintCells.Count == 0)
-            return false;
-
-        float minimumHeight = float.MaxValue;
-        float maximumHeight = float.MinValue;
-        foreach (Point cell in footprintCells)
-        {
-            // Grid bounds were already checked above; keeping the guard makes
-            // this method safe if the Grid implementation changes later.
-            if (cell.X < 0 || cell.Y < 0 || cell.X >= grid.Width || cell.Y >= grid.Height)
-                return false;
-            float height = Globals.World.Terrain.GetHeight(cell.X, cell.Y);
-            minimumHeight = MathF.Min(minimumHeight, height);
-            maximumHeight = MathF.Max(maximumHeight, height);
-        }
-
-        return maximumHeight - minimumHeight <= maximumTerrainHeightDifference;
+        float tolerance = maximumTerrainHeightDifference ??
+            (this is Building building ? building.MaximumTerrainHeightDifference : 2.0f);
+        return BuildingPlacement.Evaluate(Globals.World, this, position, rotationDegrees, tolerance).IsAllowed &&
+            Globals.World.GameGrid.CanPlace(this, position, rotationDegrees);
     }
 
     public virtual void ClearCommand()

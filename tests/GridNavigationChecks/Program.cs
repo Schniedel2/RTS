@@ -292,4 +292,148 @@ SetSpawnRally(produced);
 FinishExit(produced);
 Check(produced.CurrentCommand is GotoCommand nearby && nearby.Target != new Vector2(8.5f, 7.5f) &&
     Vector2.Distance(nearby.Target, new Vector2(8.5f, 7.5f)) < 2, "Later recruit gathers beside occupied rally point");
-Console.WriteLine($"Passed {checks} navigation, selection and rally point checks.");
+// Building placement samples every vertex under the rotated footprint.
+grid = new GameGrid(12, 12, 1);
+world = World(grid);
+terrain = Terrain(12, 12);
+grid.BindTerrain(terrain);
+Field(world, typeof(GameWorld), "_terrain", terrain);
+units = new UnitHandler();
+Field(world, typeof(GameWorld), "<Units>k__BackingField", units);
+Globals.World = world;
+building = new Building(new Vector3(3.25f, 0, 3.25f), Guid.NewGuid());
+var placement = building.EvaluatePlacement(world, building.Position, 0);
+Check(placement.IsAllowed && placement.HeightDifference == 0, "Flat build site allowed");
+Point far = new(placement.Cells.Max(c => c.Cell.X) + 1, placement.Cells.Max(c => c.Cell.Y) + 1);
+terrain.SetHeight(far.X, far.Y, 0.5f);
+Check(building.EvaluatePlacement(world, building.Position, 0).IsAllowed, "Exact terrain tolerance accepted");
+terrain.SetHeight(far.X, far.Y, 0.6f);
+placement = building.EvaluatePlacement(world, building.Position, 0);
+Check(!placement.IsAllowed && placement.HeightDifference > 0.59f, "Far boundary vertex prevents construction");
+Check(placement.Cells.Any(c => c.Issues.HasFlag(PlacementIssue.UnevenTerrain)), "Uneven cells identified for red preview");
+Check(!building.CanPlace(building.Position, 0), "Public placement uses same building tolerance");
+building.MaximumTerrainHeightDifference = 1;
+Check(building.CanPlace(building.Position, 0), "Tolerance configurable per building");
+building.MaximumTerrainHeightDifference = 0.5f;
+terrain.SetHeight(far.X, far.Y, 0);
+Point firstCell = placement.Cells[0].Cell;
+grid.GetCell(firstCell).IsBlocked = true;
+placement = building.EvaluatePlacement(world, building.Position, 0);
+Check(!placement.IsAllowed && placement.Cells.Any(c => c.Issues == PlacementIssue.Blocked), "Blocked cell identified");
+grid.GetCell(firstCell).IsBlocked = false;
+var blocker = Unit();
+blocker.SetPosition(grid.ToWorldPosition(firstCell, 0));
+Check(grid.TryMove(blocker, firstCell), "Place blocking mobile unit");
+placement = building.EvaluatePlacement(world, building.Position, 0);
+Check(!placement.IsAllowed && placement.Cells.Any(c => c.Issues.HasFlag(PlacementIssue.Occupied)), "Occupied cell identified");
+grid.Remove(blocker);
+Check(!building.EvaluatePlacement(world, new Vector3(0.1f, 0, 0.1f), 0).IsAllowed, "Partial footprint outside map rejected");
+Check(!building.EvaluatePlacement(world, new Vector3(float.NaN, 0, 3), 0).IsAllowed, "Nonfinite build position rejected");
+Field(building, typeof(Unit), "<Width>k__BackingField", 3);
+placement = building.EvaluatePlacement(world, building.Position, 37);
+Check(placement.IsAllowed && placement.Cells.Select(c => c.Cell).ToHashSet().SetEquals(
+    grid.GetFootprintCells(building, building.Position, 37)), "Preview uses rotated occupancy footprint");
+grid = new GameGrid(6, 6, 2);
+grid.BindTerrain(terrain);
+Field(world, typeof(GameWorld), "<GameGrid>k__BackingField", grid);
+Field(building, typeof(Unit), "<Width>k__BackingField", 1);
+terrain.SetHeight(3, 3, 1);
+Check(!building.EvaluatePlacement(world, building.Position, 0).IsAllowed, "Coarse grid interior vertices tested");
+terrain.SetHeight(3, 3, 0);
+
+// Host reserves accepted sites immediately, rejecting competing requests.
+grid = new GameGrid(12, 12, 1);
+grid.BindTerrain(terrain);
+Field(world, typeof(GameWorld), "<GameGrid>k__BackingField", grid);
+Field(game, typeof(RTSGame), "_players", new List<Player>());
+Globals.MeshHandler = new MeshHandler();
+var smallBox = new BoundingBox(new Vector3(-0.4f, 0, -0.4f), new Vector3(0.4f, 1, 0.4f));
+var smallVertices = smallBox.GetCorners().Select(p => new VertexPositionColorNormalTexture(p, Color.White, Vector3.Up, Vector2.Zero)).ToArray();
+Globals.MeshHandler.Meshes["barracks-1"] = new Mesh("test-barracks", new[] { new SubMesh("body", smallVertices, new[] { 0, 1, 2 }, Vector3.Zero) });
+host = new NetworkHost(transport, input, world);
+NetworkMessage? BuildRequest(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost)
+    .GetMethod("TryCreateBuildCommand", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
+var buildRequest = NetworkCommands.CreateBuildRequest(ownerId, "gdi-barracks", 6.5f, 50, 6.5f, 0, Guid.NewGuid());
+terrain.SetHeight(7, 7, 1);
+Check(BuildRequest(buildRequest) is null && units.Units.Count == 0, "Host rejects uneven site without registering it");
+Check(units.SpawnBuilding("gdi-barracks", new Vector3(6.5f, 0, 6.5f), 0, Guid.NewGuid(), ownerId) is null, "Direct spawn also validates height");
+terrain.SetHeight(7, 7, 0);
+var buildCommand = BuildRequest(buildRequest);
+Check(buildCommand is { Type: NetworkMessageType.BuildCommand, Y: 0 } && units.Units.Count == 1, "Host places valid site at terrain height");
+Check(BuildRequest(buildRequest with { UnitId = Guid.NewGuid() }) is null && units.Units.Count == 1, "Host rejects overlapping request in same tick");
+Deliver(buildCommand!);
+Check(units.Units.Count == 1, "Host confirmation does not duplicate building");
+// Shared texel density must be independent of model bounds and ordinary UVs.
+var sharedRegion = new TextureHandler.TextureRegion { AtlasIndex = 0, X = 16, Y = 32, Width = 256, Height = 128, AtlasWidth = 1024, AtlasHeight = 1024 };
+SubMesh TexturedPart(string? sharedName, float length)
+{
+    VertexPositionColorNormalTexture[] v =
+    [
+        new(new Vector3(0, 0, 0), Color.White, Vector3.Forward, new Vector2(0.7f, 0.8f)),
+        new(new Vector3(length, 0, 0), Color.White, Vector3.Forward, new Vector2(0.9f, 0.8f)),
+        new(new Vector3(0, 1, 0), Color.White, Vector3.Forward, new Vector2(0.7f, 0.9f))
+    ];
+    return new SubMesh("face", v, new[] { 0, 1, 2 }, Vector3.Zero, 0, sharedRegion, sharedTextureName: sharedName);
+}
+var sharedPart = TexturedPart("bricks", 1);
+var plainPart = TexturedPart(null, 1);
+var uvMesh = new Mesh("mixed", new[] { sharedPart, plainPart });
+uvMesh.ApplySharedTextureMapping();
+float PixelDistance(SubMesh part) => Math.Abs(part.Vertices[1].TextureCoordinate.X - part.Vertices[0].TextureCoordinate.X) * sharedRegion.AtlasWidth;
+Check(Math.Abs(PixelDistance(sharedPart) - 32) < 0.001f, "Default shared density is 32 pixels per unit");
+Check(plainPart.Vertices[0].TextureCoordinate == new Vector2(0.7f, 0.8f) && !plainPart.RepeatSharedTexture, "Ordinary UVs remain untouched");
+Check(sharedPart.RepeatSharedTexture, "Shared region uses shader-local repeating");
+var largePart = TexturedPart("bricks", 20);
+new Mesh("large", new[] { largePart }).ApplySharedTextureMapping();
+Check(Math.Abs(PixelDistance(largePart) - 640) < 0.001f, "Larger buildings retain pixel density and multiple repeats");
+uvMesh.LocalTransform = Matrix.CreateScale(2);
+uvMesh.ApplySharedTextureMapping(64);
+Check(Math.Abs(PixelDistance(sharedPart) - 128) < 0.001f, "Explicit density includes permanent mesh scale");
+var previousUv = sharedPart.Vertices.Select(v => v.TextureCoordinate).ToArray();
+uvMesh.ApplySharedTextureMapping(64);
+Check(previousUv.SequenceEqual(sharedPart.Vertices.Select(v => v.TextureCoordinate)), "Repeated mapping is idempotent");
+Check(Math.Abs((sharedPart.Vertices[2].TextureCoordinate.Y - sharedPart.Vertices[0].TextureCoordinate.Y) * sharedRegion.AtlasHeight + 128) < 0.001f, "Non-square textures preserve vertical density");
+foreach (float invalid in new[] { 0, -1, float.NaN, float.PositiveInfinity })
+{
+    bool rejected = false;
+    try { uvMesh.ApplySharedTextureMapping(invalid); } catch (ArgumentOutOfRangeException) { rejected = true; }
+    Check(rejected, "Invalid shared texel density rejected");
+}
+
+// Seed atlas metadata only, so the real BBModel importer can be tested without a GPU.
+var textureHandler = new TextureHandler(null!);
+Type atlasType = typeof(TextureHandler).GetNestedType("Atlas", BindingFlags.NonPublic)!;
+object atlas = Activator.CreateInstance(atlasType, new object?[] { null, 2 })!;
+var atlasRegions = (Dictionary<string, TextureHandler.TextureRegion>)atlasType.GetField("Regions")!.GetValue(atlas)!;
+((System.Collections.IList)typeof(TextureHandler).GetField("_atlases", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(textureHandler)!).Add(atlas);
+Globals.TextureHandler = textureHandler;
+Globals.MaterialMaskTextureHandler = new TextureHandler(null!);
+string fixture = Path.GetTempFileName();
+try
+{
+    atlasRegions["bricks"] = sharedRegion;
+    atlasRegions[$"bbmodel:{Path.GetFullPath(fixture)}:texture:0"] = new TextureHandler.TextureRegion
+        { AtlasIndex = 1, X = 8, Y = 8, Width = 32, Height = 32, AtlasWidth = 1024, AtlasHeight = 1024 };
+    File.WriteAllText(fixture, """
+    {"name":"mixed-model","resolution":{"width":32,"height":32},
+     "textures":[{"id":"0","name":"ordinary.png"},{"id":"1","name":"shared:bricks"}],
+     "elements":[
+       {"uuid":"cube","name":"mixed-cube","type":"cube","from":[0,0,0],"to":[10,10,10],"origin":[0,0,0],
+        "faces":{"north":{"texture":0,"uv":[0,0,32,32]},"south":{"texture":1,"uv":[0,0,32,32]}}},
+       {"uuid":"mesh","name":"mixed-mesh","type":"mesh","origin":[0,0,0],
+        "vertices":{"a":[0,0,0],"b":[10,0,0],"c":[0,10,0],"d":[10,10,0]},
+        "faces":{"plain":{"texture":0,"vertices":["a","b","c"],"uv":{"a":[0,0],"b":[32,0],"c":[0,32]}},
+                 "shared":{"texture":1,"vertices":["b","d","c"],"uv":{"b":[0,0],"d":[32,0],"c":[0,32]}}}}
+     ],"outliner":["cube","mesh"]}
+    """);
+    var imported = BBModelLoader.Load(fixture);
+    Check(imported.SubMeshes.Count == 4 && imported.Root.Children.Count == 2, "Mixed materials split into batches without changing hierarchy");
+    Check(imported.SubMeshes.Count(p => p.SharedTextureName == "bricks") == 2, "Shared provenance retained for cubes and meshes");
+    Check(imported.SubMeshes.Select(p => p.TextureAtlasIndex).Distinct().Count() == 2, "Shared and local textures can use separate atlases");
+    var originalUvs = imported.SubMeshes.Where(p => p.SharedTextureName is null).SelectMany(p => p.Vertices.Select(v => v.TextureCoordinate)).ToArray();
+    imported.ApplySharedTextureMapping();
+    Check(originalUvs.SequenceEqual(imported.SubMeshes.Where(p => p.SharedTextureName is null).SelectMany(p => p.Vertices.Select(v => v.TextureCoordinate))), "Importer preserves authored ordinary face UVs");
+    Check(imported.SubMeshes.Where(p => p.SharedTextureName is not null).All(p => p.RepeatSharedTexture), "All shared cube and mesh batches opt into repeating");
+}
+finally { File.Delete(fixture); }
+Console.WriteLine($"Passed {checks} gameplay and shared UV checks.");

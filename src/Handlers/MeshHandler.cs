@@ -67,6 +67,10 @@ public class MeshHandler
         // the turret is deliberately a complete player-skin surface.
         Meshes["TankTurret-1"].SetFullSkinMaterialMask();
 
+        // Apply after all permanent mesh scales have been configured.
+        foreach (Mesh mesh in Meshes.Values)
+            mesh.ApplySharedTextureMapping();
+
         int tileSize = 64;
         int tx = tileSize*3+8;
         int ty = tileSize*2+8;

@@ -13,7 +13,8 @@ public static class BBModelLoader
     private const float ModelScale = 0.1f;
     private sealed record ImportedTexture(
         TextureHandler.TextureRegion Visible,
-        TextureHandler.TextureRegion? MaterialMask);
+        TextureHandler.TextureRegion? MaterialMask,
+        string? SharedName);
     private sealed record EmbeddedTextureEntry(int Index, int? Id, string? FileName, string? Source, string? SharedName);
 
     public static Mesh Load(string path, Color? color = null)
@@ -24,21 +25,21 @@ public static class BBModelLoader
         (float Width, float Height) resolution = ReadResolution(root);
         Dictionary<int, ImportedTexture> textureRegions = ReadTextureRegions(root, path);
 
-        Dictionary<string, SubMesh> elementsByUuid = [];
+        Dictionary<string, IReadOnlyList<SubMesh>> elementsByUuid = [];
         if (root.TryGetProperty("elements", out JsonElement elements))
         {
             foreach (JsonElement element in elements.EnumerateArray())
             {
                 if (!element.TryGetProperty("type", out JsonElement type))
                     continue;
-                SubMesh? subMesh = type.GetString() switch
+                IReadOnlyList<SubMesh> subMeshes = type.GetString() switch
                 {
                     "mesh" => LoadMeshElement(element, vertexColor, resolution, textureRegions),
                     "cube" => LoadCubeElement(element, vertexColor, resolution, textureRegions),
-                    _ => null
+                    _ => []
                 };
-                if (subMesh is not null)
-                    elementsByUuid[element.GetProperty("uuid").GetString()!] = subMesh;
+                if (subMeshes.Count > 0)
+                    elementsByUuid[element.GetProperty("uuid").GetString()!] = subMeshes;
             }
         }
 
@@ -50,7 +51,7 @@ public static class BBModelLoader
             : Path.GetFileNameWithoutExtension(path);
 
         MeshNode? hierarchy = BuildHierarchy(root, meshName, elementsByUuid);
-        Mesh mesh = hierarchy is not null ? new Mesh(meshName, hierarchy) : new Mesh(meshName, [.. elementsByUuid.Values]);
+        Mesh mesh = hierarchy is not null ? new Mesh(meshName, hierarchy) : new Mesh(meshName, [.. elementsByUuid.Values.SelectMany(parts => parts)]);
         foreach (MeshAnimationClip clip in ReadAnimations(root))
             mesh.Animations[clip.Name] = clip;
         return mesh;
@@ -136,7 +137,7 @@ public static class BBModelLoader
     }
 
     /// <summary>Rebuilds the Blockbench "outliner" tree so whole groups (turret, wheels, ...) can be transformed at once.</summary>
-    private static MeshNode? BuildHierarchy(JsonElement root, string meshName, Dictionary<string, SubMesh> elementsByUuid)
+    private static MeshNode? BuildHierarchy(JsonElement root, string meshName, Dictionary<string, IReadOnlyList<SubMesh>> elementsByUuid)
     {
         if (!root.TryGetProperty("outliner", out JsonElement outliner))
             return null;
@@ -158,19 +159,19 @@ public static class BBModelLoader
         return meshRoot.Children.Count > 0 ? meshRoot : null;
     }
 
-    private static MeshNode? BuildNode(JsonElement item, Dictionary<string, JsonElement> groupsByUuid, Dictionary<string, SubMesh> elementsByUuid)
+    private static MeshNode? BuildNode(JsonElement item, Dictionary<string, JsonElement> groupsByUuid, Dictionary<string, IReadOnlyList<SubMesh>> elementsByUuid)
     {
         if (item.ValueKind == JsonValueKind.String)
         {
-            if (!elementsByUuid.TryGetValue(item.GetString()!, out SubMesh? subMesh))
+            if (!elementsByUuid.TryGetValue(item.GetString()!, out IReadOnlyList<SubMesh>? subMeshes))
                 return null;
-            MeshNode leaf = new(subMesh.Name, subMesh.Pivot);
+            MeshNode leaf = new(subMeshes[0].Name, subMeshes[0].Pivot);
             // Blockbench animation tracks address groups/bones, never mesh
             // elements.  Keeping leaves out of pose lookup avoids applying a
             // group animation twice when names only differ in casing, e.g.
             // group "head" with mesh element "Head".
             leaf.ReceivesAnimationPose = false;
-            leaf.SubMeshes.Add(subMesh);
+            leaf.SubMeshes.AddRange(subMeshes);
             ApplyRotationParameter(leaf, isGroup: false);
             return leaf;
         }
@@ -252,7 +253,7 @@ public static class BBModelLoader
         return (32f, 32f);
     }
 
-    private static SubMesh? LoadMeshElement(
+    private static IReadOnlyList<SubMesh> LoadMeshElement(
         JsonElement element,
         Color vertexColor,
         (float Width, float Height) resolution,
@@ -269,10 +270,7 @@ public static class BBModelLoader
         foreach (JsonProperty vertex in element.GetProperty("vertices").EnumerateObject())
             positions[vertex.Name] = Vector3.Transform(ReadVector3(vertex.Value), elementTransform);
 
-        List<VertexPositionColorNormalTexture> vertices = [];
-        List<int> indices = [];
-        int? textureAtlasIndex = null;
-        ImportedTexture? subMeshTexture = null;
+        Dictionary<ImportedTexture, TextureGeometry> batches = [];
 
         foreach (JsonProperty face in element.GetProperty("faces").EnumerateObject())
         {
@@ -288,16 +286,11 @@ public static class BBModelLoader
             // An element containing only such faces is omitted below.
             if (importedTexture is null)
                 continue;
-            TextureHandler.TextureRegion? textureRegion = importedTexture?.Visible;
-            subMeshTexture ??= importedTexture;
-            if (textureRegion is not null)
-            {
-                if (textureAtlasIndex is int existingAtlas && existingAtlas != textureRegion.AtlasIndex)
-                    throw new InvalidDataException(
-                        $"Mesh element '{name}' uses textures from multiple atlases. " +
-                        "Split it into separate Blockbench mesh elements.");
-                textureAtlasIndex = textureRegion.AtlasIndex;
-            }
+            if (!batches.TryGetValue(importedTexture, out TextureGeometry? geometry))
+                batches[importedTexture] = geometry = new TextureGeometry();
+            List<VertexPositionColorNormalTexture> vertices = geometry.Vertices;
+            List<int> indices = geometry.Indices;
+            TextureHandler.TextureRegion textureRegion = importedTexture.Visible;
             Vector2[] faceUvs = ReadFaceUv(face.Value, faceVertexKeys, resolution, textureRegion);
 
             for (int index = 1; index < facePositions.Length - 1; index++)
@@ -317,21 +310,14 @@ public static class BBModelLoader
             }
         }
 
-        if (vertices.Count == 0 || subMeshTexture is null)
-            return null;
-
-        SubMesh submesh = new SubMesh(
-            name, vertices.ToArray(), indices.ToArray(), pivot, textureAtlasIndex,
-            textureRegion: subMeshTexture?.Visible,
-            materialMaskRegion: subMeshTexture?.MaterialMask);
-        return submesh;
+        return CreateTextureParts(name, pivot, batches);
     }
 
     /// <summary>
     /// Loads Blockbench's standard cube element. Unlike a mesh, its vertices
     /// are implicit in <c>from</c>/<c>to</c>; every face owns a rectangular UV.
     /// </summary>
-    private static SubMesh? LoadCubeElement(
+    private static IReadOnlyList<SubMesh> LoadCubeElement(
         JsonElement element,
         Color vertexColor,
         (float Width, float Height) resolution,
@@ -340,7 +326,7 @@ public static class BBModelLoader
         if (!element.TryGetProperty("from", out JsonElement fromValue) ||
             !element.TryGetProperty("to", out JsonElement toValue))
         {
-            return null;
+            return [];
         }
 
         string name = element.TryGetProperty("name", out JsonElement nameValue)
@@ -372,12 +358,9 @@ public static class BBModelLoader
             corners[index] = Vector3.Transform(corners[index], cubeTransform) * ModelScale;
 
         if (!element.TryGetProperty("faces", out JsonElement faces) || faces.ValueKind != JsonValueKind.Object)
-            return null;
+            return [];
 
-        List<VertexPositionColorNormalTexture> vertices = [];
-        List<int> indices = [];
-        int? textureAtlasIndex = null;
-        ImportedTexture? importedTexture = null;
+        Dictionary<ImportedTexture, TextureGeometry> batches = [];
         foreach ((string faceName, int[] cornerIndices) in CubeFaces)
         {
             if (!faces.TryGetProperty(faceName, out JsonElement face))
@@ -387,21 +370,28 @@ public static class BBModelLoader
             // texture that was used by a preceding submesh draw.
             if (faceTexture is null)
                 continue;
-            if (faceTexture?.Visible is TextureHandler.TextureRegion region)
-            {
-                if (textureAtlasIndex is int existingAtlas && existingAtlas != region.AtlasIndex)
-                    throw new InvalidDataException($"Cube '{name}' uses textures from multiple atlases.");
-                textureAtlasIndex = region.AtlasIndex;
-                importedTexture ??= faceTexture;
-            }
-            AddCubeFace(vertices, indices, corners, cornerIndices, face, resolution, faceTexture?.Visible, vertexColor);
+            if (!batches.TryGetValue(faceTexture, out TextureGeometry? geometry))
+                batches[faceTexture] = geometry = new TextureGeometry();
+            AddCubeFace(geometry.Vertices, geometry.Indices, corners, cornerIndices, face, resolution, faceTexture.Visible, vertexColor);
         }
 
-        return vertices.Count == 0 ? null : new SubMesh(
-            name, vertices.ToArray(), indices.ToArray(), origin * ModelScale, textureAtlasIndex,
-            textureRegion: importedTexture?.Visible,
-            materialMaskRegion: importedTexture?.MaterialMask);
+        return CreateTextureParts(name, origin * ModelScale, batches);
     }
+
+    private sealed class TextureGeometry
+    {
+        public List<VertexPositionColorNormalTexture> Vertices { get; } = [];
+        public List<int> Indices { get; } = [];
+    }
+
+    // Keep the original hierarchy node and pivot, but draw each material separately.
+    // This also allows a shared region from an older atlas beside a model-local texture.
+    private static IReadOnlyList<SubMesh> CreateTextureParts(string name, Vector3 pivot,
+        Dictionary<ImportedTexture, TextureGeometry> batches) => batches
+        .Where(pair => pair.Value.Vertices.Count > 0)
+        .Select(pair => new SubMesh(name, pair.Value.Vertices.ToArray(), pair.Value.Indices.ToArray(), pivot,
+            pair.Key.Visible.AtlasIndex, pair.Key.Visible, pair.Key.MaterialMask, pair.Key.SharedName))
+        .ToArray();
 
     private static readonly (string Name, int[] Corners)[] CubeFaces =
     [
@@ -565,7 +555,7 @@ public static class BBModelLoader
                         : Globals.MaterialMaskTextureHandler.AddTexture(maskPath))
                     : null;
             }
-            ImportedTexture importedTexture = new(region, mask);
+            ImportedTexture importedTexture = new(region, mask, entry.SharedName);
             regions[entry.Index] = importedTexture;
 
             if (entry.Id is int id)

@@ -42,12 +42,11 @@ public class Terrain
 
     public void UpdateTilemapTexture()
     {
-        _tileMapTexture = new Texture2D(
-            Globals.GraphicsDevice,
-            Width,
-            Height,
-            false,
-            SurfaceFormat.Color);
+        if (_tileMapTexture is null || _tileMapTexture.Width != Width || _tileMapTexture.Height != Height)
+        {
+            _tileMapTexture?.Dispose();
+            _tileMapTexture = new Texture2D(Globals.GraphicsDevice, Width, Height, false, SurfaceFormat.Color);
+        }
 
         Color[] data = new Color[Width * Height];
 
@@ -282,6 +281,16 @@ public class Terrain
     }
 
     /// <summary>Maximum slope of the two rendered triangles (bottom-left to top-right diagonal).</summary>
+    public float GetSurfaceHeight(float x, float z)
+    {
+        int left = (int)MathF.Floor(x), top = (int)MathF.Floor(z);
+        float u = x - left, v = z - top;
+        float tl = GetHeight(left, top), tr = GetHeight(left + 1, top);
+        float bl = GetHeight(left, top + 1), br = GetHeight(left + 1, top + 1);
+        return u + v <= 1 ? tl + u * (tr - tl) + v * (bl - tl)
+            : br + (1 - u) * (bl - br) + (1 - v) * (tr - br);
+    }
+
     public float GetMaxSlopeDegrees(int x, int z)
     {
         float tl = GetHeight(x, z), tr = GetHeight(x + 1, z);
@@ -431,44 +440,42 @@ public class Terrain
         return new VertexPosition(position);
     }
 
-    public void HighlightCell(Camera camera, int x, int z)
+    public void HighlightCell(Camera camera, int x, int z, Color? color = null)
     {
-        const float surfaceOffset = 0.1f;
-        Color highlightColor = new Color(255, 255, 255, 96);
+        if (x < 0 || z < 0 || x >= Width - 1 || z >= Height - 1)
+            return;
+        const float offset = 0.03f;
+        Color tint = color ?? new Color(255, 255, 255, 96);
+        Vector3 tl = new(x, GetHeight(x, z) + offset, z);
+        Vector3 tr = new(x + 1, GetHeight(x + 1, z) + offset, z);
+        Vector3 bl = new(x, GetHeight(x, z + 1) + offset, z + 1);
+        Vector3 br = new(x + 1, GetHeight(x + 1, z + 1) + offset, z + 1);
         VertexPositionColor[] vertices =
         [
-            new(new Vector3(x, GetHeight(x, z) + surfaceOffset, z), highlightColor),
-            new(new Vector3(x + 1, GetHeight(x + 1, z) + surfaceOffset, z), highlightColor),
-            new(new Vector3(x + 1, GetHeight(x + 1, z + 1) + surfaceOffset, z + 1), highlightColor),
-            new(new Vector3(x, GetHeight(x, z) + surfaceOffset, z), highlightColor),
-            new(new Vector3(x + 1, GetHeight(x + 1, z + 1) + surfaceOffset, z + 1), highlightColor),
-            new(new Vector3(x, GetHeight(x, z + 1) + surfaceOffset, z + 1), highlightColor)
+            new(bl, tint), new(tl, tint), new(tr, tint),
+            new(bl, tint), new(tr, tint), new(br, tint)
         ];
-
         Globals.CellHighlightEffect.World = Matrix.Identity;
         Globals.CellHighlightEffect.View = camera.View;
         Globals.CellHighlightEffect.Projection = camera.Projection;
-
-        Globals.GraphicsDevice.BlendState = new BlendState
+        GraphicsDevice graphics = Globals.GraphicsDevice;
+        BlendState previousBlend = graphics.BlendState;
+        RasterizerState previousRasterizer = graphics.RasterizerState;
+        try
         {
-            ColorSourceBlend = Blend.SourceAlpha,
-            ColorDestinationBlend = Blend.InverseSourceAlpha,
-            AlphaSourceBlend = Blend.One,
-            AlphaDestinationBlend = Blend.InverseSourceAlpha
-        };
-
-        foreach (EffectPass pass in Globals.CellHighlightEffect.CurrentTechnique.Passes)
-        {
-            pass.Apply();
-
-            Globals.GraphicsDevice.DrawUserPrimitives(
-                PrimitiveType.TriangleList,
-                vertices,
-                0,
-                vertices.Length / 3);
+            graphics.BlendState = BlendState.NonPremultiplied;
+            graphics.RasterizerState = RasterizerState.CullNone;
+            foreach (EffectPass pass in Globals.CellHighlightEffect.CurrentTechnique.Passes)
+            {
+                pass.Apply();
+                graphics.DrawUserPrimitives(PrimitiveType.TriangleList, vertices, 0, 2);
+            }
         }
-
-        Globals.GraphicsDevice.BlendState = BlendState.Opaque;
+        finally
+        {
+            graphics.BlendState = previousBlend;
+            graphics.RasterizerState = previousRasterizer;
+        }
     }
 
     public void SaveTilemap(string mapDirectory)

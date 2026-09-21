@@ -7,6 +7,45 @@ namespace RTS;
 
 public class GDIBulldozer : Car
 {
+    public EarthworkOrder? EarthworkOrder { get; private set; }
+    public int EarthworkSequence { get; private set; }
+    private float _regularMoveSpeed, _regularArrivalRadius;
+    private bool _regularTurnInPlace;
+
+    public void BeginEarthwork(EarthworkOrder order)
+    {
+        if (EarthworkOrder?.Id == order.Id) return;
+        EndEarthwork();
+        Stop();
+        _regularMoveSpeed = MoveSpeed;
+        _regularArrivalRadius = WaypointArrivalRadius;
+        _regularTurnInPlace = CanTurnInPlace;
+        MoveSpeed = Math.Min(MoveSpeed, 2.5f);
+        WaypointArrivalRadius = 0.2f;
+        CanTurnInPlace = true;
+        EarthworkOrder = order;
+        EarthworkSequence = 0;
+    }
+
+    public void EndEarthwork()
+    {
+        if (EarthworkOrder is null) return;
+        EarthworkOrder = null;
+        Stop();
+        MoveSpeed = _regularMoveSpeed;
+        WaypointArrivalRadius = _regularArrivalRadius;
+        CanTurnInPlace = _regularTurnInPlace;
+    }
+
+    public bool ApplyEarthworkCell(GameWorld world, Guid orderId, int sequence, Point cell, bool refreshGraphics = true)
+    {
+        if (EarthworkOrder is not EarthworkOrder order || order.Id != orderId ||
+            sequence <= EarthworkSequence || !order.Area.Contains(cell)) return false;
+        Earthwork.ApplyCell(world, order, cell, refreshGraphics);
+        EarthworkSequence = sequence;
+        return true;
+    }
+
     public override float BuildRate => 1000.0f;    
 
     public override IReadOnlyList<UnitAction> Actions =>
@@ -17,6 +56,8 @@ public class GDIBulldozer : Car
         new(UnitActionType.Build, "Build Base", 1, 4, "GDI-Base"),
         new(UnitActionType.Build, "Build Barracks", 2, 4, "GDI-Barracks"),
         new(UnitActionType.BuildConstruction, "Build construction site", 0, 4),
+        new(UnitActionType.LevelAndConcrete, "Level & concrete", 1, 4),
+        new(UnitActionType.RemoveConcrete, "Remove concrete", 7, 1),
         new(UnitActionType.Stop, "Stop", 7, 1)
     ];
 
