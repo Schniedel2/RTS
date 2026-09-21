@@ -7,6 +7,74 @@ namespace RTS;
 public class GameGrid
 {
     private readonly Unit?[,] _occupants;
+    private readonly GridCell[,] _cells;
+    private Terrain? _terrain;
+
+    public bool Contains(Point cell) => cell.X >= 0 && cell.Y >= 0 && cell.X < Width && cell.Y < Height;
+
+    public Unit? GetOccupant(Point cell) => Contains(cell) ? _occupants[cell.X, cell.Y] : null;
+
+    public Unit? GetOccupant(int x, int y) => GetOccupant(new Point(x, y));
+    public GridCell GetCell(int x, int y) => GetCell(new Point(x, y));
+
+    public GridCell GetCell(Point cell)
+    {
+        if (!Contains(cell))
+            throw new ArgumentOutOfRangeException(nameof(cell));
+        GridCell data = _cells[cell.X, cell.Y];
+        if (_terrain is not null && data.TerrainRevision != _terrain.HeightRevision)
+        {
+            int left = cell.X * CellSize, top = cell.Y * CellSize;
+            data.HasTerrain = left + CellSize < _terrain.Width && top + CellSize < _terrain.Height;
+            float slope = 0.0f;
+            if (data.HasTerrain)
+                for (int z = top; z < top + CellSize; z++)
+                    for (int x = left; x < left + CellSize; x++)
+                        slope = Math.Max(slope, _terrain.GetMaxSlopeDegrees(x, z));
+            data.MaxSlopeDegrees = slope;
+            data.TerrainRevision = _terrain.HeightRevision;
+        }
+        return data;
+    }
+
+    public void BindTerrain(Terrain terrain)
+    {
+        _terrain = terrain;
+        foreach (GridCell cell in _cells)
+            cell.TerrainRevision = -1;
+    }
+
+    public bool IsPathfindingAllowed(Unit unit, Point centerCell, Point? startingCell = null)
+    {
+        Rectangle footprint = GetFootprint(unit, centerCell);
+        Rectangle? startingFootprint = startingCell is Point start ? GetFootprint(unit, start) : null;
+        for (int y = footprint.Top; y < footprint.Bottom; y++)
+            for (int x = footprint.Left; x < footprint.Right; x++)
+            {
+                Point cell = new(x, y);
+                if (!Contains(cell) || (GetCell(cell).ExcludeFromPathfinding &&
+                    !(startingFootprint?.Contains(cell) ?? false)))
+                    return false;
+            }
+        return true;
+    }
+
+    public float GetMovementCost(Unit unit, Point centerCell)
+    {
+        float cost = 1.0f;
+        Rectangle footprint = GetFootprint(unit, centerCell);
+        for (int y = footprint.Top; y < footprint.Bottom; y++)
+            for (int x = footprint.Left; x < footprint.Right; x++)
+                cost = Math.Max(cost, GetCell(new Point(x, y)).MovementCost);
+        return cost;
+    }
+
+    private bool AllowsUnit(Unit unit, Point cell)
+    {
+        GridCell data = GetCell(cell);
+        return data.HasTerrain && !data.IsBlocked &&
+            (unit is not MobileUnit mobile || mobile.MovementProfile.CanUseTerrain(data));
+    }
 
     public int Width { get; }
     public int Height { get; }
@@ -25,7 +93,13 @@ public class GameGrid
         Width = width;
         Height = height;
         CellSize = cellSize;
+        if (width <= 0 || height <= 0 || cellSize <= 0)
+            throw new ArgumentOutOfRangeException(nameof(cellSize));
         _occupants = new Unit[width, height];
+        _cells = new GridCell[width, height];
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
+                _cells[x, y] = new GridCell();
     }
 
     private void Clear(Unit unit)
@@ -72,6 +146,8 @@ public class GameGrid
         {
             for (int x = left; x <= right; x++)
             {
+                if (!AllowsUnit(unit, new Point(x, y)))
+                    return false;
                 Unit? occupant = _occupants[x, y];
 
                 if (occupant is null || occupant == unit)
@@ -101,6 +177,23 @@ public class GameGrid
 
     public bool TryMove(MobileUnit unit, Point centerCell)
     {
+        Point start = ToCell(unit.Position);
+        // New registrations (spawn/disembark) only validate their destination.
+        int steps = _occupiedFootprints.ContainsKey(unit)
+            ? Math.Max(Math.Abs(centerCell.X - start.X), Math.Abs(centerCell.Y - start.Y))
+            : 0;
+        Point previous = start;
+        for (int step = 1; step <= steps; step++)
+        {
+            Point next = new(
+                start.X + (int)MathF.Round((centerCell.X - start.X) * (float)step / steps),
+                start.Y + (int)MathF.Round((centerCell.Y - start.Y) * (float)step / steps));
+            if (!CanPlace(unit, next) ||
+                (next.X != previous.X && next.Y != previous.Y &&
+                 (!CanPlace(unit, new Point(next.X, previous.Y)) || !CanPlace(unit, new Point(previous.X, next.Y)))))
+                return false;
+            previous = next;
+        }
         Rectangle newFootprint = GetFootprint(unit, centerCell);
         if (_occupiedFootprints.TryGetValue(unit, out Rectangle oldFootprint) &&
             oldFootprint == newFootprint)
@@ -126,6 +219,8 @@ public class GameGrid
         foreach (Point cell in GetFootprintCells(unit, position, rotationDegrees))
         {
             if (cell.X < 0 || cell.Y < 0 || cell.X >= Width || cell.Y >= Height)
+                return false;
+            if (!AllowsUnit(unit, cell))
                 return false;
             Unit? occupant = _occupants[cell.X, cell.Y];
             if (occupant is not null && occupant != unit)
@@ -201,6 +296,23 @@ public class GameGrid
             return true;
 
         Point centerCell = ToCell(unit.Position);
+        Point start = ToCell(unit.Position);
+        // New registrations (spawn/disembark) only validate their destination.
+        int steps = _occupiedFootprints.ContainsKey(unit)
+            ? Math.Max(Math.Abs(centerCell.X - start.X), Math.Abs(centerCell.Y - start.Y))
+            : 0;
+        Point previous = start;
+        for (int step = 1; step <= steps; step++)
+        {
+            Point next = new(
+                start.X + (int)MathF.Round((centerCell.X - start.X) * (float)step / steps),
+                start.Y + (int)MathF.Round((centerCell.Y - start.Y) * (float)step / steps));
+            if (!CanPlace(unit, next) ||
+                (next.X != previous.X && next.Y != previous.Y &&
+                 (!CanPlace(unit, new Point(next.X, previous.Y)) || !CanPlace(unit, new Point(previous.X, next.Y)))))
+                return false;
+            previous = next;
+        }
         Rectangle newFootprint = GetFootprint(unit, centerCell);
         if (_occupiedFootprints.TryGetValue(unit, out Rectangle oldFootprint) && oldFootprint == newFootprint)
             return true;
@@ -229,8 +341,8 @@ public class GameGrid
     public Point ToCell(Vector3 position)
     {
         return new Point(
-            (int)(position.X / CellSize),
-            (int)(position.Z / CellSize));
+            (int)MathF.Floor(position.X / CellSize),
+            (int)MathF.Floor(position.Z / CellSize));
     }
 
     public Vector3 ToWorldPosition(Point centerCell, float height)

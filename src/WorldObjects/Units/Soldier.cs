@@ -78,7 +78,7 @@ public class Soldier : MobileUnit
             width: 1,
             height: 1.8f,
             unitId,
-            movementProfile)            
+            movementProfile ?? new GroundMovementProfile(MovementModes.Walk, 50.0f))
     {
         MoveSpeed = 3.0f;
         RotationSpeed = MathHelper.TwoPi;

@@ -52,169 +52,64 @@ public class Pathfinder
         Vector2 target,
         out List<Point> path)
     {
-        Point start =
-            ToCell(unit.Position);
-
-        Point destination =
-            ToCell(
-                new Vector3(
-                    target.X,
-                    0.0f,
-                    target.Y));
-
-        path = [];
-
-        if (!movementProfile.CanEnter(
-                _map,
-                unit,
-                start) ||
-            !movementProfile.CanEnter(
-                _map,
-                unit,
-                destination))
-        {
-            return false;
-        }
-
-        PriorityQueue<Point, float> openCells = new();
-
-        Dictionary<Point, Point> previousCells = [];
-
-        Dictionary<Point, float> pathCosts = [];
-
-        pathCosts[start] = 0.0f;
-
-        openCells.Enqueue(
-            start,
-            Heuristic(start, destination));
-
-        while (openCells.Count > 0)
-        {
-            Point current =
-                openCells.Dequeue();
-
-            if (current == destination)
-            {
-                BuildPath(
-                    start,
-                    destination,
-                    previousCells,
-                    path);
-
-                return true;
-            }
-
-            foreach (Point direction in Directions)
-            {
-                Point next =
-                    current + direction;
-
-                if (!movementProfile.CanEnter(
-                        _map,
-                        unit,
-                        next))
-                {
-                    continue;
-                }
-
-                float movementCost =
-                    movementProfile.GetMovementCost(
-                        _map,
-                        unit,
-                        current,
-                        next);
-
-                float newCost =
-                    pathCosts[current] +
-                    movementCost;
-
-                if (pathCosts.TryGetValue(
-                        next,
-                        out float oldCost) &&
-                    newCost >= oldCost)
-                {
-                    continue;
-                }
-
-                pathCosts[next] = newCost;
-
-                previousCells[next] =
-                    current;
-
-                float priority =
-                    newCost +
-                    Heuristic(
-                        next,
-                        destination);
-
-                openCells.Enqueue(
-                    next,
-                    priority);
-            }
-        }
-
-        return false;
+        return FindPath(unit, movementProfile, target, true, out path);
     }
 
-    //  Dijkstra
-    public bool TryFindPath_Dijkstra(
-        MobileUnit unit,
-        IMovementProfile movementProfile,
-        Vector2 target,
-        out List<Point> path)
-    {
-        Point start = ToCell(unit.Position);
-        Point destination = ToCell(new Vector3(target.X, 0.0f, target.Y));
-        path = [];
+    public bool TryFindPath_Dijkstra(MobileUnit unit, IMovementProfile movementProfile, Vector2 target, out List<Point> path) =>
+        FindPath(unit, movementProfile, target, false, out path);
 
-        if (!movementProfile.CanEnter(_map, unit, start) ||
-            !movementProfile.CanEnter(_map, unit, destination))
+    private bool FindPath(MobileUnit unit, IMovementProfile profile, Vector2 target, bool useHeuristic, out List<Point> path)
+    {
+        GameGrid grid = _map.GameGrid;
+        Point start = grid.ToCell(unit.Position);
+        Point destination = grid.ToCell(new Vector3(target.X, 0, target.Y));
+        path = [];
+        if (!grid.Contains(start) || !profile.CanEnter(_map, unit, start))
+            return false;
+        if (start == destination)
+            return true;
+        if (!profile.CanEnter(_map, unit, destination) || !grid.IsPathfindingAllowed(unit, destination))
             return false;
 
-        PriorityQueue<Point, float> openCells = new();
-        Dictionary<Point, Point> previousCells = [];
-        Dictionary<Point, float> pathCosts = [];
-        HashSet<Point> visitedCells = [start];
-        pathCosts.Add(start, 0.0f);
-        openCells.Enqueue(start, 0.0f);
-
-        while (openCells.Count > 0)
+        PriorityQueue<(Point Cell, float Cost), float> open = new();
+        Dictionary<Point, Point> previous = [];
+        Dictionary<Point, float> costs = new() { [start] = 0 };
+        open.Enqueue((start, 0), 0);
+        while (open.TryDequeue(out var item, out _))
         {
-            Point current = openCells.Dequeue();
-
+            Point current = item.Cell;
+            if (item.Cost > costs[current])
+                continue;
             if (current == destination)
             {
-                BuildPath(start, destination, previousCells, path);
+                BuildPath(start, destination, previous, path);
                 return true;
             }
-
             foreach (Point direction in Directions)
             {
                 Point next = current + direction;
-
-                if (visitedCells.Contains(next) ||
-                        !movementProfile.CanEnter(_map, unit, next))
+                if (!CanPlan(next))
                     continue;
-
-                visitedCells.Add(next);
-                previousCells.Add(next, current);
-                    float pathCost = pathCosts[current] +
-                        movementProfile.GetMovementCost(_map, unit, current, next);
-                    pathCosts.Add(next, pathCost);
-                    openCells.Enqueue(next, pathCost);
+                if (direction.X != 0 && direction.Y != 0 &&
+                    (!CanPlan(new Point(current.X + direction.X, current.Y)) ||
+                     !CanPlan(new Point(current.X, current.Y + direction.Y))))
+                    continue;
+                float stepCost = profile.GetMovementCost(_map, unit, current, next);
+                if (!float.IsFinite(stepCost) || stepCost <= 0)
+                    throw new InvalidOperationException("Movement costs must be finite and positive.");
+                float candidate = item.Cost + stepCost;
+                if (costs.TryGetValue(next, out float known) && candidate >= known)
+                    continue;
+                costs[next] = candidate;
+                previous[next] = current;
+                open.Enqueue((next, candidate), candidate + (useHeuristic ? Heuristic(next, destination) : 0));
             }
         }
-
         return false;
-    }
 
-    private Point ToCell(Vector3 position)
-    {
-        float cellSize = Globals.World.GameGrid.CellSize;
-
-        return new Point(
-            (int)(position.X / cellSize),
-            (int)(position.Z / cellSize));
+        // Allow the entire initial footprint to leave a planning exclusion after spawning.
+        bool CanPlan(Point cell) => profile.CanEnter(_map, unit, cell) &&
+            grid.IsPathfindingAllowed(unit, cell, start);
     }
 
     private static void BuildPath(

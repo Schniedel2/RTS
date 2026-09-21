@@ -93,6 +93,8 @@ public abstract class Unit : WorldObject
     public Vector2 UnitTextureUVOffset { get; set; } = Vector2.Zero;
     public UnitBehavior Behavior { get; set; } = UnitBehavior.Aggressive;
     protected MeshSet? _meshSet;
+    // Authored local bounds, without grid rounding or placement padding.
+    private BoundingBox? _selectionBounds;
     private float _exhaustElapsed;
 
     public bool TryGetEntryWorldPosition(out Vector3 position) =>
@@ -268,10 +270,11 @@ public abstract class Unit : WorldObject
             throw new ArgumentOutOfRangeException(nameof(padding));
 
         _meshSet = meshSet;
+        BoundingBox bounds = meshSet.GetBounds();
+        _selectionBounds = bounds;
         if (!deriveDimensions)
             return;
 
-        BoundingBox bounds = meshSet.GetBounds();
         Vector3 size = bounds.Max - bounds.Min + new Vector3(padding * 2.0f);
         FootprintLocalCenter = (bounds.Min + bounds.Max) * 0.5f;
         Width = Math.Max(1, (int)MathF.Ceiling(size.X));
@@ -853,9 +856,13 @@ public abstract class Unit : WorldObject
         Matrix projection,
         Viewport viewport)
     {
-        BoundingBox bounds = new(
+        // Some older units assign _meshSet directly; capture their bounds lazily.
+        if (_selectionBounds is null && _meshSet is not null)
+            _selectionBounds = _meshSet.GetBounds();
+        BoundingBox bounds = _selectionBounds ?? new BoundingBox(
             new Vector3(-Width * 0.5f, 0.0f, -Length * 0.5f),
             new Vector3(Width * 0.5f, Height, Length * 0.5f));
+        Matrix world = GetVisualWorldMatrix();
         Point minimum = new(int.MaxValue, int.MaxValue);
         Point maximum = new(int.MinValue, int.MinValue);
 
@@ -865,20 +872,18 @@ public abstract class Unit : WorldObject
                 corner,
                 projection,
                 view,
-                Transform);
-            int screenX = (int)screenPosition.X;
-            int screenY = (int)screenPosition.Y;
-            minimum.X = Math.Min(minimum.X, screenX);
-            minimum.Y = Math.Min(minimum.Y, screenY);
-            maximum.X = Math.Max(maximum.X, screenX);
-            maximum.Y = Math.Max(maximum.Y, screenY);
+                world);
+            minimum.X = Math.Min(minimum.X, (int)MathF.Floor(screenPosition.X));
+            minimum.Y = Math.Min(minimum.Y, (int)MathF.Floor(screenPosition.Y));
+            maximum.X = Math.Max(maximum.X, (int)MathF.Ceiling(screenPosition.X));
+            maximum.Y = Math.Max(maximum.Y, (int)MathF.Ceiling(screenPosition.Y));
         }
 
         return new Rectangle(
             minimum.X,
             minimum.Y,
-            maximum.X - minimum.X + 1,
-            maximum.Y - minimum.Y + 1);
+            maximum.X - minimum.X,
+            maximum.Y - minimum.Y);
     }
 
     public override void Update(GameTime gameTime)

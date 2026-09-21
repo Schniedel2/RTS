@@ -35,6 +35,7 @@ public class GameWorld
                 height: terrainHeight);
 
         GameGrid = new GameGrid(terrainWidth, terrainHeight, gameGridCellSize);
+        GameGrid.BindTerrain(_terrain);
         Units = new UnitHandler();
         Markers = new MarkerHandler();
         Projectiles = new ProjectileHandler();
@@ -176,6 +177,7 @@ public class GameWorld
     {
         string mapDirectory = Path.Combine(Globals.MapsDirectory, mapName);
         _terrain = new Terrain(mapDirectory);
+        GameGrid.BindTerrain(_terrain);
         Weather.ResizeWindMap(_terrain.Width, _terrain.Height);
     }
 

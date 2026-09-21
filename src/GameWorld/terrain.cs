@@ -10,6 +10,7 @@ public class Terrain
 {
     public int Width { get; private set;}
     public int Height { get; private set;}
+    public long HeightRevision { get; private set; }
     private const float HeightScale = 32.0f;
     private VertexPositionColorNormal[] _vertices = null!;
     private int[] _indices = null!;
@@ -157,6 +158,7 @@ public class Terrain
 
     public void BuildTerrainMesh()
     {
+        HeightRevision++;
         _vertices = new VertexPositionColorNormal[
             Width * Height];
 
@@ -260,7 +262,11 @@ public class Terrain
             for (int x = 0; x < Width; x++)
             {
                 int index = z * Width + x;
-                HeightMap[index] = height;
+               if (HeightMap[index] != height)
+        {
+            HeightMap[index] = height;
+            HeightRevision++;
+        }
             }
     }
 
@@ -273,6 +279,16 @@ public class Terrain
 
         int index = z * Width + x;
         return HeightMap[index];
+    }
+
+    /// <summary>Maximum slope of the two rendered triangles (bottom-left to top-right diagonal).</summary>
+    public float GetMaxSlopeDegrees(int x, int z)
+    {
+        float tl = GetHeight(x, z), tr = GetHeight(x + 1, z);
+        float bl = GetHeight(x, z + 1), br = GetHeight(x + 1, z + 1);
+        float first = MathF.Sqrt((tr - tl) * (tr - tl) + (bl - tl) * (bl - tl));
+        float second = MathF.Sqrt((br - bl) * (br - bl) + (br - tr) * (br - tr));
+        return MathHelper.ToDegrees(MathF.Atan(Math.Max(first, second)));
     }
 
     public WorldData GetWorldData()
@@ -332,7 +348,11 @@ public class Terrain
         if (height > HeightScale) height = HeightScale;
 
         int index = z * Width + x;
-         HeightMap[index] = height;
+        if (HeightMap[index] != height)
+        {
+            HeightMap[index] = height;
+            HeightRevision++;
+        }
     }
 
     public bool TryGetIntersection(Ray ray, out Vector3 intersection)
