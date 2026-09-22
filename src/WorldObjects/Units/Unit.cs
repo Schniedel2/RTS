@@ -99,6 +99,7 @@ public abstract class Unit : WorldObject
     /// Hitscan weapons have no visible travelling projectile. The host sends a
     /// separate impact position to peers after triggering the muzzle effect.
     /// </summary>
+    public virtual bool CanFireWeapon => true;
     public virtual bool UsesHitscanWeapon => false;
     public virtual ProjectileKind ProjectileKind =>
         UsesHitscanWeapon ? ProjectileKind.None : ProjectileKind.BallisticShell;
@@ -420,7 +421,7 @@ public abstract class Unit : WorldObject
     }
 
     /// <summary>Starts a continuous attack against another unit.</summary>
-    public void SetAttackTarget(Guid targetId)
+    public virtual void SetAttackTarget(Guid targetId)
     {
         AttackTargetId = targetId;
         AttackGroundTarget = null;
@@ -429,7 +430,7 @@ public abstract class Unit : WorldObject
     }
 
     /// <summary>Starts a continuous attack against a terrain position.</summary>
-    public void SetAttackGroundTarget(Vector3 target)
+    public virtual void SetAttackGroundTarget(Vector3 target)
     {
         AttackGroundTarget = target;
         AttackTargetId = null;
@@ -460,7 +461,7 @@ public abstract class Unit : WorldObject
     /// Starts a non-attacking follow order. The spacing is captured when the
     /// host command is applied, so the unit preserves the player's formation.
     /// </summary>
-    public bool SetFollowUnit(Guid targetId)
+    public virtual bool SetFollowUnit(Guid targetId)
     {
         Unit? target = Globals.World.Units.FindById(targetId);
         if (target is null || target == this)
@@ -701,7 +702,7 @@ public abstract class Unit : WorldObject
 
     public bool IsReadyToShoot(double hostTime) // this is a host function
     {
-        if (IsDying)
+        if (IsDying || !CanFireWeapon)
             return false;
         if (hostTime < _nextShotTime)
             return false;
@@ -819,7 +820,7 @@ public abstract class Unit : WorldObject
 
     public bool TryQueueShot(double hostTime, out Unit? target)
     {
-        if (IsDying || IsEmbarked)
+        if (IsDying || IsEmbarked || !CanFireWeapon)
         {
             target = null;
             return false;
@@ -847,7 +848,7 @@ public abstract class Unit : WorldObject
     public bool TryQueueGroundShot(double hostTime, out Vector3 target)
     {
         target = AttackGroundTarget ?? default;
-        if (IsEmbarked || AttackGroundTarget is null)
+        if (IsEmbarked || !CanFireWeapon || AttackGroundTarget is null)
             return false;
 
         Vector2 offset = new(target.X - Position.X, target.Z - Position.Z);

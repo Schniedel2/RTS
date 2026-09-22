@@ -15,8 +15,10 @@ public class GDIBulldozer : Car
     public void BeginEarthwork(EarthworkOrder order)
     {
         if (EarthworkOrder?.Id == order.Id) return;
-        EndEarthwork();
-        Stop();
+        if (EarthworkOrder is not null)
+            EndEarthwork();
+        else
+            base.Stop();
         _regularMoveSpeed = MoveSpeed;
         _regularArrivalRadius = WaypointArrivalRadius;
         _regularTurnInPlace = CanTurnInPlace;
@@ -31,17 +33,58 @@ public class GDIBulldozer : Car
     {
         if (EarthworkOrder is null) return;
         EarthworkOrder = null;
-        Stop();
+        base.Stop();
         MoveSpeed = _regularMoveSpeed;
         WaypointArrivalRadius = _regularArrivalRadius;
         CanTurnInPlace = _regularTurnInPlace;
     }
 
+    /// <summary>
+    /// A normal Stop command also terminates the persistent earthwork mode and
+    /// restores the bulldozer's regular movement parameters.
+    /// </summary>
+    public override void Stop()
+    {
+        if (EarthworkOrder is not null)
+        {
+            EndEarthwork();
+            return;
+        }
+
+        base.Stop();
+    }
+
     public bool ApplyEarthworkCell(GameWorld world, Guid orderId, int sequence, Point cell, bool refreshGraphics = true)
     {
         if (EarthworkOrder is not EarthworkOrder order || order.Id != orderId ||
-            sequence <= EarthworkSequence || !order.Area.Contains(cell)) return false;
+            sequence <= EarthworkSequence || !order.Contains(cell)) return false;
         Earthwork.ApplyCell(world, order, cell, refreshGraphics);
+        // Leveling may raise or lower the terrain underneath the worker. Snap
+        // its visual/physical transform to the freshly rebuilt surface before
+        // the next movement/pathfinding update.
+        AlignToTerrain();
+        EarthworkSequence = sequence;
+        return true;
+    }
+
+    public bool ApplyEarthworkDrive(GameWorld world, Guid orderId, int sequence, int[] cells, Vector2 position, bool refreshGraphics = true)
+    {
+        if (EarthworkOrder is not { IsDrive: true } order || order.Id != orderId || sequence <= EarthworkSequence || cells.Length % 2 != 0) return false;
+        long revision = world.Terrain.HeightRevision;
+        for (int i = 0; i < cells.Length; i += 2)
+            Earthwork.ApplyCell(world, order, new(cells[i], cells[i + 1]), false);
+        if (refreshGraphics && cells.Length > 0)
+        {
+            if (world.Terrain.HeightRevision != revision) world.Terrain.BuildTerrainMesh();
+            world.Terrain.UpdateTilemapTexture();
+        }
+        float yaw = MathHelper.ToDegrees(MathF.Atan2(-(order.DestinationX - order.StartX), -(order.DestinationZ - order.StartZ)));
+        SetRotationYDegrees(yaw);
+        Vector3 next = new(position.X, order.TargetHeight, position.Y);
+        AdvanceWheelRotation(next);
+        SetPosition(next);
+        world.GameGrid.RegisterEarthworkFootprint(this, Earthwork.DriveCells(world, this, order, position));
+        if (refreshGraphics) AlignToTerrain();
         EarthworkSequence = sequence;
         return true;
     }
@@ -55,6 +98,7 @@ public class GDIBulldozer : Car
         new(UnitActionType.Build, "Build Reaktor", 1, 4, "Reaktor"),
         new(UnitActionType.Build, "Build Base", 1, 4, "GDI-Base"),
         new(UnitActionType.Build, "Build Barracks", 2, 4, "GDI-Barracks"),
+        new(UnitActionType.Build, "Build Helipad", 2, 4, "Helipad"),
         new(UnitActionType.BuildConstruction, "Build construction site", 0, 4),
         new(UnitActionType.LevelAndConcrete, "Level & concrete", 1, 4),
         new(UnitActionType.RemoveConcrete, "Remove concrete", 7, 1),

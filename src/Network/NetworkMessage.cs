@@ -85,7 +85,8 @@ public enum NetworkMessageType
     EarthworkRequest,
     EarthworkStartCommand,
     EarthworkCellCommand,
-    EarthworkEndCommand
+    EarthworkEndCommand,
+    HelicopterOrderRequest
 }
 
 public sealed record WorldData(
@@ -149,4 +150,6 @@ public sealed record NetworkMessage(
     Guid? EarthworkOrderId = null,
     int EarthworkSequence = 0,
     int CellX = 0,
-    int CellZ = 0);
+    int CellZ = 0,
+    int[]? EarthworkCells = null,
+    HelicopterOrder? HelicopterOrder = null);

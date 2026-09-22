@@ -13,6 +13,7 @@ public sealed class NetworkHost
     private readonly NetworkHandler _networkHandler;
     private readonly GameWorld _world;
     private readonly EarthworkController _earthworks;
+    private readonly Queue<NetworkMessage> _earthworkBroadcasts = new();
     private readonly ConcurrentQueue<NetworkMessage> _requestQueue = new();
     private readonly SemaphoreSlim _updateGate = new(1, 1);
     private const int MaximumQueuedRequests = 1024;
@@ -62,9 +63,69 @@ public sealed class NetworkHost
         _earthworks = new EarthworkController(world, networkHandler.LocalPeerId, command =>
         {
             networkHandler.EnqueueLocalMessage(command);
-            _ = networkHandler.BroadcastAsync(command, CancellationToken.None);
+            _earthworkBroadcasts.Enqueue(command);
         });
         networkInput.MessageReceived += HandleMessage;
+    }
+
+    private async Task PublishEarthworkAsync()
+    {
+        // Keep patches, completion and replacement commands in order for every peer.
+        while (_earthworkBroadcasts.TryDequeue(out NetworkMessage? command))
+            await _networkHandler.BroadcastAsync(command, CancellationToken.None);
+    }
+
+    private async Task PublishHelicoptersAsync()
+    {
+        foreach (Helicopter helicopter in _world.Units.Units.OfType<Helicopter>().ToArray())
+        {
+            if (helicopter.HitPoints <= 0)
+            {
+                _world.Units.Destroy(helicopter.UnitId);
+                var destroy = NetworkCommands.CreateDestroyUnitCommand(_networkHandler.LocalPeerId, helicopter.UnitId);
+                _networkHandler.EnqueueLocalMessage(destroy);
+                await _networkHandler.BroadcastAsync(destroy);
+            }
+            else if (_hostTime >= helicopter.NextNetworkUpdateTime)
+            {
+                await _networkHandler.BroadcastAsync(NetworkCommands.CreateUnitStateCommand(_networkHandler.LocalPeerId, helicopter.GetState()));
+                helicopter.NextNetworkUpdateTime = _hostTime + HostSimulationInterval;
+            }
+        }
+    }
+
+    private NetworkMessage? TryCreateHelicopterOrder(NetworkMessage request)
+    {
+        if (request.UnitId is not Guid id || _world.Units.FindById(id) is not Helicopter helicopter ||
+            !Globals.Game.Armies.CanControl(request.SenderId, helicopter.ArmyId) ||
+            request.HelicopterOrder is not HelicopterOrder order || !Enum.IsDefined(order) ||
+            !float.IsFinite(request.X) || !float.IsFinite(request.Z)) return null;
+        bool accepted;
+        if (order == HelicopterOrder.TakeOff) { helicopter.Stop(); accepted = helicopter.TakeOff(_world); }
+        else if (order == HelicopterOrder.ReturnToHelipad) accepted = helicopter.ReturnToHelipad(_world);
+        else accepted = helicopter.RequestLanding(_world, new(request.X, request.Z),
+            request.TargetId is Guid padId ? _world.Units.FindById(padId) as Helipad : null);
+        if (!accepted) return null;
+        helicopter.StateRevision++;
+        return NetworkCommands.CreateUnitStateCommand(_networkHandler.LocalPeerId, helicopter.GetState());
+    }
+
+    private NetworkMessage? TryCreateAttackCommand(NetworkMessage request)
+    {
+        List<Guid> accepted = [];
+        foreach (Guid id in (request.UnitIds ?? Array.Empty<Guid>()).Distinct())
+        {
+            if (_world.Units.FindById(id) is not Unit attacker) continue;
+            if (attacker is Helicopter helicopter)
+            {
+                if (request.SenderId != _networkHandler.LocalPeerId && !Globals.Game.Armies.CanControl(request.SenderId, helicopter.ArmyId)) continue;
+                Vector2 offset = new(request.X - helicopter.Position.X, request.Z - helicopter.Position.Z);
+                if (!float.IsFinite(request.Y) || !float.IsFinite(offset.X) || !float.IsFinite(offset.Y) || offset.LengthSquared() > helicopter.AttackRange * helicopter.AttackRange ||
+                    !helicopter.TryAuthorizeShot(_hostTime)) continue;
+            }
+            accepted.Add(id);
+        }
+        return accepted.Count == 0 ? null : NetworkCommands.CreateAttackCommand(_networkHandler.LocalPeerId, request with { UnitIds = accepted.ToArray() });
     }
 
     private void HandleMessage(NetworkMessage message)
@@ -85,6 +146,7 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.TrainUnitRequest &&
             message.Type != NetworkMessageType.SetRallyPointRequest &&
             message.Type != NetworkMessageType.EarthworkRequest &&
+            message.Type != NetworkMessageType.HelicopterOrderRequest &&
             message.Type != NetworkMessageType.EnterUnitRequest &&
             message.Type != NetworkMessageType.LeaveContainerRequest &&
             message.Type != NetworkMessageType.NotifyUnitsSelected &&
@@ -134,6 +196,8 @@ public sealed class NetworkHost
         try
         {
             UpdateHostSimulation(gameTime);
+            await PublishEarthworkAsync();
+            await PublishHelicoptersAsync();
             await PublishProjectileImpactsAsync();
 
             for (int index = 0; index < MaximumRequestsPerUpdate; index++)
@@ -141,13 +205,17 @@ public sealed class NetworkHost
                 if (!_requestQueue.TryDequeue(out NetworkMessage? request))
                     return;
 
+                if (request.Type is NetworkMessageType.GotoRequest or NetworkMessageType.StopRequest or
+                    NetworkMessageType.FollowRequest or NetworkMessageType.AttackTargetRequest or NetworkMessageType.AttackGroundRequest)
+                    request = request with { UnitIds = (request.UnitIds ?? Array.Empty<Guid>()).Where(id =>
+                        _world.Units.FindById(id) is not Helicopter helicopter || Globals.Game.Armies.CanControl(request.SenderId, helicopter.ArmyId)).ToArray() };
                 _earthworks.CancelForRequest(request);
                 NetworkMessage? command = request.Type switch
                 {
                     NetworkMessageType.SpawnRequest => NetworkCommands.CreateSpawnCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.GotoRequest => NetworkCommands.CreateGotoCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.StopRequest => NetworkCommands.CreateStopCommand(_networkHandler.LocalPeerId, request),
-                    NetworkMessageType.AttackRequest => NetworkCommands.CreateAttackCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.AttackRequest => TryCreateAttackCommand(request),
                     NetworkMessageType.AttackTargetRequest => NetworkCommands.CreateAttackTargetCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.AttackGroundRequest => NetworkCommands.CreateAttackGroundCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.FollowRequest => NetworkCommands.CreateFollowCommand(_networkHandler.LocalPeerId, request),
@@ -159,6 +227,7 @@ public sealed class NetworkHost
                     NetworkMessageType.TrainUnitRequest => TryCreateTrainUnitCommand(request),
                     NetworkMessageType.SetRallyPointRequest => TryCreateSetRallyPointCommand(request),
                     NetworkMessageType.EarthworkRequest => _earthworks.Start(request),
+                    NetworkMessageType.HelicopterOrderRequest => TryCreateHelicopterOrder(request),
                     NetworkMessageType.EnterUnitRequest => TryCreateEnterUnitCommand(request),
                     NetworkMessageType.LeaveContainerRequest => TryCreateLeaveContainerCommand(request),
                     NetworkMessageType.NotifyUnitsSelected => request,
@@ -169,6 +238,7 @@ public sealed class NetworkHost
                     _ => throw new InvalidOperationException($"Unsupported request type: {request.Type}")
                 };
 
+                await PublishEarthworkAsync();
                 if (command is null)
                     continue;
 
@@ -176,7 +246,7 @@ public sealed class NetworkHost
                 await _networkHandler.BroadcastAsync(command, CancellationToken.None);
 
                 if (request.Type == NetworkMessageType.AttackRequest)
-                    await ResolveGroundAttackAsync(request);
+                    await ResolveGroundAttackAsync(request with { UnitIds = command.UnitIds });
             }
         }
         finally
@@ -289,6 +359,7 @@ public sealed class NetworkHost
     {
         if (request.UnitId is not Guid containerId ||
             _world.Units.FindById(containerId) is not Unit container ||
+            container is Helicopter { IsLanded: false } ||
             container.Occupancy?.GetPreferredOccupantToLeave() is not Guid occupantId ||
             _world.Units.FindById(occupantId) is not MobileUnit occupant ||
             !Globals.Game.Armies.CanControl(request.SenderId, container.ArmyId) ||
@@ -337,7 +408,8 @@ public sealed class NetworkHost
             _simulationAccumulator -= HostSimulationInterval;
             foreach (var unit in _world.Units.Units.OfType<Unit>())
             {
-                unit.UpdateHost(gameTime);
+                if (unit is Helicopter helicopter) helicopter.SimulateFlight(_world, (float)HostSimulationInterval);
+                else unit.UpdateHost(gameTime);
             }
 
             _earthworks.Update((float)HostSimulationInterval);
@@ -844,18 +916,22 @@ public sealed class NetworkHost
         }
     }
 
-    private async Task ApplyImpactDamageAsync(Guid attackerId, Vector3 impactPosition, float damage)
+    private Unit? FindImpactTarget(Guid attackerId, Vector3 impactPosition)
     {
         const float attackRadius = 1.5f;
-        Unit? target = _world.Units.Units.FirstOrDefault(unit =>
-            {
-                if (!unit.CanBeTargeted)
-                    return false;
-                Vector2 offset = new(
-                    unit.Position.X - impactPosition.X,
-                    unit.Position.Z - impactPosition.Z);
-                return offset.LengthSquared() <= attackRadius * attackRadius;
-            });
+        return _world.Units.Units.Where(unit =>
+        {
+            if (unit.UnitId == attackerId || !unit.CanBeTargeted) return false;
+            float bottom = unit.Position.Y - (unit is Helicopter helicopter ? helicopter.GroundOffset : 0);
+            if (impactPosition.Y < bottom - 0.25f || impactPosition.Y > bottom + unit.Height + 0.25f) return false;
+            Vector2 offset = new(unit.Position.X - impactPosition.X, unit.Position.Z - impactPosition.Z);
+            return offset.LengthSquared() <= attackRadius * attackRadius;
+        }).OrderBy(unit => Vector3.DistanceSquared(unit.Position + Vector3.Up * unit.Height * 0.5f, impactPosition)).FirstOrDefault();
+    }
+
+    private async Task ApplyImpactDamageAsync(Guid attackerId, Vector3 impactPosition, float damage)
+    {
+        Unit? target = FindImpactTarget(attackerId, impactPosition);
 
         if (target is null)
             return;

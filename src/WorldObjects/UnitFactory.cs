@@ -25,6 +25,10 @@ public static class UnitFactory
             case "car":
                 unit = new Car(position, unitId);
                 break;
+            case "helicopter":
+            case "heli":
+                unit = new Helicopter(position, unitId);
+                break;
             case "tank":
                 unit = new Tank(position, unitId);
                 break;

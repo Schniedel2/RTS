@@ -161,7 +161,11 @@ public sealed class NetworkInput
             if (message.Type == NetworkMessageType.EarthworkStartCommand && message.EarthworkOrder is EarthworkOrder order)
                 worker.BeginEarthwork(order);
             else if (message.Type == NetworkMessageType.EarthworkCellCommand && message.EarthworkOrderId is Guid orderId)
-                worker.ApplyEarthworkCell(Globals.World, orderId, message.EarthworkSequence, new(message.CellX, message.CellZ));
+            {
+                if (message.EarthworkCells is int[] cells)
+                    worker.ApplyEarthworkDrive(Globals.World, orderId, message.EarthworkSequence, cells, new(message.X, message.Z));
+                else worker.ApplyEarthworkCell(Globals.World, orderId, message.EarthworkSequence, new(message.CellX, message.CellZ));
+            }
             else if (message.Type == NetworkMessageType.EarthworkEndCommand && worker.EarthworkOrder?.Id == message.EarthworkOrderId)
                 worker.EndEarthwork();
             return;
@@ -602,6 +606,7 @@ public sealed class NetworkInput
             return;
 
         Unit? unit = Globals.World.Units.FindById(state.UnitId);
+        if (unit is Helicopter && Globals.Game.Network.IsHost) return;
         unit?.ApplyState(state);
     }
 

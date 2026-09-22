@@ -362,7 +362,7 @@ public class MobileUnit : Unit
         mesh.SetParameter(Mesh.WheelAngle, -MathHelper.ToRadians(WheelRotationDegrees));
     }
 
-    private void AdvanceWheelRotation(Vector3 nextPosition)
+    protected void AdvanceWheelRotation(Vector3 nextPosition)
     {
         if (WheelRadius <= 0.0f)
             return;
@@ -491,6 +491,8 @@ public class MobileUnit : Unit
         IsBuilding = false;
         base.ClearCommand();
     }
+
+    protected void UpdateUnitVisuals(GameTime gameTime) => base.Update(gameTime);
 
     public override void Update(GameTime gameTime)
     {

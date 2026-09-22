@@ -436,4 +436,344 @@ try
     Check(imported.SubMeshes.Where(p => p.SharedTextureName is not null).All(p => p.RepeatSharedTexture), "All shared cube and mesh batches opt into repeating");
 }
 finally { File.Delete(fixture); }
-Console.WriteLine($"Passed {checks} gameplay and shared UV checks.");
+// Continuous bulldozer earthwork: real host controller, headless terrain and wire replay.
+Globals.MeshHandler.Meshes["bulldozer-1"] = Globals.MeshHandler.Meshes["barracks-1"];
+GDIBulldozer SetupEarthwork()
+{
+    grid = new GameGrid(40, 40, 1);
+    terrain = Terrain(40, 40);
+    Field(terrain, typeof(Terrain), "_tiles", new TerrainTile[40, 40]);
+    grid.BindTerrain(terrain);
+    world = World(grid);
+    Field(world, typeof(GameWorld), "_terrain", terrain);
+    units = new UnitHandler();
+    Field(world, typeof(GameWorld), "<Units>k__BackingField", units);
+    Field(world, typeof(GameWorld), "<PathfindingManager>k__BackingField", new PathfindingManager(world));
+    Globals.World = world;
+    var dozer = new GDIBulldozer(new Vector3(8.5f, 0, 8.5f), Guid.NewGuid());
+    Field(dozer, typeof(Unit), "<ArmyId>k__BackingField", armyId);
+    var driver = Unit();
+    Field(driver, typeof(Unit), "<UnitId>k__BackingField", Guid.NewGuid());
+    Field(driver, typeof(Unit), "<ArmyId>k__BackingField", armyId);
+    if (!dozer.Occupancy!.TryAdd(driver, OccupantRole.Driver, out _)) throw new Exception("Driver fixture failed");
+    ((List<Unit>)units.Units).Add(dozer);
+    grid.TryMove(dozer, grid.ToCell(dozer.Position));
+    return dozer;
+}
+NetworkMessage DriveRequest(GDIBulldozer dozer, float x = 20.5f, float z = 8.5f) => new(
+    NetworkMessageType.EarthworkRequest, ownerId, UnitId: dozer.UnitId, X: x, Z: z, EarthworkKind: EarthworkKind.LevelAndConcrete);
+var bulldozer = SetupEarthwork();
+var earthMessages = new List<NetworkMessage>();
+var earthController = new EarthworkController(world, hostId, earthMessages.Add, false);
+Check(earthController.Start(DriveRequest(bulldozer) with { SenderId = Guid.NewGuid() }) is null, "Earthwork rejects foreign control");
+Check(earthController.Start(DriveRequest(bulldozer) with { X = float.NaN }) is null, "Earthwork rejects invalid target");
+var driveStart = earthController.Start(DriveRequest(bulldozer))!;
+Check(driveStart.EarthworkOrder is { IsDrive: true, TargetHeight: 0 }, "Drive order freezes initial terrain height");
+Check(Wire(driveStart).EarthworkOrder == driveStart.EarthworkOrder, "Drive order survives network serialization");
+earthController.Update(0.1f);
+Check(bulldozer.Position.X > 8.5f && terrain.GetTile(8, 8) == TerrainTile.Concrete, "First simulation tick moves and concretes without per-cell delay");
+Check(terrain.GetTile(8, 7) == TerrainTile.Concrete && terrain.GetTile(8, 9) == TerrainTile.Concrete && terrain.GetTile(8, 6) != TerrainTile.Concrete, "Cardinal strip matches bulldozer width");
+for (int i = 0; i < 70 && earthController.ActiveJobs > 0; i++) earthController.Update(0.1f);
+Check(earthController.ActiveJobs == 0 && Math.Abs(bulldozer.Position.X - 20.5f) < 0.001f, "Drive reaches target and terminates");
+Check(bulldozer.MoveSpeed == 7 && bulldozer.EarthworkOrder is null, "Completion restores normal movement");
+Check(terrain.GetTile(15, 8) == TerrainTile.Concrete && terrain.GetTile(15, 10) != TerrainTile.Concrete, "Drive paints a strip rather than an 8x8 area");
+Check(!earthMessages.Any(m => m.Type == NetworkMessageType.GotoCommand), "Drive uses no per-cell pathfinding orders");
+var hostHeights = Enumerable.Range(0, 40).SelectMany(z => Enumerable.Range(0, 40).Select(x => terrain.GetHeight(x, z))).ToArray();
+var hostTiles = Enumerable.Range(0, 40).SelectMany(z => Enumerable.Range(0, 40).Select(x => terrain.GetTile(x, z))).ToArray();
+var replayWorker = SetupEarthwork();
+replayWorker.BeginEarthwork(Wire(driveStart).EarthworkOrder!);
+foreach (var original in earthMessages.Where(m => m.Type == NetworkMessageType.EarthworkCellCommand))
+{
+    var m = Wire(original);
+    if (!replayWorker.ApplyEarthworkDrive(world, m.EarthworkOrderId!.Value, m.EarthworkSequence, m.EarthworkCells!, new(m.X, m.Z), false))
+        throw new Exception("Client rejected authoritative drive patch");
+}
+Check(hostHeights.SequenceEqual(Enumerable.Range(0, 40).SelectMany(z => Enumerable.Range(0, 40).Select(x => terrain.GetHeight(x, z)))) && hostTiles.SequenceEqual(Enumerable.Range(0, 40).SelectMany(z => Enumerable.Range(0, 40).Select(x => terrain.GetTile(x, z)))), "Client replay exactly matches host terrain");
+var lastPatch = earthMessages.Last(m => m.Type == NetworkMessageType.EarthworkCellCommand);
+Check(!replayWorker.ApplyEarthworkDrive(world, lastPatch.EarthworkOrderId!.Value, lastPatch.EarthworkSequence, lastPatch.EarthworkCells!, new(lastPatch.X, lastPatch.Z), false), "Duplicate patches are ignored");
+
+bulldozer = SetupEarthwork();
+terrain.SetHeight(15, 8, Earthwork.MaximumHeightChange + 1);
+var limitedPreview = Earthwork.Preview(world, bulldozer, new(20, 8), EarthworkKind.LevelAndConcrete);
+Check(limitedPreview.IsAllowed && limitedPreview.Cells.Any(c => !c.Allowed), "Preview allows a safe prefix and marks the blocked continuation");
+earthMessages.Clear();
+earthController = new(world, hostId, earthMessages.Add, false);
+Check(earthController.Start(DriveRequest(bulldozer)) is not null, "Distant obstacle does not reject usable prefix");
+earthController.Update(20);
+Check(earthController.ActiveJobs == 0 && bulldozer.Position.X < 15 && terrain.GetHeight(15, 8) == Earthwork.MaximumHeightChange + 1, "Large tick stops before excessive height without modifying it");
+Check(terrain.GetTile(10, 8) == TerrainTile.Concrete && terrain.GetTile(16, 8) != TerrainTile.Concrete, "Completed strip remains after obstacle stop");
+
+bulldozer = SetupEarthwork();
+earthController = new(world, hostId, earthMessages.Add, false);
+earthController.Start(DriveRequest(bulldozer));
+earthController.Update(0.1f);
+grid.GetCell(12, 8).IsBlocked = true;
+earthController.Update(10);
+Check(earthController.ActiveJobs == 0 && bulldozer.Position.X < 12 && terrain.GetTile(12, 8) != TerrainTile.Concrete, "New obstacle immediately stops drive");
+
+bulldozer = SetupEarthwork();
+var neighbor = Unit();
+neighbor.SetPosition(new Vector3(11.5f, 0, 10.5f));
+grid.TryMove(neighbor, new Point(11, 10));
+Check(!Earthwork.Preview(world, bulldozer, new(20, 8), EarthworkKind.LevelAndConcrete).IsAllowed, "Shared-vertex neighbor occupancy protects adjacent structures");
+
+bulldozer = SetupEarthwork();
+earthController = new(world, hostId, earthMessages.Add, false);
+earthController.Start(DriveRequest(bulldozer));
+earthController.Update(0.1f);
+var stoppedPosition = bulldozer.Position;
+earthController.CancelForRequest(new(NetworkMessageType.StopRequest, ownerId, UnitIds: new[] { bulldozer.UnitId }));
+earthController.Update(1);
+Check(earthController.ActiveJobs == 0 && bulldozer.Position == stoppedPosition && bulldozer.MoveSpeed == 7, "Stop cancels drive and restores speed");
+
+bulldozer = SetupEarthwork();
+for (int z = 0; z < 40; z++) for (int x = 0; x < 40; x++) terrain.SetHeight(x, z, 1);
+terrain.SetTile(8, 8, TerrainTile.Concrete);
+earthController = new(world, hostId, earthMessages.Add, false);
+var raisedStart = earthController.Start(DriveRequest(bulldozer, 16.5f, 16.5f))!;
+Check(raisedStart.EarthworkOrder!.TargetHeight == 1, "Starting concrete determines target height");
+terrain.SetHeight(15, 15, 1.5f);
+earthController.Update(10);
+Check(earthController.ActiveJobs == 0 && terrain.GetHeight(15, 15) == 1, "Diagonal drive regrades terrain to frozen height");
+Check(terrain.GetTile(12, 12) == TerrainTile.Concrete && terrain.GetTile(12, 7) != TerrainTile.Concrete, "Diagonal strip has no gaps or distant side effects");
+var removePreview = Earthwork.Preview(world, bulldozer, new(13, 13), EarthworkKind.RemoveConcrete);
+Check(!removePreview.Order.IsDrive && removePreview.Cells.Count == 64, "Concrete removal retains area workflow");
+Earthwork.ApplyCell(world, removePreview.Order, new(12, 12), false);
+Check(terrain.GetTile(12, 12) == TerrainTile.Dirt && terrain.GetHeight(12, 12) == 1, "Concrete removal preserves height");
+
+bulldozer = SetupEarthwork();
+grid.GetCell(9, 8).AllowedMovement = MovementModes.Walk;
+Check(!Earthwork.Preview(world, bulldozer, new(20, 8), EarthworkKind.LevelAndConcrete).IsAllowed, "Drive respects no-vehicle cells");
+Check(!Earthwork.Preview(world, bulldozer, new(0, 0), EarthworkKind.RemoveConcrete).IsAllowed, "Removal rejects map-edge area");
+bulldozer = SetupEarthwork();
+earthController = new(world, hostId, earthMessages.Add, false);
+earthController.Start(DriveRequest(bulldozer));
+earthController.Update(0.1f);
+var beforeBlockedSection = Enumerable.Range(0, 40).SelectMany(z => Enumerable.Range(0, 40).Select(x => terrain.GetTile(x, z))).ToArray();
+grid.GetCell(11, 9).IsBlocked = true;
+earthController.Update(0.1f);
+Check(earthController.ActiveJobs == 0 && beforeBlockedSection.SequenceEqual(Enumerable.Range(0, 40).SelectMany(z => Enumerable.Range(0, 40).Select(x => terrain.GetTile(x, z)))), "One blocked blade edge rejects entire section atomically");
+
+bulldozer = SetupEarthwork();
+earthController = new(world, hostId, earthMessages.Add, false);
+earthController.Start(DriveRequest(bulldozer, 0.5f, 8.5f));
+earthController.Update(10);
+Check(earthController.ActiveJobs == 0 && bulldozer.Position.X > 0.5f, "Vehicle width stops drive before map edge");
+Check(grid.GetOccupant(grid.ToCell(bulldozer.Position)) == bulldozer, "Stopped worker retains grid occupancy");
+
+bulldozer = SetupEarthwork();
+earthController = new(world, hostId, earthMessages.Add, false);
+earthController.Start(DriveRequest(bulldozer));
+bulldozer.Occupancy!.TryRemove(bulldozer.Occupancy.Occupants[0].UnitId, out _);
+earthController.Update(1);
+Check(earthController.ActiveJobs == 0 && bulldozer.EarthworkOrder is null, "Driver loss stops earthwork");
+Check(earthController.Start(DriveRequest(bulldozer)) is null, "Empty bulldozer cannot start earthwork");
+// Helicopter host simulation, supplies, landing reservations and snapshot replay.
+Globals.MeshHandler.Meshes["heli-1"] = Globals.MeshHandler.Meshes["barracks-1"];
+Globals.MeshHandler.Meshes["helipad-1"] = Globals.MeshHandler.Meshes["barracks-1"];
+Helicopter SetupHelicopter(int passengers = 0)
+{
+    var old = SetupEarthwork();
+    grid.Remove(old);
+    ((List<Unit>)units.Units).Clear();
+    var helicopter = new Helicopter(new(10.5f, 0, 10.5f), Guid.NewGuid(), passengers);
+    Field(helicopter, typeof(Unit), "<ArmyId>k__BackingField", armyId);
+    ((List<Unit>)units.Units).Add(helicopter);
+    if (!helicopter.InitializeOnGround(world)) throw new Exception("Helicopter fixture could not land");
+    return helicopter;
+}
+void FlyTicks(Helicopter helicopter, int count)
+{
+    for (int i = 0; i < count; i++) helicopter.SimulateFlight(world, 0.1f);
+}
+Helipad AddPad(Vector3 position)
+{
+    var pad = new Helipad(position, Guid.NewGuid()) { LandingLocalPosition = new(0, 0.1f, 0) };
+    Field(pad, typeof(Unit), "<ArmyId>k__BackingField", armyId);
+    pad.AdvanceConstruction(pad.TotalBuildingPointsNeeded);
+    ((List<Unit>)units.Units).Add(pad);
+    if (!grid.TryPlace(pad, position, 0)) throw new Exception("Helipad fixture placement failed");
+    return pad;
+}
+var heli = SetupHelicopter();
+Check(heli.IsLanded && grid.GetOccupant(10, 10) == heli, "Helicopter starts landed with occupied ground footprint");
+Check(UnitFactory.SpawnUnit("heli", new(20, 0, 20), 0, Guid.NewGuid(), ownerId) is Helicopter, "Helicopter console/factory alias");
+Check(!heli.CanFireWeapon && !heli.TryConsumeAmmunition(), "Landed helicopter cannot shoot");
+float fullFuel = heli.Fuel;
+Check(heli.TryReceiveGotoCommand(world, new(new(24.5f, 10.5f))), "Fly command takes off");
+Check(grid.GetOccupant(10, 10) is null && world.PathfindingManager.PendingRequests == 0, "Flying aircraft releases ground grid and bypasses pathfinding");
+grid.GetCell(18, 10).IsBlocked = true;
+terrain.SetHeight(18, 10, 4);
+FlyTicks(heli, 150);
+Check(Math.Abs(heli.Position.X - 24.5f) < 0.01f && heli.Position.Y >= 8, "Flight crosses blocked ground and raised terrain");
+Check(heli.Fuel < fullFuel && heli.Fuel > 0, "Flight and hover consume fuel");
+var beforeTurn = heli.Position;
+heli.TryReceiveGotoCommand(world, new(new(10.5f, 10.5f)));
+FlyTicks(heli, 10);
+Check(heli.Position.X < beforeTurn.X && Math.Abs(heli.Position.Z - beforeTurn.Z) < 0.01f, "Helicopter reverses direction without a ground turning radius");
+heli.Stop();
+var hoveringAt = new Vector2(heli.Position.X, heli.Position.Z);
+FlyTicks(heli, 5);
+Check(new Vector2(heli.Position.X, heli.Position.Z) == hoveringAt && heli.FlightState == HelicopterFlightState.Hovering, "Stop hovers in place");
+Check(heli.TryConsumeAmmunition() && heli.Ammunition == 39, "Successful helicopter shot consumes one round");
+heli.PlayShotEffects();
+Check(heli.VisualRecoilOffset == Vector3.Zero && heli.VisualRecoilPitchDegrees == 0, "Helicopter has no recoil");
+float fuelBeforeGround = heli.Fuel;
+Check(heli.RequestLanding(world, new(24.5f, 24.5f)), "Safe ground landing accepted");
+FlyTicks(heli, 200);
+Check(heli.IsLanded && heli.AssignedHelipadId is null && grid.GetOccupant(24, 24) == heli, "Ground landing reserves and occupies destination");
+float landedFuel = heli.Fuel;
+FlyTicks(heli, 30);
+Check(heli.Fuel == landedFuel && heli.Fuel < fuelBeforeGround && heli.Ammunition == 39, "Ground landing stops consumption but provides no supplies");
+
+var pad = AddPad(new(30.5f, 0, 30.5f));
+Check(pad.CanAccept(world, heli) && heli.ReturnToHelipad(world), "Completed allied helipad accepts return");
+var rivalHeli = new Helicopter(new(6.5f, 0, 30.5f), Guid.NewGuid());
+Field(rivalHeli, typeof(Unit), "<ArmyId>k__BackingField", armyId);
+((List<Unit>)units.Units).Add(rivalHeli);
+Check(!pad.CanAccept(world, rivalHeli), "Approaching helicopter reserves helipad against a second aircraft");
+Check(rivalHeli.ReturnToHelipad(world) && rivalHeli.AssignedHelipadId is null, "Occupied pad falls back to a ground landing");
+FlyTicks(heli, 200);
+Check(heli.IsLanded && heli.AssignedHelipadId == pad.UnitId && Math.Abs(heli.Position.Y - pad.GetLandingPosition(heli).Y) < 0.001f, "Helicopter lands on pad surface instead of terrain or flag height");
+Check(heli.Fuel == heli.MaximumFuel && heli.Ammunition == heli.MaximumAmmunition, "Landed pad refills fuel and ammunition");
+Check(grid.GetOccupant(30, 30) == pad, "Landing on pad never replaces building occupancy");
+heli.TakeOff(world);
+Check(pad.CanAccept(world, rivalHeli), "Takeoff releases helipad reservation");
+
+heli = SetupHelicopter(4);
+var passenger = Unit();
+Field(passenger, typeof(Unit), "<UnitId>k__BackingField", Guid.NewGuid());
+Field(passenger, typeof(Unit), "<ArmyId>k__BackingField", armyId);
+Check(heli.Occupancy!.CanEnter(passenger, OccupantRole.Passenger), "Transport extension allows passengers while landed");
+heli.TakeOff(world);
+Check(!heli.Occupancy.CanEnter(passenger, OccupantRole.Passenger), "Passengers cannot board during flight");
+heli.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.1)));
+Check(heli.MainRotorRadians > 0 && heli.RearRotorRadians > 0, "Rotor animation runs even when optional model pivots are absent");
+FlyTicks(heli, 40);
+while (heli.TryConsumeAmmunition()) { }
+Check(heli.Ammunition == 0 && !heli.CanFireWeapon, "Ammunition cannot become negative and empty magazine blocks fire");
+FlyTicks(heli, 100);
+Check(heli.IsLanded && heli.Ammunition == 0, "Empty magazine triggers landing fallback when no pad is available");
+
+heli = SetupHelicopter();
+heli.TakeOff(world);
+FlyTicks(heli, 40);
+Field(heli, typeof(Helicopter), "<Fuel>k__BackingField", 0.01f);
+FlyTicks(heli, 50);
+Check(heli.IsLanded && heli.Fuel == 0 && heli.HitPoints > 0, "Empty fuel tank performs safe emergency landing");
+Check(!heli.TakeOff(world), "Empty tank prevents another takeoff");
+
+heli = SetupHelicopter();
+pad = AddPad(new(28.5f, 0, 28.5f));
+heli.TakeOff(world);
+FlyTicks(heli, 40);
+Field(heli, typeof(Helicopter), "<Fuel>k__BackingField", 23f);
+heli.SimulateFlight(world, 0.1f);
+Check(heli.AssignedHelipadId == pad.UnitId, "Low fuel automatically selects a free allied pad");
+((List<Unit>)units.Units).Remove(pad);
+grid.Remove(pad);
+heli.SimulateFlight(world, 0.1f);
+Check(heli.AssignedHelipadId is null, "Destroyed helipad invalidates reservation");
+
+heli = SetupHelicopter();
+host = new NetworkHost(transport, input, world);
+NetworkMessage? HeliOrder(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost).GetMethod("TryCreateHelicopterOrder", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
+var takeoffRequest = new NetworkMessage(NetworkMessageType.HelicopterOrderRequest, ownerId, UnitId: heli.UnitId, HelicopterOrder: HelicopterOrder.TakeOff);
+Check(HeliOrder(takeoffRequest with { SenderId = Guid.NewGuid() }) is null, "Host rejects unauthorized flight orders");
+Check(HeliOrder(takeoffRequest with { HelicopterOrder = (HelicopterOrder)999 }) is null, "Host rejects unknown flight orders");
+Check(HeliOrder(takeoffRequest) is { Type: NetworkMessageType.UnitStateCommand }, "Host confirms takeoff through authoritative state");
+FlyTicks(heli, 40);
+heli.TryConsumeAmmunition();
+var flightState = Wire(NetworkCommands.CreateUnitStateCommand(hostId, heli.GetState())).UnitState!;
+var clientHeli = new Helicopter(Vector3.Zero, heli.UnitId);
+clientHeli.ApplyState(flightState);
+Check(clientHeli.Position == heli.Position && clientHeli.Fuel == heli.Fuel && clientHeli.Ammunition == heli.Ammunition && clientHeli.FlightState == heli.FlightState, "Flight snapshot wire replay matches position, supplies and phase");
+clientHeli.ApplyState(flightState with { Revision = flightState.Revision - 1, Payload = JsonSerializer.SerializeToUtf8Bytes(new HelicopterState(0, 0, 0, 0, HelicopterFlightState.Landed, 0, 0, null, null, null, null)) });
+Check(clientHeli.Position == heli.Position, "Stale flight state cannot rewind client");
+var fireRequest = new NetworkMessage(NetworkMessageType.AttackRequest, hostId, UnitIds: new[] { heli.UnitId }, X: heli.Position.X + 1, Y: 0, Z: heli.Position.Z);
+NetworkMessage? HeliFire(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost).GetMethod("TryCreateAttackCommand", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
+int ammunitionBefore = heli.Ammunition;
+Check(HeliFire(fireRequest with { SenderId = Guid.NewGuid() }) is null && heli.Ammunition == ammunitionBefore, "Unauthorized attack cannot consume ammunition");
+Check(HeliFire(fireRequest with { X = 1000 }) is null && heli.Ammunition == ammunitionBefore, "Out-of-range shot rejected before ammunition consumption");
+Check(HeliFire(fireRequest) is not null && heli.Ammunition == ammunitionBefore - 1, "Authoritative attack consumes ammunition exactly once");
+Check(HeliFire(fireRequest) is null && heli.Ammunition == ammunitionBefore - 1, "Duplicate rapid attack request cannot bypass weapon cooldown");
+Check(!heli.Actions.Any(a => a.Type == UnitActionType.LeaveContainer), "Combat helicopter exposes no empty transport action");
+heli = SetupHelicopter();
+pad = AddPad(new(25.5f, 0, 25.5f));
+Check(heli.ReturnToHelipad(world), "Pad reservation for diversion test");
+FlyTicks(heli, 5);
+heli.SetAttackGroundTarget(new(15.5f, 0, 15.5f));
+Check(heli.AssignedHelipadId is null, "Explicit attack releases previous landing reservation");
+FlyTicks(heli, 50);
+Check(heli.CanFireWeapon && !heli.IsLanded, "Attack can replace a return-to-pad order");
+heli.RequestLanding(world, new(22.5f, 22.5f));
+FlyTicks(heli, 20);
+Check(heli.RequestLanding(world, new(8.5f, 28.5f)), "Landing destination can be replaced during approach");
+FlyTicks(heli, 200);
+Check(heli.IsLanded && Math.Abs(heli.Position.Z - 28.5f) < 0.01f, "Diverted landing reaches the new position before descending");
+
+// Import the actual user-authored models with atlas metadata, without a graphics device.
+Globals.MaterialMaskTextureHandler = textureHandler;
+foreach (string relative in new[] { "vehicles/heli-1.bbmodel", "buildings/helipad-1.bbmodel" })
+{
+    string modelPath = Path.GetFullPath(Path.Combine("Content/models", relative));
+    using var modelJson = JsonDocument.Parse(File.ReadAllText(modelPath));
+    int textureIndex = 0;
+    foreach (var texture in modelJson.RootElement.GetProperty("textures").EnumerateArray())
+    {
+        string name = texture.GetProperty("name").GetString()!;
+        atlasRegions[name.StartsWith("shared:") ? name[7..] : $"bbmodel:{modelPath}:texture:{textureIndex}"] = sharedRegion;
+        atlasRegions[$"bbmodel:{modelPath}:material-mask:{textureIndex}"] = sharedRegion;
+        string sourceName = texture.TryGetProperty("relative_path", out var rel) ? rel.GetString()! : name;
+        string sourcePath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(modelPath)!, sourceName));
+        atlasRegions[Path.Combine(Path.GetDirectoryName(sourcePath)!, Path.GetFileNameWithoutExtension(sourcePath) + "-MaterialMask.png")] = sharedRegion;
+        textureIndex++;
+    }
+    var actualMesh = BBModelLoader.Load(modelPath);
+    Check(actualMesh.SubMeshes.Count > 0, "Authored helicopter/helipad geometry imports");
+    Globals.MeshHandler.Meshes[Path.GetFileNameWithoutExtension(relative)] = actualMesh;
+}
+var actualHeli = new Helicopter(new(10, 0, 10), Guid.NewGuid());
+var actualMeshSet = new MeshSet(Globals.MeshHandler.Meshes["heli-1"]);
+Check(actualMeshSet.SetPivotRotation("pivot:rotor_main", Quaternion.CreateFromAxisAngle(Vector3.Up, 1)), "Actual main rotor pivot is animated");
+Check(actualMeshSet.Pivots.Any(p => p.Name == "pivot:turret"), "Actual helicopter turret pivot imports");
+Check(!actualMeshSet.SetPivotRotation("pivot:rotor_rear", Quaternion.Identity), "Absent rear rotor pivot is optional");
+var unanimatedMeshSet = new MeshSet(Globals.MeshHandler.Meshes["heli-1"]);
+actualMeshSet.TryGetPivotWorldTransform("pivot:rotor_main", Matrix.Identity, out var animatedRotor);
+unanimatedMeshSet.TryGetPivotWorldTransform("pivot:rotor_main", Matrix.Identity, out var restingRotor);
+Check(animatedRotor != restingRotor, "Rotor animation is isolated per helicopter instance");
+Check(float.IsFinite(actualHeli.GroundOffset) && actualHeli.Height > 0, "Actual helicopter bounds provide valid landing offset");
+// Height-aware damage: an aircraft and ground unit can share X/Z without sharing hits.
+heli = SetupHelicopter();
+heli.TakeOff(world);
+FlyTicks(heli, 40);
+var belowAircraft = Unit();
+Field(belowAircraft, typeof(Unit), "<UnitId>k__BackingField", Guid.NewGuid());
+Field(belowAircraft, typeof(Unit), "<Height>k__BackingField", 1f);
+belowAircraft.SetPosition(new(heli.Position.X, 0, heli.Position.Z));
+((List<Unit>)units.Units).Insert(0, belowAircraft);
+host = new NetworkHost(transport, input, world);
+Unit? ImpactTarget(Guid attacker, Vector3 point) => (Unit?)typeof(NetworkHost).GetMethod("FindImpactTarget", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { attacker, point });
+Check(ImpactTarget(Guid.NewGuid(), heli.Position + Vector3.Up * (heli.Height * 0.5f)) == heli, "Aerial hit selects helicopter rather than unit below");
+Check(ImpactTarget(heli.UnitId, belowAircraft.Position) == belowAircraft, "Helicopter ground attack cannot hit itself");
+Check(ImpactTarget(belowAircraft.UnitId, belowAircraft.Position) is null, "Ground impact cannot hit an aircraft above it");
+
+heli = SetupHelicopter();
+pad = AddPad(new(25.5f, 0, 25.5f));
+heli.ReturnToHelipad(world);
+for (int i = 0; i < 200 && heli.FlightState != HelicopterFlightState.Landing; i++) heli.SimulateFlight(world, 0.1f);
+Check(heli.FlightState == HelicopterFlightState.Landing, "Pad approach enters descent phase");
+Field(heli, typeof(Helicopter), "<Fuel>k__BackingField", 0f);
+FlyTicks(heli, 100);
+Check(heli.IsLanded && heli.HitPoints > 0 && heli.AssignedHelipadId == pad.UnitId && heli.Fuel > 0, "Fuel exhaustion above reserved pad completes landing and refuels");
+
+heli = SetupHelicopter();
+heli.TakeOff(world);
+FlyTicks(heli, 40);
+for (int z = 0; z < 40; z++) for (int x = 0; x < 40; x++) grid.GetCell(x, z).IsBlocked = true;
+Field(heli, typeof(Helicopter), "<Fuel>k__BackingField", 0f);
+FlyTicks(heli, 100);
+Check(heli.HitPoints == 0 && heli.IsLanded, "No safe ground and no fuel results in emergency touchdown failure rather than unlimited hovering");
+var actualBounds = new MeshSet(Globals.MeshHandler.Meshes["heli-1"]).GetBounds();
+Check(actualHeli.Width >= actualBounds.Max.X - actualBounds.Min.X && actualHeli.Length >= actualBounds.Max.Z - actualBounds.Min.Z, "Ground landing footprint includes the authored helicopter geometry");
+Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");

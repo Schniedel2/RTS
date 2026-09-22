@@ -155,6 +155,24 @@ public sealed class ParticleSystem
         MuzzleFlashEmissionSettings? settings = null)
     {
         settings ??= MuzzleFlashEmissionPresets.Rifle();
+        EmitMuzzleFlash(position, barrelDirection, settings);
+    }
+
+    /// <summary>Creates a large, short-lived cannon flash and its smoke plume.</summary>
+    public void EmitCannonMuzzleFlash(
+        Vector3 position,
+        Vector3 barrelDirection,
+        MuzzleFlashEmissionSettings? settings = null)
+    {
+        settings ??= MuzzleFlashEmissionPresets.TankCannon();
+        EmitMuzzleFlash(position, barrelDirection, settings);
+    }
+
+    private void EmitMuzzleFlash(
+        Vector3 position,
+        Vector3 barrelDirection,
+        MuzzleFlashEmissionSettings settings)
+    {
         EmitSmoke(position, barrelDirection, settings.SmokeSettings);
 
         if (!Globals.TilemapHandler.TryGet(settings.TilemapName, out TilemapHandler.Tilemap flashes))

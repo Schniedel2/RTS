@@ -2,7 +2,7 @@ using Microsoft.Xna.Framework;
 
 namespace RTS;
 
-/// <summary>Visual settings for one short, directed small-arms muzzle flash.</summary>
+/// <summary>Visual settings for one short, directed muzzle flash.</summary>
 public sealed record MuzzleFlashEmissionSettings
 {
     public string TilemapName { get; init; } = "Sparks";
@@ -21,4 +21,19 @@ public sealed record MuzzleFlashEmissionSettings
 public static class MuzzleFlashEmissionPresets
 {
     public static MuzzleFlashEmissionSettings Rifle() => new();
+
+    public static MuzzleFlashEmissionSettings TankCannon() => new()
+    {
+        TilemapName = "Explosion",
+        SecondaryFlashCount = 5,
+        MainStartSize = 1.6f,
+        MainEndSize = 2.08f,
+        SecondaryStartSize = 1.72f,
+        SecondaryEndSize = 0.035f,
+        Lifetime = 0.31f,
+        SecondaryDistance = 0.85f,
+        SecondarySpeed = 5.5f,
+        Color = new Color(255, 220, 115),
+        SmokeSettings = SmokeEmissionPresets.TankCannon()
+    };
 }

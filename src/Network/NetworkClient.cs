@@ -21,6 +21,11 @@ public sealed class NetworkClient
         return _networkHandler.RequestWorldDataAsync(cancellationToken);
     }
 
+    public Task RequestHelicopterOrderAsync(Guid unitId, HelicopterOrder order, Vector3 target, Guid? helipadId = null) =>
+        _networkHandler.SendToHostAsync(new(NetworkMessageType.HelicopterOrderRequest,
+            _networkHandler.LocalPeerId, UnitId: unitId, TargetId: helipadId, HelicopterOrder: order,
+            X: target.X, Y: target.Y, Z: target.Z));
+
     private uint _selectionRevision;
 
     public Task NotifyUnitsSelectedAsync(Guid[] unitIds, CancellationToken cancellationToken = default)

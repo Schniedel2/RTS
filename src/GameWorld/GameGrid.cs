@@ -146,9 +146,15 @@ public class GameGrid
         {
             for (int x = left; x <= right; x++)
             {
-                if (!AllowsUnit(unit, new Point(x, y)))
-                    return false;
                 Unit? occupant = _occupants[x, y];
+
+                // Terrain can change underneath a registered unit (most
+                // notably while a bulldozer levels its own footprint). Let it
+                // retain/leave those already occupied cells even if their new
+                // slope is temporarily outside its movement profile. Newly
+                // entered cells still have to pass the full terrain check.
+                if (!AllowsUnit(unit, new Point(x, y)) && occupant != unit)
+                    return false;
 
                 if (occupant is null || occupant == unit)
                     continue;
@@ -173,6 +179,15 @@ public class GameGrid
         }
 
         return true;
+    }
+
+    // Called only for host-validated earthwork results (or their authoritative client replay).
+    internal void RegisterEarthworkFootprint(MobileUnit unit, IReadOnlyList<Point> cells)
+    {
+        Clear(unit);
+        foreach (Point cell in cells)
+            if (Contains(cell)) _occupants[cell.X, cell.Y] = unit;
+        _occupiedCells[unit] = cells;
     }
 
     public bool TryMove(MobileUnit unit, Point centerCell)

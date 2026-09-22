@@ -6,7 +6,7 @@ using System.Linq;
 namespace RTS.Network;
 
 /// <summary>Host-only scheduler. Clients receive movement orders and absolute cell results.</summary>
-public sealed class EarthworkController(GameWorld world, Guid hostId, Action<NetworkMessage> publish)
+public sealed class EarthworkController(GameWorld world, Guid hostId, Action<NetworkMessage> publish, bool refreshGraphics = true)
 {
     private sealed class Job(GDIBulldozer worker, Guid player, EarthworkOrder order, List<Point> cells)
     {
@@ -25,16 +25,23 @@ public sealed class EarthworkController(GameWorld world, Guid hostId, Action<Net
     public NetworkMessage? Start(NetworkMessage request)
     {
         if (request.UnitId is not Guid id || request.EarthworkKind is not EarthworkKind kind || !Enum.IsDefined(kind) ||
-            world.Units.FindById(id) is not GDIBulldozer worker || worker.IsDying || worker.IsEmbarked ||
+            world.Units.FindById(id) is not GDIBulldozer worker || worker.IsDying || worker.IsEmbarked || worker.IsLeavingBuilding ||
             worker.Occupancy?.IsOperational == false || !Globals.Game.Armies.CanControl(request.SenderId, worker.ArmyId) ||
             !float.IsFinite(request.X) || !float.IsFinite(request.Z) || request.X < 0 || request.Z < 0 ||
             request.X >= world.Terrain.Width - 1 || request.Z >= world.Terrain.Height - 1)
             return null;
         var preview = Earthwork.Preview(world, worker, world.GameGrid.ToCell(new Vector3(request.X, 0, request.Z)), kind);
         if (!preview.IsAllowed) return null;
+        if (preview.Order.IsDrive)
+        {
+            Cancel(id);
+            worker.BeginEarthwork(preview.Order);
+            _jobs[id] = new Job(worker, request.SenderId, preview.Order, []);
+            return new(NetworkMessageType.EarthworkStartCommand, hostId, UnitId: id, EarthworkOrder: preview.Order);
+        }
         Rectangle area = preview.Order.Area;
         area.Inflate(1, 1);
-        if (_jobs.Values.Any(j => j.Worker != worker && area.Intersects(j.Order.Area))) return null;
+        if (_jobs.Values.Any(j => j.Worker != worker && !j.Order.IsDrive && area.Intersects(j.Order.Area))) return null;
         List<Point> cells = [];
         for (int row = 0; row < 8; row++)
             for (int column = 0; column < 8; column++)
@@ -69,9 +76,10 @@ public sealed class EarthworkController(GameWorld world, Guid hostId, Action<Net
         foreach (Job job in _jobs.Values.ToArray())
         {
             GDIBulldozer worker = job.Worker;
-            if (world.Units.FindById(worker.UnitId) != worker || worker.IsDying || worker.IsEmbarked ||
+            if (worker.EarthworkOrder?.Id != job.Order.Id || world.Units.FindById(worker.UnitId) != worker || worker.IsDying || worker.IsEmbarked || worker.IsLeavingBuilding ||
                 !Globals.Game.Armies.CanControl(job.Player, worker.ArmyId) || worker.Occupancy?.IsOperational == false)
             { Cancel(worker.UnitId); continue; }
+            if (job.Order.IsDrive) { UpdateDrive(job, seconds); continue; }
             while (job.Index < job.Cells.Count && !Earthwork.NeedsWork(world, job.Order, job.Cells[job.Index])) job.Index++;
             if (job.Index == job.Cells.Count) { Cancel(worker.UnitId); continue; }
             Point cell = job.Cells[job.Index];
@@ -85,7 +93,7 @@ public sealed class EarthworkController(GameWorld world, Guid hostId, Action<Net
             {
                 job.WorkTime += seconds;
                 if (job.WorkTime < Earthwork.Duration(world, job.Order, cell)) continue;
-                worker.ApplyEarthworkCell(world, job.Order.Id, ++job.Sequence, cell);
+                worker.ApplyEarthworkCell(world, job.Order.Id, ++job.Sequence, cell, refreshGraphics);
                 publish(new(NetworkMessageType.EarthworkCellCommand, hostId, UnitId: worker.UnitId,
                     EarthworkOrderId: job.Order.Id, EarthworkSequence: job.Sequence, CellX: cell.X, CellZ: cell.Y));
                 job.Index++; job.WorkTime = 0; job.Approach = null;
@@ -108,6 +116,32 @@ public sealed class EarthworkController(GameWorld world, Guid hostId, Action<Net
             worker.TryReceiveGotoCommand(world, new GotoCommand(new(nextPosition.X, nextPosition.Z)));
             publish(command);
         }
+    }
+
+    private void UpdateDrive(Job job, float seconds)
+    {
+        GDIBulldozer worker = job.Worker;
+        Vector2 target = new(job.Order.DestinationX, job.Order.DestinationZ);
+        float remaining = worker.MoveSpeed * Math.Max(0, seconds);
+        // Substeps prevent skipping blocked cells even after a long simulation tick.
+        do
+        {
+            Vector2 current = new(worker.Position.X, worker.Position.Z);
+            float distance = Vector2.Distance(current, target);
+            float step = Math.Min(distance, Math.Min(remaining, world.GameGrid.CellSize * 0.25f));
+            Vector2 next = distance < 0.0001f ? target : current + (target - current) * (step / distance);
+            var cells = Earthwork.DriveCells(world, worker, job.Order, current)
+                .Concat(Earthwork.DriveCells(world, worker, job.Order, next)).Distinct().ToList();
+            // Validate the whole blade width before changing any corner.
+            if (cells.Any(c => !Earthwork.CanWork(world, worker, job.Order, c)))
+            { Cancel(worker.UnitId); return; }
+            int[] changed = cells.Where(c => Earthwork.NeedsWork(world, job.Order, c)).SelectMany(c => new[] { c.X, c.Y }).ToArray();
+            worker.ApplyEarthworkDrive(world, job.Order.Id, ++job.Sequence, changed, next, refreshGraphics);
+            publish(new(NetworkMessageType.EarthworkCellCommand, hostId, UnitId: worker.UnitId,
+                EarthworkOrderId: job.Order.Id, EarthworkSequence: job.Sequence, EarthworkCells: changed, X: next.X, Z: next.Y));
+            remaining -= step;
+            if (distance <= step + 0.0001f) { Cancel(worker.UnitId); return; }
+        } while (remaining > 0.0001f);
     }
 
     private Point? FindApproach(GDIBulldozer worker, Point cell, float reach)

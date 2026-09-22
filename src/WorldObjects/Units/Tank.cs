@@ -19,6 +19,8 @@ public class Tank : MobileUnit
     /// <summary>Fraction of remaining barrel recoil recovered per nominal 60 FPS frame.</summary>
     public float BarrelRecoilRecoveryFactor { get; set; } = 0.05f;
     public SmokeEmissionSettings CannonSmokeSettings { get; set; } = SmokeEmissionPresets.TankCannon();
+    public MuzzleFlashEmissionSettings CannonMuzzleFlashSettings { get; set; } =
+        MuzzleFlashEmissionPresets.TankCannon();
     private string? _lastMovementMode;
 
     public override IReadOnlyList<UnitAction> Actions =>
@@ -46,14 +48,14 @@ public class Tank : MobileUnit
         CanOnlyMoveForward = true;
         CanTurnInPlace = true;
         TargetAngleDegreesPerSecond = 50.0f;
-        // pivot:turret in TankBody-1 is (0, 0.8, -0.2). For hull recoil we
-        // deliberately use its X/Z location at ground level, preserving the
-        // impression that the tracks remain planted.
         VisualRecoilPivot = new Vector3(0.0f, 0.0f, -0.2f);
 
+        SetMesh("Tank-1", deriveDimensions: true);
+        /*
         _meshSet = new MeshSet(Globals.MeshHandler.Meshes["TankBody-1"]);
         _meshSet.SetAttachment("pivot:turret", Globals.MeshHandler.Meshes["TankTurret-1"]);
         _meshSet.SetAttachmentPath("pivot:turret/pivot:barrel", Globals.MeshHandler.Meshes["TankBarrel-2"]);
+        */
     }
 
 
@@ -143,7 +145,12 @@ public class Tank : MobileUnit
             muzzlePosition = Position + Vector3.Up * (Height * 0.75f) +
                 barrelDirection * (Length * 0.52f);
 
-        Globals.World.Particles.EmitCannonSmoke(muzzlePosition, barrelDirection, CannonSmokeSettings);
+        // Keep the independently configurable smoke preset while using the
+        // cannon flash preset for size, lifetime, color and flame spread.
+        Globals.World.Particles.EmitCannonMuzzleFlash(
+            muzzlePosition,
+            barrelDirection,
+            CannonMuzzleFlashSettings with { SmokeSettings = CannonSmokeSettings });
     }
 
     private void LogMovementMode(string mode, float distance, float directionDot)
@@ -161,10 +168,33 @@ public class Tank : MobileUnit
             return;
 
         _meshSet.SetParameter(Mesh.TurretAngle, MathHelper.ToRadians(TargetAngleDegrees));
-        _meshSet.SetAttachmentLocalTransform(
-            "pivot:turret/pivot:barrel",
-            Matrix.CreateTranslation(BarrelRecoilOffset));
-        _meshSet.Draw(effect, GetVisualWorldMatrix());
+
+        // Rotate only the authored recoil group. In the new Tank BBModel the
+        // tracks are outside this group and therefore remain planted. Recoil
+        // follows the turret direction by rotating the local pitch axis.
+        float aimAngleRadians = MathHelper.ToRadians(TargetAngleDegrees);
+        Vector3 recoilPitchAxis = Vector3.TransformNormal(
+            Vector3.Right,
+            Matrix.CreateRotationY(aimAngleRadians));
+        Quaternion bodyRecoilRotation = Quaternion.CreateFromAxisAngle(
+            recoilPitchAxis,
+            MathHelper.ToRadians(VisualRecoilPitchDegrees));
+        bool usesAuthoredBodyRecoil = _meshSet.SetPivotRotation(
+            "pivot:recoil",
+            bodyRecoilRotation);
+
+        // Prefer the authored node so an integrated barrel and everything
+        // below it (muzzle/projectile pivots included) recoil together. Older
+        // composed tank meshes keep using the attachment transform fallback.
+        if (!_meshSet.SetPivotTranslation("pivot:barrelrecoil", BarrelRecoilOffset))
+        {
+            _meshSet.SetAttachmentLocalTransform(
+                "pivot:turret/pivot:barrel",
+                Matrix.CreateTranslation(BarrelRecoilOffset));
+        }
+        _meshSet.Draw(
+            effect,
+            usesAuthoredBodyRecoil ? GetWorldMatrix() : GetVisualWorldMatrix());
     }
 
 }

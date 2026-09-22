@@ -35,6 +35,9 @@ public enum UnitActionType
     ClearRallyPoint,
     LevelAndConcrete,
     RemoveConcrete,
+    TakeOff,
+    Land,
+    ReturnToHelipad,
     max
 
 }

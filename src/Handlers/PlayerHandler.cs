@@ -90,6 +90,12 @@ public class PlayerHandler
                 if (_toolSize < 1)
                     _toolSize = 1;
                 return false;
+            case UnitActionType.TakeOff:
+            case UnitActionType.ReturnToHelipad:
+                foreach (Helicopter helicopter in _selectedUnits.OfType<Helicopter>())
+                    _ = Globals.Game.NetworkClient.RequestHelicopterOrderAsync(helicopter.UnitId,
+                        action.Type == UnitActionType.TakeOff ? HelicopterOrder.TakeOff : HelicopterOrder.ReturnToHelipad, helicopter.Position);
+                return false;
             case UnitActionType.Stop:
                 {
                     if (action.Type == UnitActionType.Stop)
@@ -454,6 +460,14 @@ public class PlayerHandler
             if (_selectedUnits.Count == 0)
                 return;
 
+            if (action.Type == UnitActionType.Land)
+            {
+                Helipad? pad = targetUnit as Helipad ?? _map.GameGrid.GetOccupant(_map.GameGrid.ToCell(targetPosition)) as Helipad;
+                foreach (Helicopter helicopter in _selectedUnits.OfType<Helicopter>())
+                    _ = Globals.Game.NetworkClient.RequestHelicopterOrderAsync(helicopter.UnitId, HelicopterOrder.Land, targetPosition, pad?.UnitId);
+                ActiveAction = null;
+                return;
+            }
             if (action.Type is UnitActionType.LevelAndConcrete or UnitActionType.RemoveConcrete)
             {
                 if (_selectedUnits.Count != 1 || _selectedUnits[0] is not GDIBulldozer worker) return;
@@ -627,11 +641,6 @@ public class PlayerHandler
                 _earthworkPreview = Earthwork.Preview(_map, worker, _map.GameGrid.ToCell(MouseWorldPosition), kind);
                 _renderStates.PushState();
                 Globals.GraphicsDevice.DepthStencilState = DepthStencilState.None;
-                Rectangle area = _earthworkPreview.Order.Area;
-                if (kind == EarthworkKind.LevelAndConcrete)
-                    for (int z = area.Top - 1; z <= area.Bottom; z++)
-                        for (int x = area.Left - 1; x <= area.Right; x++)
-                            if (!area.Contains(x, z)) DrawWorkCell(new Point(x, z), new Color(255, 180, 40, 65));
                 foreach (EarthworkCell cell in _earthworkPreview.Cells)
                     DrawWorkCell(cell.Cell, !cell.Allowed ? new Color(255, 40, 40, 140)
                         : cell.NeedsWork ? new Color(40, 220, 80, 95) : new Color(160, 160, 160, 70));
@@ -693,7 +702,7 @@ public class PlayerHandler
         {
             Point mouse = Mouse.GetState().Position;
             string label = preview.IsAllowed ? (preview.Order.Kind == EarthworkKind.LevelAndConcrete
-                ? $"8 x 8 | Height {preview.Order.TargetHeight:0.00}" : "8 x 8 | Remove concrete") : "Cannot work here";
+                ? $"Drive & level | Height {preview.Order.TargetHeight:0.00}" : "8 x 8 | Remove concrete") : "Cannot work here";
             RenderHelper.DrawTextCentered(spriteBatch, Globals._debugFont, label, new Vector2(mouse.X, mouse.Y + 28),
                 preview.IsAllowed ? Color.LimeGreen : Color.Red);
         }

@@ -262,6 +262,7 @@ public class UnitHandler
             return false;
         }
 
+        if (container is Helicopter { IsLanded: false }) return false;
         occupant.Disembark(exitPosition);
         Point exitCell = Globals.World.GameGrid.ToCell(exitPosition);
         if (!Globals.World.GameGrid.TryMove(occupant, exitCell))
@@ -332,12 +333,13 @@ public class UnitHandler
 
     public void Draw2D(SpriteBatch spriteBatch, Camera camera, Viewport viewport)
     {
-        foreach (Building building in _units.OfType<Building>())
-            building.Draw2D(spriteBatch, camera, viewport);
+        foreach (Unit unit in _units)
+            if (unit is Building or Helicopter) unit.Draw2D(spriteBatch, camera, viewport);
     }
 
     private bool SetFootprints(Unit unit, float rotateYDegrees)
     {
+        if (unit is Helicopter helicopter) return helicopter.InitializeOnGround(Globals.World);
         Point cell = Globals.World.GameGrid.ToCell(unit.Position);
         MobileUnit? mobileUnit = unit as MobileUnit;
         if (mobileUnit != null)

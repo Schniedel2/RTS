@@ -64,6 +64,14 @@ public sealed class SubMesh(
 /// <summary>Node of the mesh hierarchy; transforms itself and all its children around its pivot.</summary>
 public sealed class MeshNode(string name, Vector3 pivot)
 {
+    private readonly string _translationXParameter = $"translation:{name}:x";
+    private readonly string _translationYParameter = $"translation:{name}:y";
+    private readonly string _translationZParameter = $"translation:{name}:z";
+    private readonly string _rotationXParameter = $"rotation:{name}:x";
+    private readonly string _rotationYParameter = $"rotation:{name}:y";
+    private readonly string _rotationZParameter = $"rotation:{name}:z";
+    private readonly string _rotationWParameter = $"rotation:{name}:w";
+
     public string Name { get; } = name;
     public Vector3 Pivot { get; } = pivot;
     /// <summary>
@@ -88,9 +96,37 @@ public sealed class MeshNode(string name, Vector3 pivot)
         Vector3 animationPosition = ReceivesAnimationPose
             ? pose?.GetPositionOrDefault(Name) ?? Vector3.Zero
             : Vector3.Zero;
+        Vector3 parameterPosition = new(
+            GetParameter(parameters, _translationXParameter),
+            GetParameter(parameters, _translationYParameter),
+            GetParameter(parameters, _translationZParameter));
         return Matrix.CreateTranslation(-Pivot) * rotation * Matrix.CreateTranslation(Pivot) *
-            Matrix.CreateTranslation(animationPosition);
+            Matrix.CreateTranslation(animationPosition + parameterPosition);
     }
+
+    internal void SetTranslationParameters(
+        IDictionary<string, float> parameters,
+        Vector3 translation)
+    {
+        parameters[_translationXParameter] = translation.X;
+        parameters[_translationYParameter] = translation.Y;
+        parameters[_translationZParameter] = translation.Z;
+    }
+
+    internal void SetRotationParameters(
+        IDictionary<string, float> parameters,
+        Quaternion rotation)
+    {
+        parameters[_rotationXParameter] = rotation.X;
+        parameters[_rotationYParameter] = rotation.Y;
+        parameters[_rotationZParameter] = rotation.Z;
+        parameters[_rotationWParameter] = rotation.W;
+    }
+
+    private static float GetParameter(
+        IReadOnlyDictionary<string, float> parameters,
+        string parameterName) =>
+        parameters.TryGetValue(parameterName, out float value) ? value : 0.0f;
 
     private Matrix GetRotationTransform(IReadOnlyDictionary<string, float> parameters, AnimationPose? pose)
     {
@@ -117,7 +153,19 @@ public sealed class MeshNode(string name, Vector3 pivot)
         if (RotationParameter is not null && parameters.TryGetValue(RotationParameter, out float angle) && angle != 0.0f)
             parameterRotation = Matrix.CreateFromAxisAngle(RotationAxis, angle);
 
-        return animationRotation * parameterRotation * baseRotation;
+        Matrix instanceRotation = Matrix.Identity;
+        if (parameters.TryGetValue(_rotationWParameter, out float rotationW))
+        {
+            Quaternion rotation = new(
+                GetParameter(parameters, _rotationXParameter),
+                GetParameter(parameters, _rotationYParameter),
+                GetParameter(parameters, _rotationZParameter),
+                rotationW);
+            if (rotation.LengthSquared() > 0.0001f)
+                instanceRotation = Matrix.CreateFromQuaternion(Quaternion.Normalize(rotation));
+        }
+
+        return animationRotation * parameterRotation * instanceRotation * baseRotation;
     }
 
     public void Draw(

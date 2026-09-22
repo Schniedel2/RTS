@@ -28,6 +28,12 @@ public static class BuildingFactory
             case "building-1":
                 building = new GenericBuilding(position, unitId, "building-1");
                 break;
+            case "antenna-1":
+                building = new GenericBuilding(position, unitId, "antenna-1");
+                break;
+            case "helipad":
+                building = new Helipad(position, unitId, "helipad-1");
+                break;
             default:
                 return null;
         }

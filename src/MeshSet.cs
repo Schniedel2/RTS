@@ -138,6 +138,48 @@ public sealed class MeshSet
 
     public void SetParameter(string parameterName, float value) => _parameters[parameterName] = value;
 
+    /// <summary>
+    /// Applies a per-instance local translation to a pivot node and all of its
+    /// children. The pivot may be addressed by its name or complete cached
+    /// attachment path. Shared imported mesh data remains unchanged.
+    /// </summary>
+    public bool SetPivotTranslation(string pivotName, Vector3 translation)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(pivotName);
+        EnsurePivotCache();
+        CachedPivot? pivot = _cachedPivots.FirstOrDefault(candidate =>
+            string.Equals(candidate.Description.Name, pivotName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(candidate.Description.Path, pivotName, StringComparison.OrdinalIgnoreCase));
+        if (pivot is null || pivot.Pivot.NodePath.Count == 0)
+            return false;
+
+        pivot.Pivot.NodePath[^1].SetTranslationParameters(
+            pivot.Owner._parameters,
+            translation);
+        return true;
+    }
+
+    /// <summary>
+    /// Applies a per-instance local rotation around an authored pivot node.
+    /// An arbitrary quaternion is supported so recoil can follow a turret's
+    /// current firing direction instead of being limited to a fixed axis.
+    /// </summary>
+    public bool SetPivotRotation(string pivotName, Quaternion rotation)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(pivotName);
+        EnsurePivotCache();
+        CachedPivot? pivot = _cachedPivots.FirstOrDefault(candidate =>
+            string.Equals(candidate.Description.Name, pivotName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(candidate.Description.Path, pivotName, StringComparison.OrdinalIgnoreCase));
+        if (pivot is null || pivot.Pivot.NodePath.Count == 0)
+            return false;
+
+        pivot.Pivot.NodePath[^1].SetRotationParameters(
+            pivot.Owner._parameters,
+            rotation);
+        return true;
+    }
+
     /// <summary>Shows or hides a complete imported group for this MeshSet instance.</summary>
     public void SetNodeVisible(string nodeName, bool visible) =>
         _parameters[$"visibility:{nodeName}"] = visible ? 1.0f : 0.0f;
