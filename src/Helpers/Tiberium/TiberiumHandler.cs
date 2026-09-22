@@ -16,11 +16,22 @@ namespace RTS;
 /// </summary>
 public sealed class TiberiumHandler
 {
+    private sealed class RenderChunk
+    {
+        public HashSet<Point> Cells { get; } = [];
+        public BoundingBox Bounds;
+        public long TerrainRevision = -1;
+        public bool BoundsDirty = true;
+    }
+
+    private const int RenderChunkSize = 16;
     public const string FileName = "tiberium-cells.json";
     public const float MaximumAmount = 100.0f;
     // Linear growth: fully grown GrowthDurationSeconds after CreatedAt.
     private const float GrowthDurationSeconds = 30.0f;
     private const float GrowthPerSecond = MaximumAmount / GrowthDurationSeconds;
+    private const float EmissivePulseStrength = 0.65f;
+    private const float EmissivePulseSpeed = 2.4f;
 
     // Tuned per TerrainTile: how readily Tiberium takes root there, and how fast it then grows.
     private static readonly Dictionary<TerrainTile, float> SeedChanceByTile = new()
@@ -55,7 +66,12 @@ public sealed class TiberiumHandler
     };
 
     private readonly Dictionary<Point, TiberiumCell> _cells = new Dictionary<Point, TiberiumCell>();
+    private readonly Dictionary<Point, RenderChunk> _renderChunks = [];
+    private float _visualTimeSeconds;
     public IReadOnlyDictionary<Point, TiberiumCell> Cells => _cells;
+    public int RenderChunkCount => _renderChunks.Count;
+    public int LastVisibleChunkCount { get; private set; }
+    public int LastDrawnCellCount { get; private set; }
 
     public bool HasTiberium(Point cell) => _cells.ContainsKey(cell);
 
@@ -123,6 +139,7 @@ public sealed class TiberiumHandler
             GrowthFactor = state.GrowthFactor,
             MaxSize = state.MaxSize
         };
+        AddToRenderChunk(cell);
     }
 
     /// <summary>Removes up to <paramref name="amount"/> and rebases the growth curve to match what's left.</summary>
@@ -134,7 +151,10 @@ public sealed class TiberiumHandler
         float harvested = MathF.Min(amount, tiberium.Amount);
         float remaining = tiberium.Amount - harvested;
         if (remaining <= 0.0f)
+        {
             _cells.Remove(cell);
+            RemoveFromRenderChunk(cell);
+        }
         else
         {
             tiberium.Amount = remaining;
@@ -145,6 +165,9 @@ public sealed class TiberiumHandler
 
     public void Update(GameTime gameTime, bool allowGrowth = true)
     {
+        // The visual pulse keeps running while growth is paused in editor mode.
+        _visualTimeSeconds = (_visualTimeSeconds + (float)gameTime.ElapsedGameTime.TotalSeconds) % 10000.0f;
+
         // Not gameTime.TotalGameTime: CreatedAt is stamped in the host's time frame (see
         // TiberiumSeedState), which only NetworkHandler.EstimatedHostTime matches on clients too.
         double now = Globals.Game.Network.EstimatedHostTime;
@@ -184,12 +207,14 @@ public sealed class TiberiumHandler
             RebaseGrowth(cell, now);
             cell.CurrentSize = cell.Amount / MaximumAmount;
             _cells[point] = cell;
+            AddToRenderChunk(point);
         }
     }
 
     public void Remove(IEnumerable<Point> cells)
     {
-        foreach (Point point in cells) _cells.Remove(point);
+        foreach (Point point in cells)
+            if (_cells.Remove(point)) RemoveFromRenderChunk(point);
     }
 
     /// <summary>Advances only selected resource cells and sources; spreading cannot leave the selection.</summary>
@@ -241,6 +266,7 @@ public sealed class TiberiumHandler
     public void ApplyMapStates(IEnumerable<TiberiumSeedState>? states)
     {
         _cells.Clear();
+        _renderChunks.Clear();
         if (states is null) return;
         double now = Globals.Game.Network.EstimatedHostTime;
         foreach (TiberiumSeedState state in states)
@@ -279,6 +305,7 @@ public sealed class TiberiumHandler
             MaxSize = 1
         };
         _cells[cell] = seeded;
+        AddToRenderChunk(cell);
         return true;
     }
 
@@ -287,21 +314,96 @@ public sealed class TiberiumHandler
         cell.CreatedAt = now - cell.Amount / (GrowthPerSecond * Math.Max(0.0001f, cell.GrowthFactor));
     }
 
-    public void Draw(Effect effect)
+    public void Draw(Effect effect, BoundingFrustum? frustum = null)
     {
         if (_cells.Count == 0)
             return;
 
         Mesh mesh = Globals.MeshHandler.Meshes["tiberium-1"];
         GameGrid grid = Globals.World.GameGrid;
-        foreach ((Point cell, TiberiumCell tiberium) in _cells)
+        Terrain terrain = Globals.World.Terrain;
+        LastVisibleChunkCount = 0;
+        LastDrawnCellCount = 0;
+        effect.Parameters["EmissivePulseTime"]?.SetValue(_visualTimeSeconds);
+        effect.Parameters["EmissivePulseSpeed"]?.SetValue(EmissivePulseSpeed);
+        effect.Parameters["EmissivePulseStrength"]?.SetValue(EmissivePulseStrength);
+        try
         {
-            if (tiberium.Amount <= 0.0f)
-                continue;
+            foreach (RenderChunk chunk in _renderChunks.Values)
+            {
+                if (chunk.BoundsDirty || chunk.TerrainRevision != terrain.HeightRevision)
+                    UpdateChunkBounds(chunk, mesh, grid, terrain);
+                if (frustum is not null && frustum.Contains(chunk.Bounds) == ContainmentType.Disjoint)
+                    continue;
 
-            Vector3 position = grid.ToWorldPosition(cell, 0.0f);
-            position.Y = Globals.World.Terrain.GetSurfaceHeight(position.X, position.Z);
-            mesh.Draw(effect, Matrix.CreateRotationY(tiberium.RotationYRadians) * Matrix.CreateScale(tiberium.CurrentSize) * Matrix.CreateTranslation(position));
+                LastVisibleChunkCount++;
+                foreach (Point cell in chunk.Cells)
+                {
+                    if (!_cells.TryGetValue(cell, out TiberiumCell? tiberium) || tiberium.Amount <= 0.0f)
+                        continue;
+                    Vector3 position = grid.ToWorldPosition(cell, 0.0f);
+                    position.Y = terrain.GetSurfaceHeight(position.X, position.Z);
+                    effect.Parameters["EmissivePulsePhase"]?.SetValue(tiberium.RotationYRadians * 1.7f);
+                    mesh.Draw(effect, Matrix.CreateRotationY(tiberium.RotationYRadians) * Matrix.CreateScale(tiberium.CurrentSize) * Matrix.CreateTranslation(position));
+                    LastDrawnCellCount++;
+                }
+            }
         }
+        finally
+        {
+            // The unit effect is shared by all world meshes; do not animate their emissive masks.
+            effect.Parameters["EmissivePulseStrength"]?.SetValue(0.0f);
+            effect.Parameters["EmissivePulsePhase"]?.SetValue(0.0f);
+        }
+    }
+
+    private void AddToRenderChunk(Point cell)
+    {
+        Point key = ChunkKey(cell);
+        if (!_renderChunks.TryGetValue(key, out RenderChunk? chunk))
+            _renderChunks.Add(key, chunk = new RenderChunk());
+        if (chunk.Cells.Add(cell)) chunk.BoundsDirty = true;
+    }
+
+    private void RemoveFromRenderChunk(Point cell)
+    {
+        Point key = ChunkKey(cell);
+        if (!_renderChunks.TryGetValue(key, out RenderChunk? chunk)) return;
+        chunk.Cells.Remove(cell);
+        if (chunk.Cells.Count == 0) _renderChunks.Remove(key);
+        else chunk.BoundsDirty = true;
+    }
+
+    private static Point ChunkKey(Point cell) => new(cell.X / RenderChunkSize, cell.Y / RenderChunkSize);
+
+    private void UpdateChunkBounds(RenderChunk chunk, Mesh mesh, GameGrid grid, Terrain terrain)
+    {
+        float minimumX = float.PositiveInfinity, minimumZ = float.PositiveInfinity;
+        float maximumX = float.NegativeInfinity, maximumZ = float.NegativeInfinity;
+        float minimumY = float.PositiveInfinity, maximumY = float.NegativeInfinity;
+        float maximumScale = 1.0f;
+        foreach (Point cell in chunk.Cells)
+        {
+            Vector3 center = grid.ToWorldPosition(cell, 0);
+            minimumX = Math.Min(minimumX, center.X);
+            maximumX = Math.Max(maximumX, center.X);
+            minimumZ = Math.Min(minimumZ, center.Z);
+            maximumZ = Math.Max(maximumZ, center.Z);
+            float height = terrain.GetSurfaceHeight(center.X, center.Z);
+            minimumY = Math.Min(minimumY, height);
+            maximumY = Math.Max(maximumY, height);
+            if (_cells.TryGetValue(cell, out TiberiumCell? tiberium))
+                maximumScale = Math.Max(maximumScale, tiberium.MaxSize);
+        }
+
+        (Vector3 meshMinimum, Vector3 meshMaximum) = mesh.GetBounds();
+        float horizontalRadius = Math.Max(
+            Math.Max(Math.Abs(meshMinimum.X), Math.Abs(meshMaximum.X)),
+            Math.Max(Math.Abs(meshMinimum.Z), Math.Abs(meshMaximum.Z))) * maximumScale;
+        chunk.Bounds = new BoundingBox(
+            new Vector3(minimumX - horizontalRadius, minimumY + meshMinimum.Y * maximumScale, minimumZ - horizontalRadius),
+            new Vector3(maximumX + horizontalRadius, maximumY + meshMaximum.Y * maximumScale, maximumZ + horizontalRadius));
+        chunk.TerrainRevision = terrain.HeightRevision;
+        chunk.BoundsDirty = false;
     }
 }

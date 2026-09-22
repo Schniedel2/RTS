@@ -138,7 +138,7 @@ public class GameWorld
         Globals.SkinHandler.ApplyToEffect(unitEffect, PlayerSkin.Green);
 
         Decals.Draw(unitEffect);
-        Tiberium.Draw(unitEffect);
+        Tiberium.Draw(unitEffect, new BoundingFrustum(view * projection));
 
         Units.DrawMobileUnits(unitEffect);
         Units.DrawBuildings(unitEffect);

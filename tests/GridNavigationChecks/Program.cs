@@ -259,6 +259,7 @@ var tiberium = new TiberiumHandler();
 Field(world, typeof(GameWorld), "<Tiberium>k__BackingField", tiberium);
 Point plantedCell = new(3, 3);
 tiberium.Paint([plantedCell]);
+Check(tiberium.RenderChunkCount == 1, "Painted Tiberium is indexed in a render chunk");
 float plantedAmount = tiberium.Cells[plantedCell].Amount;
 tiberium.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(30)), allowGrowth: false);
 Check(tiberium.Cells[plantedCell].Amount == plantedAmount, "Editor pause freezes Tiberium growth");
@@ -274,8 +275,9 @@ try
 {
     tiberium.Save(tiberiumDirectory);
     tiberium.Remove([plantedCell, outsideCell]);
+    Check(tiberium.RenderChunkCount == 0, "Empty Tiberium render chunks are discarded");
     tiberium.Load(tiberiumDirectory);
-    Check(tiberium.Cells.Count == 2 && tiberium.Cells[plantedCell].Amount > plantedAmount, "Tiberium cells survive map save and load");
+    Check(tiberium.Cells.Count == 2 && tiberium.RenderChunkCount == 1 && tiberium.Cells[plantedCell].Amount > plantedAmount, "Tiberium cells and render chunks survive map save and load");
 }
 finally { if (Directory.Exists(tiberiumDirectory)) Directory.Delete(tiberiumDirectory, true); }
 var editor = Empty<TerrainEditorTool>();

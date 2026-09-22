@@ -746,6 +746,10 @@ public class ConsoleCommands
         _console.Print($"- Last Pathfinding time (ms): {Globals.Telemetry.Pathfinding_Last}");
         _console.Print($"- Total Pathfinding time (ms): {Globals.Telemetry.Pathfinding_Total}");
         _console.Print($"Frames processed: {Globals.Telemetry.FramesProcessed}");
+        _console.Print($"Tiberium cells: {_world.Tiberium.Cells.Count}");
+        _console.Print($"- Render chunks: {_world.Tiberium.RenderChunkCount}");
+        _console.Print($"- Visible chunks: {_world.Tiberium.LastVisibleChunkCount}");
+        _console.Print($"- Drawn cells: {_world.Tiberium.LastDrawnCellCount}");
     }
 
     private void Enable(string[] args)
