@@ -7,6 +7,7 @@ namespace RTS;
 
 public class Car : MobileUnit
 {
+    public override bool UsesVehicleDeathSequence => true;
     public override IReadOnlyList<UnitAction> Actions =>
     [
         new(UnitActionType.Goto, "Goto", 0, 1),

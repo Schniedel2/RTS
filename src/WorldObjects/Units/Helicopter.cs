@@ -17,6 +17,7 @@ public sealed record HelicopterState(float X, float Y, float Z, float Yaw, Helic
 /// <summary>Air movement and supplies are simulated by the host; clients animate replicated state.</summary>
 public class Helicopter : MobileUnit
 {
+    public override bool UsesVehicleDeathSequence => true;
     public override string StateTypeId => "helicopter";
     public HelicopterFlightState FlightState { get; private set; } = HelicopterFlightState.Landed;
     public bool IsLanded => FlightState == HelicopterFlightState.Landed;

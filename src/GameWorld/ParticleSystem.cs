@@ -116,6 +116,17 @@ public sealed class ParticleSystem
                 windInfluence: 0.35f));
         }
 
+        for (int index = 0; index < settings.SmokeBurstCount && HasParticleCapacity; index++)
+        {
+            float angle = Random.Shared.NextSingle() * MathHelper.TwoPi;
+            float radius = Random.Shared.NextSingle() * 0.75f * settings.Intensity;
+            Vector3 smokePosition = position + new Vector3(
+                MathF.Cos(angle) * radius,
+                Random.Shared.NextSingle() * 0.65f * settings.Intensity,
+                MathF.Sin(angle) * radius);
+            EmitSmoke(smokePosition, Vector3.Up, settings.SmokeBurstSettings);
+        }
+
         Globals.TilemapHandler.TryGet(settings.SparksTilemapName, out TilemapHandler.Tilemap sparkTilemap);
         for (int index = 0; index < settings.DebrisCount && HasParticleCapacity; index++)
         {

@@ -10,6 +10,7 @@ public sealed record ExplosionEmissionSettings
     public string SparksTilemapName { get; init; } = "Sparks";
     public int FireParticleCount { get; init; } = 28;
     public int DebrisCount { get; init; } = 8;
+    public int SmokeBurstCount { get; init; }
     public float Intensity { get; init; } = 1.0f;
     public float DebrisSpeed { get; init; } = 5.5f;
     public float DebrisSpeedVariation { get; init; } = 2.5f;
@@ -31,6 +32,7 @@ public sealed record ExplosionEmissionSettings
         Color = new Color(45, 45, 45),
         WindInfluence = 1.0f
     };
+    public SmokeEmissionSettings SmokeBurstSettings { get; init; } = SmokeEmissionPresets.VehicleWreck();
 }
 
 public static class ExplosionEmissionPresets
@@ -68,5 +70,28 @@ public static class ExplosionEmissionPresets
         ShockwaveRadius = 8.0f,
         ShockwaveStrength = 13.0f,
         ShockwaveLifetime = 0.65f
+    };
+
+    public static ExplosionEmissionSettings VehicleDestruction() => new()
+    {
+        FireParticleCount = 64,
+        DebrisCount = 22,
+        SmokeBurstCount = 10,
+        Intensity = 1.75f,
+        DebrisSpeed = 8.0f,
+        DebrisSpeedVariation = 3.5f,
+        DebrisLifetime = 1.0f,
+        DebrisSmokeInterval = 0.07f,
+        ShockwaveRadius = 9.0f,
+        ShockwaveStrength = 15.0f,
+        ShockwaveLifetime = 0.8f,
+        SmokeBurstSettings = SmokeEmissionPresets.VehicleWreck() with
+        {
+            ParticleCount = 2,
+            Intensity = 1.7f,
+            StartSize = 0.52f,
+            EndSize = 2.2f,
+            Lifetime = 3.2f
+        }
     };
 }

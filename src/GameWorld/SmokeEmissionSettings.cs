@@ -130,6 +130,28 @@ public static class SmokeEmissionPresets
         WindInfluence = 0.95f
     };
 
+    /// <summary>Dense, persistent smoke rising from a destroyed vehicle wreck.</summary>
+    public static SmokeEmissionSettings VehicleWreck() => new()
+    {
+        ParticleCount = 2,
+        Intensity = 1.35f,
+        EmissionLength = 0.10f,
+        ForwardSpeed = 0.10f,
+        ForwardSpeedVariation = 0.08f,
+        SidewaysSpread = 0.30f,
+        UpwardSpeed = 0.85f,
+        UpwardSpeedVariation = 0.28f,
+        StartSize = 0.38f,
+        StartSizeVariation = 0.10f,
+        EndSize = 1.65f,
+        EndSizeVariation = 0.38f,
+        Lifetime = 2.8f,
+        LifetimeVariation = 0.45f,
+        Opacity = 0.86f,
+        Color = new Color(20, 18, 18),
+        WindInfluence = 0.92f
+    };
+
     public static SmokeEmissionSettings RifleSmoke() => new()
     {
         ParticleCount = 1,

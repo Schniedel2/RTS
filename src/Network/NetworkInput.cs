@@ -588,7 +588,11 @@ public sealed class NetworkInput
             return;
 
         if (unit.HasDeathExplosion)
-            Globals.World.Particles.EmitExplosion(unit.Position + Vector3.Up);
+            Globals.World.Particles.EmitExplosion(
+                unit.Position + Vector3.Up * Math.Max(1.0f, unit.Height * 0.5f),
+                unit.UsesVehicleDeathSequence
+                    ? ExplosionEmissionPresets.VehicleDestruction()
+                    : ExplosionEmissionPresets.TankShell());
         Globals.World.Units.Destroy(unitId);
     }
 

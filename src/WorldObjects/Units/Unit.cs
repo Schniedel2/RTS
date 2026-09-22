@@ -76,14 +76,35 @@ public abstract class Unit : WorldObject
     public bool IsSelected { get; set; }
     public GotoCommand? CurrentCommand { get; protected set; }
     /// <summary>True while this unit is visually playing its death sequence.</summary>
-    public virtual bool IsDying => false;
+    private const float VehicleWreckPauseSeconds = 1.0f;
+    private const float VehicleWreckSinkSeconds = 1.5f;
+    private const float VehicleWreckSinkDepth = 3.0f;
+    private bool _isVehicleWreck;
+    private float _vehicleWreckElapsed;
+    private float _wreckSmokeElapsed;
+    public virtual bool UsesVehicleDeathSequence => false;
+    public virtual bool IsDying => _isVehicleWreck;
     /// <summary>Death ghosts remain drawable but cannot be selected or targeted.</summary>
     public virtual bool CanBeTargeted => !IsDying && !IsEmbarked;
     public virtual bool IsSelectable => !IsDying && !IsEmbarked;
     /// <summary>Lets a unit keep itself alive locally for a death animation.</summary>
-    public virtual bool BeginDeathSequence() => false;
+    public virtual bool BeginDeathSequence()
+    {
+        if (!UsesVehicleDeathSequence)
+            return false;
+        if (_isVehicleWreck)
+            return true;
+
+        _isVehicleWreck = true;
+        _vehicleWreckElapsed = 0.0f;
+        _wreckSmokeElapsed = 0.0f;
+        IsSelected = false;
+        Stop();
+        return true;
+    }
     /// <summary>Set by animated death units once their local visual has finished.</summary>
-    public virtual bool IsReadyForRemoval => false;
+    public virtual bool IsReadyForRemoval =>
+        _isVehicleWreck && _vehicleWreckElapsed >= VehicleWreckPauseSeconds + VehicleWreckSinkSeconds;
     /// <summary>Whether generic destruction should create the large explosion effect.</summary>
     public virtual bool HasDeathExplosion => true;
     public virtual IReadOnlyList<UnitAction> Actions =>
@@ -911,6 +932,14 @@ public abstract class Unit : WorldObject
 
     public override void Update(GameTime gameTime)
     {
+        if (_isVehicleWreck)
+        {
+            float seconds = (float)gameTime.ElapsedGameTime.TotalSeconds;
+            _vehicleWreckElapsed += seconds;
+            UpdateVehicleWreckSmoke(seconds);
+            return;
+        }
+
         // Exponential easing: at 60 FPS this is exactly the configured share
         // of the remaining difference, while other frame rates feel the same.
         float recovery = 1.0f - MathF.Pow(
@@ -922,7 +951,47 @@ public abstract class Unit : WorldObject
         UpdateDamageSmoke(gameTime);
     }
 
-    protected Matrix GetVisualWorldMatrix() => VisualRecoilTransform * GetWorldMatrix();
+    protected Matrix GetVisualWorldMatrix()
+    {
+        Matrix visualWorld = VisualRecoilTransform * GetWorldMatrix();
+        if (!_isVehicleWreck)
+            return visualWorld;
+
+        float sinkProgress = MathHelper.Clamp(
+            (_vehicleWreckElapsed - VehicleWreckPauseSeconds) / VehicleWreckSinkSeconds,
+            0.0f,
+            1.0f);
+        return visualWorld * Matrix.CreateTranslation(Vector3.Down * VehicleWreckSinkDepth * sinkProgress);
+    }
+
+    private void UpdateVehicleWreckSmoke(float seconds)
+    {
+        _damageSmokePivotPaths ??= CreateDamageSmokePivotOrder();
+        const float emissionInterval = 0.12f;
+        _wreckSmokeElapsed += seconds;
+        int emissionCount = Math.Min(6, (int)(_wreckSmokeElapsed / emissionInterval));
+        if (emissionCount == 0)
+            return;
+        _wreckSmokeElapsed -= emissionCount * emissionInterval;
+
+        SmokeEmissionSettings settings = SmokeEmissionPresets.VehicleWreck();
+        for (int emission = 0; emission < emissionCount; emission++)
+        {
+            Vector3 smokePosition;
+            if (_damageSmokePivotPaths.Count > 0)
+            {
+                int pivotIndex = _nextDamageSmokePivot++ % _damageSmokePivotPaths.Count;
+                if (!TryGetAnimatedPivotWorldTransform(_damageSmokePivotPaths[pivotIndex], out Matrix pivotWorld))
+                    continue;
+                smokePosition = pivotWorld.Translation;
+            }
+            else
+            {
+                smokePosition = GetVisualWorldMatrix().Translation + Vector3.Up * Math.Max(0.5f, Height * 0.55f);
+            }
+            Globals.World.Particles.EmitSmoke(smokePosition, Vector3.Up, settings);
+        }
+    }
 
     /// <summary>
     /// Emits local-only exhaust smoke from a BBModel pivot. Call this from a

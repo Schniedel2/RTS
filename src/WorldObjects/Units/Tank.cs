@@ -8,6 +8,7 @@ namespace RTS;
 
 public class Tank : MobileUnit
 {
+    public override bool UsesVehicleDeathSequence => true;
     // The turret angle is local to the hull.  Keeping it this way means that a
     // rotating hull does not automatically drag the turret around in world space.
     public float ReverseSpeed { get; set; } = 1.4f;
@@ -195,7 +196,7 @@ public class Tank : MobileUnit
         }
         _meshSet.Draw(
             effect,
-            usesAuthoredBodyRecoil ? GetWorldMatrix() : GetVisualWorldMatrix());
+            usesAuthoredBodyRecoil && !IsDying ? GetWorldMatrix() : GetVisualWorldMatrix());
     }
 
 }
