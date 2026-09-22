@@ -49,6 +49,7 @@ public class Tank : MobileUnit
         CanTurnInPlace = true;
         TargetAngleDegreesPerSecond = 50.0f;
         VisualRecoilPivot = new Vector3(0.0f, 0.0f, -0.2f);
+        HitPoints = MaxHitPoints = 500;
 
         SetMesh("Tank-1", deriveDimensions: true);
         /*

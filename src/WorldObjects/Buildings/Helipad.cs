@@ -36,7 +36,7 @@ public class Helipad : Building
         SetMesh(meshName, deriveDimensions: true);
 
         TotalBuildingPointsNeeded = 1500;
-        HitPoints = 1500;
+        HitPoints = MaxHitPoints = 1500;
     }
 
     public override void Draw(Effect effect)

@@ -53,7 +53,7 @@ public abstract class Unit : WorldObject
         RallyPointRevision = state.Revision;
     }
     public float HitPoints { get; set; }
-    public float MaxHitPoints { get; }
+    public float MaxHitPoints { get; protected set; }
     public int PowerConsumption { get; set; }
     public int PowerAssigned { get; set; }
     public Guid CreatorPlayerId { get; private set; }
@@ -134,6 +134,9 @@ public abstract class Unit : WorldObject
     // Authored local bounds, without grid rounding or placement padding.
     private BoundingBox? _selectionBounds;
     private float _exhaustElapsed;
+    private List<string>? _damageSmokePivotPaths;
+    private float _damageSmokeElapsed;
+    private int _nextDamageSmokePivot;
 
     public bool TryGetEntryWorldPosition(out Vector3 position) =>
         TryGetContainerPivotPosition("pivot:entry", "pivot:exit", out position);
@@ -308,6 +311,9 @@ public abstract class Unit : WorldObject
             throw new ArgumentOutOfRangeException(nameof(padding));
 
         _meshSet = meshSet;
+        _damageSmokePivotPaths = null;
+        _damageSmokeElapsed = 0.0f;
+        _nextDamageSmokePivot = 0;
         BoundingBox bounds = meshSet.GetBounds();
         _selectionBounds = bounds;
         if (!deriveDimensions)
@@ -913,6 +919,7 @@ public abstract class Unit : WorldObject
         VisualRecoilOffset = Vector3.Lerp(VisualRecoilOffset, Vector3.Zero, recovery);
         VisualRecoilPitchDegrees = MathHelper.Lerp(VisualRecoilPitchDegrees, 0.0f, recovery);
         UpdateTargetAngle(gameTime);
+        UpdateDamageSmoke(gameTime);
     }
 
     protected Matrix GetVisualWorldMatrix() => VisualRecoilTransform * GetWorldMatrix();
@@ -942,6 +949,82 @@ public abstract class Unit : WorldObject
             exhaustPosition,
             Vector3.Up,
             settings ?? SmokeEmissionPresets.VehicleExhaust());
+    }
+
+    /// <summary>
+    /// Emits local-only damage smoke from every authored pivot whose name starts
+    /// with pivot:damage_smoke_. Pivot order is shuffled deterministically per
+    /// UnitId, so peers agree without replicating visual state.
+    /// </summary>
+    private void UpdateDamageSmoke(GameTime gameTime)
+    {
+        if (_meshSet is null || IsEmbarked || HitPoints <= 0.0f || MaxHitPoints <= 0.0f)
+            return;
+
+        _damageSmokePivotPaths ??= CreateDamageSmokePivotOrder();
+        if (_damageSmokePivotPaths.Count == 0)
+            return;
+
+        float damage = 1.0f - Math.Clamp(HitPoints / MaxHitPoints, 0.0f, 1.0f);
+        int activePivotCount = CalculateActiveDamageSmokePivotCount(damage, _damageSmokePivotPaths.Count);
+        if (activePivotCount == 0)
+        {
+            _damageSmokeElapsed = 0.0f;
+            _nextDamageSmokePivot = 0;
+            return;
+        }
+
+        float emissionInterval = MathHelper.Lerp(0.52f, 0.16f, damage);
+        _damageSmokeElapsed += (float)gameTime.ElapsedGameTime.TotalSeconds;
+        int emissionCount = Math.Min(4, (int)(_damageSmokeElapsed / emissionInterval));
+        if (emissionCount == 0)
+            return;
+        _damageSmokeElapsed -= emissionCount * emissionInterval;
+
+        SmokeEmissionSettings settings = SmokeEmissionPresets.UnitDamage() with
+        {
+            Intensity = MathHelper.Lerp(0.75f, 1.35f, damage)
+        };
+        for (int emission = 0; emission < emissionCount; emission++)
+        {
+            int pivotIndex = _nextDamageSmokePivot++ % activePivotCount;
+            if (TryGetAnimatedPivotWorldTransform(_damageSmokePivotPaths[pivotIndex], out Matrix pivotWorld))
+                Globals.World.Particles.EmitSmoke(pivotWorld.Translation, Vector3.Up, settings);
+        }
+    }
+
+    internal static int CalculateActiveDamageSmokePivotCount(float damage, int pivotCount)
+    {
+        if (pivotCount <= 0 || damage <= 0.25f)
+            return 0;
+        float severity = Math.Clamp((damage - 0.25f) / 0.75f, 0.0f, 1.0f);
+        return Math.Min(pivotCount, Math.Max(1, (int)MathF.Ceiling(severity * pivotCount)));
+    }
+
+    private List<string> CreateDamageSmokePivotOrder()
+    {
+        List<string> pivots = _meshSet!.Pivots
+            .Where(pivot =>
+                pivot.Name.StartsWith("pivot:damage_smoke_", StringComparison.OrdinalIgnoreCase) ||
+                pivot.Name.StartsWith("pivot:damaged_smoke_", StringComparison.OrdinalIgnoreCase))
+            .Select(pivot => pivot.Path)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        byte[] idBytes = UnitId.ToByteArray();
+        uint state = 2166136261;
+        foreach (byte value in idBytes)
+            state = (state ^ value) * 16777619;
+        for (int index = pivots.Count - 1; index > 0; index--)
+        {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            int other = (int)(state % (uint)(index + 1));
+            (pivots[index], pivots[other]) = (pivots[other], pivots[index]);
+        }
+        return pivots;
     }
 
     public override Matrix GetWorldMatrix()

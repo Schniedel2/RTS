@@ -22,7 +22,7 @@ public class GDIBase : Building
         SetMesh("gdi-base", deriveDimensions: true);
 
         TotalBuildingPointsNeeded = 2500;
-        HitPoints = 2500;
+        HitPoints = MaxHitPoints = 2500;
     }
 
     public override void Draw(Effect effect)

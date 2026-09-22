@@ -21,7 +21,7 @@ public class Reaktor : Building
         Height = 4;
 
         TotalBuildingPointsNeeded = 500;
-        HitPoints = 500;
+        HitPoints = MaxHitPoints = 500;
 
         SetMesh("reaktor", deriveDimensions: true);
     }

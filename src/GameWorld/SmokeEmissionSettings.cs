@@ -108,6 +108,28 @@ public static class SmokeEmissionPresets
         WindInfluence = 0.95f
     };
 
+    /// <summary>Dark, slowly rising smoke emitted by damaged units and buildings.</summary>
+    public static SmokeEmissionSettings UnitDamage() => new()
+    {
+        ParticleCount = 1,
+        Intensity = 1.0f,
+        EmissionLength = 0.05f,
+        ForwardSpeed = 0.08f,
+        ForwardSpeedVariation = 0.06f,
+        SidewaysSpread = 0.20f,
+        UpwardSpeed = 0.62f,
+        UpwardSpeedVariation = 0.20f,
+        StartSize = 0.28f,
+        StartSizeVariation = 0.07f,
+        EndSize = 1.05f,
+        EndSizeVariation = 0.22f,
+        Lifetime = 2.1f,
+        LifetimeVariation = 0.35f,
+        Opacity = 0.78f,
+        Color = new Color(24, 24, 24),
+        WindInfluence = 0.95f
+    };
+
     public static SmokeEmissionSettings RifleSmoke() => new()
     {
         ParticleCount = 1,

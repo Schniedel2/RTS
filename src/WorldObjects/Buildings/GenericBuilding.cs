@@ -20,7 +20,7 @@ public class GenericBuilding : Building
         if (Occupancy is not null) 
             Occupancy.EntryEnabled = true;
         TotalBuildingPointsNeeded = 0;
-        HitPoints = 500;
+        HitPoints = MaxHitPoints = 500;
 
         SetMesh(modelName, deriveDimensions: true);
     }

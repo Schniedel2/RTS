@@ -27,7 +27,7 @@ public class TiberiumSource : Building
         // of requiring the level foundation used by constructed buildings.
         MaximumTerrainHeightDifference = float.MaxValue;
         TotalBuildingPointsNeeded = 0;
-        HitPoints = 300;
+        HitPoints = MaxHitPoints = 300;
     }
 
     // Only invoked on the host (see NetworkHost.UpdateHostSimulation); picks a candidate cell,

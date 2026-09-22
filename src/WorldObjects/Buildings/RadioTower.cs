@@ -18,7 +18,7 @@ public class CommunicationsTower : Building
     {
         SightRange = 50;
         TotalBuildingPointsNeeded = 500;
-        HitPoints = 500;
+        HitPoints = MaxHitPoints = 500;
 
         SetMesh("antenna-1", deriveDimensions: true);
     }
