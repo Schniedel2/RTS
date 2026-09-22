@@ -151,7 +151,6 @@ public class UnitHandler
 
             // Restore the normal building atlas before a BBModel sub-mesh
             // optionally selects its own TextureHandler atlas.
-            effect.Parameters["UnitTexture"]?.SetValue(Globals.BuildingsTexture);
             Player? owner = ResolveArmyOwner(unit);
             if (unit.ArmyId is null)
                 Globals.SkinHandler.DisableForEffect(effect);
@@ -186,7 +185,6 @@ public class UnitHandler
 
             // Restore the normal unit atlas before a BBModel sub-mesh
             // optionally selects its own TextureHandler atlas.
-            effect.Parameters["UnitTexture"]?.SetValue(Globals.UnitsTexture);
             Player? owner = ResolveArmyOwner(unit);
             if (unit.ArmyId is null)
                 Globals.SkinHandler.DisableForEffect(effect);

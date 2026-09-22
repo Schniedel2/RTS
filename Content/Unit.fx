@@ -13,8 +13,8 @@ texture PlayerSkinTexture;
 
 // MaterialMask:
 // R = PlayerColorMask
-// G = MetallicMask
-// B = EmissiveMask
+// G = EmissiveMask
+// B = MetallicMask
 // A = Reserved
 texture MaterialMaskTexture;
 
@@ -222,10 +222,10 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
         materialMask.r;
 
     float metallic =
-        materialMask.g;
+        materialMask.b;
 
     float emissive =
-        materialMask.b;
+        materialMask.g;
 
 
     // -------------------------------------------------

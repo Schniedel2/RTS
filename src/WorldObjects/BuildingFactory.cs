@@ -34,6 +34,9 @@ public static class BuildingFactory
             case "helipad":
                 building = new Helipad(position, unitId, "helipad-1");
                 break;
+            case "tiberium-source":
+                building = new TiberiumSource(position, unitId);
+                break;
             default:
                 return null;
         }

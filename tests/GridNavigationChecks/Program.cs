@@ -648,7 +648,7 @@ Check(heli.Occupancy!.CanEnter(passenger, OccupantRole.Passenger), "Transport ex
 heli.TakeOff(world);
 Check(!heli.Occupancy.CanEnter(passenger, OccupantRole.Passenger), "Passengers cannot board during flight");
 heli.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.1)));
-Check(heli.MainRotorRadians > 0 && heli.RearRotorRadians > 0, "Rotor animation runs even when optional model pivots are absent");
+Check(heli.MainRotorDegree > 0 && heli.RearRotorDegree > 0, "Rotor animation runs even when optional model pivots are absent");
 FlyTicks(heli, 40);
 while (heli.TryConsumeAmmunition()) { }
 Check(heli.Ammunition == 0 && !heli.CanFireWeapon, "Ammunition cannot become negative and empty magazine blocks fire");

@@ -29,8 +29,12 @@ public class Helicopter : MobileUnit
     public float RefuelPerSecond { get; set; } = 20;
     public float ReloadPerSecond { get; set; } = 10;
     public Guid? AssignedHelipadId { get; private set; }
-    public float MainRotorRadians { get; private set; }
-    public float RearRotorRadians { get; private set; }
+    public float MainRotorDegree { get; private set; }
+    public float RearRotorDegree { get; private set; }
+    public float MainRotorSpeed { get; set; } = 0;
+    public float MainRotorSpeedMax { get; set; } = 360;
+    public float RearRotorSpeed { get; set; } = 0;
+    public float RearRotorSpeedMax { get; set; } = 420;
     public Vector3 RearRotorAxis { get; set; } = Vector3.Right;
     public float GroundOffset { get; private set; }
     private Vector2? _destination;
@@ -368,14 +372,25 @@ public class Helicopter : MobileUnit
             _renderYaw = MathHelper.WrapAngle(_renderYaw + MathHelper.WrapAngle(_yaw - _renderYaw) * blend);
         }
         UpdateUnitVisuals(gameTime);
-        if (!IsLanded)
+        if (IsLanded)
         {
-            float seconds = (float)gameTime.ElapsedGameTime.TotalSeconds;
-            MainRotorRadians = (MainRotorRadians + seconds * 35) % MathHelper.TwoPi;
-            RearRotorRadians = (RearRotorRadians + seconds * 50) % MathHelper.TwoPi;
+            //  easing towards 0
+            MainRotorSpeed = RearRotorSpeed * 0.99f;
+            RearRotorSpeed = RearRotorSpeed * 0.99f;
         }
-        _meshSet?.SetPivotRotation("pivot:rotor_main", Quaternion.CreateFromAxisAngle(Vector3.Up, MainRotorRadians));
-        _meshSet?.SetPivotRotation("pivot:rotor_rear", Quaternion.CreateFromAxisAngle(RearRotorAxis, RearRotorRadians));
+        else
+        {
+            //  easing towards max rotor speeds
+            MainRotorSpeed += (MainRotorSpeedMax - MainRotorSpeed) * 0.99f;
+            RearRotorSpeed += (RearRotorSpeedMax - RearRotorSpeed) * 0.99f;
+        }
+    
+        float seconds = (float)gameTime.ElapsedGameTime.TotalSeconds;
+        MainRotorDegree = (MainRotorDegree + seconds * MainRotorSpeed) % 360;
+        RearRotorDegree = (RearRotorDegree + seconds * RearRotorSpeed) % 360;
+
+        _meshSet?.SetPivotRotation("pivot:rotor_main", Quaternion.CreateFromAxisAngle(Vector3.Up, MathHelper.ToRadians(MainRotorDegree)));
+        _meshSet?.SetPivotRotation("pivot:rotor_rear", Quaternion.CreateFromAxisAngle(RearRotorAxis, MathHelper.ToRadians(RearRotorDegree)));
         _meshSet?.SetParameter(Mesh.TurretAngle, MathHelper.ToRadians(TargetAngleDegrees));
     }
 

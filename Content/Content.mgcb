@@ -37,21 +37,6 @@
 /processor:TextureProcessor
 /build:actionIcons.png
 
-#begin unitsTexture.png
-/importer:TextureImporter
-/processor:TextureProcessor
-/build:unitsTexture.png
-
-#begin buildingsTexture.png
-/importer:TextureImporter
-/processor:TextureProcessor
-/build:buildingsTexture.png
-
-#begin unitsMaterialMask.png
-/importer:TextureImporter
-/processor:TextureProcessor
-/build:unitsMaterialMask.png
-
 # ---- fonts ----
 
 #begin DebugFont.spritefont

@@ -17,6 +17,7 @@ public class GameWorld
     public DecalHandler Decals { get; }
     public SmokeEmitterHandler SmokeEmitters { get; }
     public WeatherHandler Weather { get; }
+    public TiberiumHandler Tiberium { get; }
     public GameGrid GameGrid { get; }
     public PathfindingManager PathfindingManager { get; }
     public Vector3 Center => new Vector3(_terrain.Width * 0.5f, 0.0f, _terrain.Height * 0.5f);
@@ -43,6 +44,7 @@ public class GameWorld
         Decals = new DecalHandler();
         SmokeEmitters = new SmokeEmitterHandler();
         Weather = new WeatherHandler(terrainWidth, terrainHeight);
+        Tiberium = new TiberiumHandler();
         PathfindingManager = new PathfindingManager(this);
     }
 
@@ -129,11 +131,9 @@ public class GameWorld
         Globals.SkinHandler.ApplyToEffect(unitEffect, PlayerSkin.Green);
 
         Decals.Draw(unitEffect);
+        Tiberium.Draw(unitEffect);
 
-        unitEffect.Parameters["UnitTexture"].SetValue(Globals.UnitsTexture);
         Units.DrawMobileUnits(unitEffect);
-
-        unitEffect.Parameters["UnitTexture"].SetValue(Globals.BuildingsTexture);
         Units.DrawBuildings(unitEffect);
 
         // Markers, projectiles and particles do not own atlas variants.
@@ -165,6 +165,7 @@ public class GameWorld
         Projectiles.Update(gameTime);
         SmokeEmitters.Update(gameTime);
         Decals.Update(gameTime);
+        Tiberium.Update(gameTime);
         Particles.Update(gameTime);
     }
 

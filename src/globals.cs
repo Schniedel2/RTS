@@ -40,8 +40,6 @@ public static class Globals
     public static TextureHandler MaterialMaskTextureHandler = null!;
     public static TilemapHandler TilemapHandler = null!;
     public static Texture2D ActionIcons = null!;
-    public static Texture2D UnitsTexture = null!;
-    public static Texture2D BuildingsTexture = null!;
     public static RTSGame Game = null!;
     public static GameWorld World = null!;
     public static RenderHelper RenderHelper = null!;

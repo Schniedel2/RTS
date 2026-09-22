@@ -54,9 +54,7 @@ public class Game1 : Game
         Globals.TooltipFont = Content.Load<SpriteFont>("TooltipFont");
         Globals.ActionIcons = Content.Load<Texture2D>("actionIcons");
         Globals._terrainTileSheet = Content.Load<Texture2D>("terrainTileSheet");
-        Globals.UnitsTexture = Content.Load<Texture2D>("unitsTexture");
-        Globals.BuildingsTexture = Content.Load<Texture2D>("buildingsTexture");
-
+        
         Globals._terrainEffect.Parameters["TerrainTilesTexture"]?.SetValue(Globals._terrainTileSheet);
 
         // -------------------------------------------------
