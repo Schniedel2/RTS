@@ -86,7 +86,8 @@ public enum NetworkMessageType
     EarthworkStartCommand,
     EarthworkCellCommand,
     EarthworkEndCommand,
-    HelicopterOrderRequest
+    HelicopterOrderRequest,
+    TiberiumSeedCommand
 }
 
 public sealed record WorldData(
@@ -152,4 +153,5 @@ public sealed record NetworkMessage(
     int CellX = 0,
     int CellZ = 0,
     int[]? EarthworkCells = null,
-    HelicopterOrder? HelicopterOrder = null);
+    HelicopterOrder? HelicopterOrder = null,
+    TiberiumSeedState? TiberiumSeed = null);

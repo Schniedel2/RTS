@@ -171,6 +171,13 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type == NetworkMessageType.TiberiumSeedCommand)
+        {
+            if (message.TiberiumSeed is TiberiumSeedState state)
+                Globals.World.Tiberium.ApplySeed(state);
+            return;
+        }
+
         if (message.Type == NetworkMessageType.SetRallyPointCommand)
         {
             // A client may request a change, but may not inject its own confirmation on the host.

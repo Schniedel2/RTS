@@ -29,6 +29,9 @@ public static class NetworkCommands
         new(NetworkMessageType.MergeArmiesRequest, senderId, PlayerId: senderId,
             ArmyId: firstArmyId, SecondaryArmyId: secondArmyId, TargetId: mergedArmyId);
 
+    public static NetworkMessage CreateTiberiumSeedCommand(Guid hostId, TiberiumSeedState state) =>
+        new(NetworkMessageType.TiberiumSeedCommand, hostId, TiberiumSeed: state);
+
     public static NetworkMessage CreateMergeArmiesCommand(Guid hostId, NetworkMessage request) =>
         new(NetworkMessageType.MergeArmiesCommand, hostId, PlayerId: request.PlayerId ?? request.SenderId,
             ArmyId: request.ArmyId, SecondaryArmyId: request.SecondaryArmyId, TargetId: request.TargetId);

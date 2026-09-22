@@ -23,6 +23,8 @@ public sealed class NetworkHost
     private const double StateHeartbeatInterval = 3.0;
     private double _hostTime;
     private double _simulationAccumulator;
+    /// <summary>Authoritative simulation time, shared with clients via NetworkHandler.EstimatedHostTime.</summary>
+    public double HostTime => _hostTime;
     private readonly List<HostProjectile> _hostProjectiles = [];
     private readonly List<ProjectileImpact> _projectileImpacts = [];
 
@@ -440,6 +442,16 @@ public sealed class NetworkHost
                     continue;
                 _requestQueue.Enqueue(NetworkCommands.CreateAttackRequest(
                     _networkHandler.LocalPeerId, [unit.UnitId], target.X, target.Y, target.Z));
+            }
+
+            foreach (TiberiumSource source in _world.Units.Units.OfType<TiberiumSource>())
+            {
+                if (!source.TryTakePendingSeedCell(out Point cell) ||
+                    !_world.Tiberium.TryHostSeed(cell, _hostTime, out TiberiumSeedState state))
+                    continue;
+                NetworkMessage seedCommand = NetworkCommands.CreateTiberiumSeedCommand(_networkHandler.LocalPeerId, state);
+                _networkHandler.EnqueueLocalMessage(seedCommand);
+                _ = _networkHandler.BroadcastAsync(seedCommand, CancellationToken.None);
             }
         }
 

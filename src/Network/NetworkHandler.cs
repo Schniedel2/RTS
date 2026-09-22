@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -28,6 +29,10 @@ public sealed class NetworkHandler : IDisposable
     private bool _sessionAccepted;
     private Func<NetworkMessage>? _worldDataProvider;
     private Func<IEnumerable<NetworkMessage>>? _playerDataProvider;
+    private Func<double>? _hostTimeProvider;
+    // Independent of GameTime/Update ticks so it works from the background network read loop too.
+    private readonly Stopwatch _localClock = Stopwatch.StartNew();
+    private double _hostTimeOffset;
 
     public Guid LocalPeerId { get; } = Guid.NewGuid();
     public string DisplayName { get; set; }
@@ -37,8 +42,21 @@ public sealed class NetworkHandler : IDisposable
     public bool IsConnected => IsHost || (_sessionAccepted && _serverConnection?.Connected == true);
     public IReadOnlyCollection<NetworkPeer> Members => _members.Values.ToArray();
     public IReadOnlyDictionary<Guid, string> PeerDisplayNames => _peerDisplayNames;
+    /// <summary>
+    /// Host: its own authoritative simulation time. Clients: that same time frame, estimated
+    /// from the offset captured once at JoinAccepted. Use this (not GameTime.TotalGameTime) for
+    /// any timestamp that is compared against a value coming from the host, e.g. TiberiumCell.CreatedAt.
+    /// </summary>
+    public double EstimatedHostTime => IsHost
+        ? _hostTimeProvider?.Invoke() ?? 0.0
+        : _localClock.Elapsed.TotalSeconds + _hostTimeOffset;
 
     public event Action<NetworkMessage>? MessageReceived;
+
+    public void SetHostTimeProvider(Func<double> hostTimeProvider)
+    {
+        _hostTimeProvider = hostTimeProvider ?? throw new ArgumentNullException(nameof(hostTimeProvider));
+    }
 
     public void SetWorldDataProvider(Func<NetworkMessage> worldDataProvider)
     {
@@ -291,6 +309,7 @@ public sealed class NetworkHandler : IDisposable
                         SessionId = message.SessionId;
                         if (message.DisplayName is not null)
                             _peerDisplayNames[message.SenderId] = message.DisplayName;
+                        _hostTimeOffset = message.ServerTime - _localClock.Elapsed.TotalSeconds;
                     }
 
                     if (message.Type == NetworkMessageType.JoinRejected)
@@ -370,7 +389,8 @@ public sealed class NetworkHandler : IDisposable
                 NetworkMessageType.JoinAccepted,
                 LocalPeerId,
                 SessionId: SessionId,
-                DisplayName: DisplayName), cancellationToken);
+                DisplayName: DisplayName,
+                ServerTime: _hostTimeProvider?.Invoke() ?? 0.0), cancellationToken);
 
             if (_worldDataProvider is not null)
                 await SendAsync(client, _worldDataProvider(), cancellationToken);

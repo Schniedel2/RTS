@@ -79,6 +79,7 @@ public class RTSGame
             World.Terrain.GetWorldData()));
         NetworkInput = new NetworkInput(Network);
         NetworkHost = new NetworkHost(Network, NetworkInput, World);
+        Network.SetHostTimeProvider(() => NetworkHost.HostTime);
         NetworkClient = new NetworkClient(Network);
         _consoleCommands = new ConsoleCommands(Globals.Console, this);
 

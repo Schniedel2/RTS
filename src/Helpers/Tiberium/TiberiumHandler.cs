@@ -64,29 +64,60 @@ public sealed class TiberiumHandler
     }
 
     /// <summary>
-    /// Starts growth on an empty, unblocked cell. No-op if unusable or already occupied.
-    /// Whether it takes root at all, and how fast it then grows, both depend on the
-    /// underlying TerrainTile.
+    /// Host-only: rolls eligibility and growth randomness for a candidate cell and, on success,
+    /// applies it locally. The caller (NetworkHost) then broadcasts the returned state so every
+    /// peer applies the exact same result via <see cref="ApplySeed"/> instead of re-rolling -
+    /// otherwise host and clients could disagree on whether/how a cell took root.
     /// </summary>
-    public void Seed(Point cell, double gameTimeSeconds, float maxSize = 1.0f, float growthFactor = 1.0f, float initialAmount = 0.0f)
+    public bool TryHostSeed(
+        Point cell,
+        double gameTimeSeconds,
+        out TiberiumSeedState state,
+        float maxSize = 1.0f,
+        float growthFactor = 1.0f,
+        float initialAmount = 0.0f)
     {
+        state = null!;
+        if (!Globals.Game.Network.IsHost)
+            return false;
+
         GameGrid grid = Globals.World.GameGrid;
         if (_cells.ContainsKey(cell) || !grid.Contains(cell) || grid.GetCell(cell).IsBlocked)
-            return;
+            return false;
 
         TerrainTile tile = GetTileAt(cell);
         if (Random.Shared.NextDouble() > SeedChanceByTile.GetValueOrDefault(tile, 0.5f))
+            return false;
+
+        Random random = new Random((int)gameTimeSeconds);
+        state = new TiberiumSeedState(
+            cell.X,
+            cell.Y,
+            gameTimeSeconds - initialAmount / GrowthPerSecond,
+            initialAmount,
+            (float)(random.NextDouble() * Math.PI * 2.0),
+            random.Next(3),
+            growthFactor * GrowthFactorByTile.GetValueOrDefault(tile, 1.0f),
+            maxSize);
+        ApplySeed(state);
+        return true;
+    }
+
+    /// <summary>Applies an already host-decided seed. Idempotent, so the host's own network echo is harmless.</summary>
+    public void ApplySeed(TiberiumSeedState state)
+    {
+        Point cell = new(state.CellX, state.CellZ);
+        if (_cells.ContainsKey(cell))
             return;
 
-        Random random = new Random((int)(gameTimeSeconds));
         _cells[cell] = new TiberiumCell
         {
-            CreatedAt = gameTimeSeconds - initialAmount / GrowthPerSecond,
-            Amount = initialAmount,
-            RotationYRadians = (float)(random.NextDouble() * Math.PI * 2.0),
-            SubType = random.Next(3),            
-            GrowthFactor = growthFactor * GrowthFactorByTile.GetValueOrDefault(tile, 1.0f),
-            MaxSize = maxSize
+            CreatedAt = state.CreatedAt,
+            Amount = state.Amount,
+            RotationYRadians = state.RotationYRadians,
+            SubType = state.SubType,
+            GrowthFactor = state.GrowthFactor,
+            MaxSize = state.MaxSize
         };
     }
 
@@ -110,7 +141,9 @@ public sealed class TiberiumHandler
 
     public void Update(GameTime gameTime)
     {
-        double now = gameTime.TotalGameTime.TotalSeconds;
+        // Not gameTime.TotalGameTime: CreatedAt is stamped in the host's time frame (see
+        // TiberiumSeedState), which only NetworkHandler.EstimatedHostTime matches on clients too.
+        double now = Globals.Game.Network.EstimatedHostTime;
         foreach (TiberiumCell cell in _cells.Values)
         {
             cell.Amount = MathF.Min(MaximumAmount, MathF.Max(0.0f, (float)(now - cell.CreatedAt) * GrowthPerSecond * cell.GrowthFactor));

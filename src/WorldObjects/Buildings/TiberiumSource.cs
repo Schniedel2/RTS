@@ -13,6 +13,7 @@ public class TiberiumSource : Building
     private const int SpreadRadius = 3;
     private const double SpreadIntervalSeconds = 2.0;
     private double _nextSpreadTime;
+    private Point? _pendingSeedCell;
 
     public TiberiumSource(
         Vector3 position,
@@ -26,19 +27,33 @@ public class TiberiumSource : Building
         HitPoints = 300;
     }
 
-    public override void Update(GameTime gameTime)
+    // Only invoked on the host (see NetworkHost.UpdateHostSimulation); picks a candidate cell,
+    // but does not touch TiberiumHandler itself - NetworkHost rolls/broadcasts the actual result.
+    public override void UpdateHost(GameTime gameTime)
     {
-        base.Update(gameTime);
+        base.UpdateHost(gameTime);
         double now = gameTime.TotalGameTime.TotalSeconds;
-        if (now < _nextSpreadTime)
+        if (now < _nextSpreadTime || _pendingSeedCell is not null)
             return;
 
         _nextSpreadTime = now + SpreadIntervalSeconds;
         Point center = Globals.World.GameGrid.ToCell(Position);
-        Point target = new(
+        _pendingSeedCell = new Point(
             center.X + Random.Shared.Next(-SpreadRadius, SpreadRadius + 1),
             center.Y + Random.Shared.Next(-SpreadRadius, SpreadRadius + 1));
-        Globals.World.Tiberium.Seed(target, now);
+    }
+
+    /// <summary>Drained by NetworkHost once per candidate; clears the pending cell either way.</summary>
+    public bool TryTakePendingSeedCell(out Point cell)
+    {
+        if (_pendingSeedCell is not Point pending)
+        {
+            cell = default;
+            return false;
+        }
+        cell = pending;
+        _pendingSeedCell = null;
+        return true;
     }
 
     public IReadOnlyList<UnitAction> GetUnitActions() =>
