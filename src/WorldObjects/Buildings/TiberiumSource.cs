@@ -23,6 +23,9 @@ public class TiberiumSource : Building
             unitId)
     {
         SetMesh("tiberiumSource-1", deriveDimensions: true);
+        // A source is an organic map feature and follows the terrain instead
+        // of requiring the level foundation used by constructed buildings.
+        MaximumTerrainHeightDifference = float.MaxValue;
         TotalBuildingPointsNeeded = 0;
         HitPoints = 300;
     }
