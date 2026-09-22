@@ -8,8 +8,11 @@ float3 LightDirection;
 texture ShadowTexture;
 texture TerrainTilesTexture;
 texture TileMapTexture;
+texture FogTexture;
 float MapWidth;
 float MapHeight;
+float FogWidth;
+float FogHeight;
 int DebugMode;
 
 float Noise(float2 p)
@@ -52,6 +55,16 @@ sampler ShadowSampler = sampler_state
     MagFilter = Point;
     MipFilter = None;
 
+    AddressU = Clamp;
+    AddressV = Clamp;
+};
+
+sampler FogSampler = sampler_state
+{
+    Texture = <FogTexture>;
+    MinFilter = Linear;
+    MagFilter = Linear;
+    MipFilter = None;
     AddressU = Clamp;
     AddressV = Clamp;
 };
@@ -417,6 +430,10 @@ float4 PixelShaderFunction(
 
     finalColor *=
         lighting;
+
+    float2 fogUV = (input.WorldPosition.xz + 0.5) / float2(FogWidth, FogHeight);
+    float visibility = tex2D(FogSampler, fogUV).r;
+    finalColor *= lerp(0.035, 1.0, visibility);
 
 
     // ============================================================

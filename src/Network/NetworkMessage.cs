@@ -94,7 +94,8 @@ public sealed record WorldData(
     int Width,
     int Height,
     byte[] TileMap,
-    float[] HeightMap);
+    float[] HeightMap,
+    GameplayMarkerState[]? GameplayMarkers = null);
 
 public sealed record NetworkMessage(
     NetworkMessageType Type,

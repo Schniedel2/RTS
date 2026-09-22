@@ -36,13 +36,19 @@ again without fuel. Supply exhaustion does not provide unlimited hovering.
 
 - Optional `pivot:rotor_main`: rotates around local Y.
 - Optional `pivot:rotor_rear`: rotates around local X (`RearRotorAxis` can be configured).
+- Optional `pivot:flight_center`: visual center for pitch and banking of the complete aircraft.
+- `pivot:landing_contact_1`, `_2` and `_3`: exact wheel/skid contact points. Their plane defines
+  the landed pitch/roll and the vertical model offset. The final attitude is recalculated with the
+  aircraft's arrival heading and the terrain surface immediately before descent.
 - `pivot:turret`: uses the existing turret aiming parameter.
 - Optional `pivot:muzzle`: exact muzzle-flash origin; otherwise the turret position is used.
 - Optional helipad `pivot:landing`: exact landing point. Without it, `LandingLocalPosition`
   defaults to `(2.4, 0.1, -0.8)`, the center/top of the current model's landing slab.
 
-The current helicopter model has a main rotor and turret pivot, but no named rear-rotor pivot.
-Missing pivots are harmless. Rotor animation parameters are per instance.
+Missing optional pivots are harmless. Without three landing contacts the bounding-box fallback is used.
+The fixed 10 Hz host simulation is interpolated across render frames on host and clients. Direction,
+speed and yaw changes drive a damped pitch/bank spring around `pivot:flight_center`; landing blends this
+flight attitude into the three-point gear attitude. Rotor animation parameters are per instance.
 `Helicopter(..., passengerCapacity: 4, meshName: "...")` enables the existing passenger component
 for a future transport variant. Boarding and unloading are allowed only while landed; the initial
 combat helicopter has no passenger slots. Helipad production and a separate transport unit type

@@ -912,7 +912,7 @@ public class ConsoleCommands
         try
         {
             NetworkMessage map = NetworkCommands.CreateWorldData(
-                _rtsGame.Network.LocalPeerId, _world.Terrain.GetWorldData());
+                _rtsGame.Network.LocalPeerId, _world.GetWorldData());
             await _rtsGame.Network.BroadcastAsync(map);
             _console.Print("Map published to all connected clients.");
         }

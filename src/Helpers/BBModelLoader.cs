@@ -270,6 +270,12 @@ public static class BBModelLoader
         foreach (JsonProperty vertex in element.GetProperty("vertices").EnumerateObject())
             positions[vertex.Name] = Vector3.Transform(ReadVector3(vertex.Value), elementTransform);
 
+        bool smoothShading = element.TryGetProperty("shading", out JsonElement shadingValue) &&
+            shadingValue.ValueKind == JsonValueKind.String &&
+            string.Equals(shadingValue.GetString(), "smooth", StringComparison.OrdinalIgnoreCase);
+        Dictionary<string, Vector3>? smoothNormals = smoothShading
+            ? CalculateSmoothNormals(element, positions, textureRegions)
+            : null;
         Dictionary<ImportedTexture, TextureGeometry> batches = [];
 
         foreach (JsonProperty face in element.GetProperty("faces").EnumerateObject())
@@ -299,18 +305,69 @@ public static class BBModelLoader
                 // The reversed submitted winding below compensates for the
                 // rasterizer convention. The Blockbench order itself still
                 // describes the outward-facing surface normal used by lighting.
-                Vector3 normal = Vector3.Cross(b - a, c - a);
-                normal = normal.LengthSquared() > 0.0f ? Vector3.Normalize(normal) : Vector3.Up;
+                Vector3 faceNormal = Vector3.Cross(b - a, c - a);
+                faceNormal = faceNormal.LengthSquared() > 0.0f ? Vector3.Normalize(faceNormal) : Vector3.Up;
+                Vector3 normalA = smoothNormals is not null && smoothNormals.TryGetValue(faceVertexKeys[0], out Vector3 averagedA)
+                    ? averagedA : faceNormal;
+                Vector3 normalB = smoothNormals is not null && smoothNormals.TryGetValue(faceVertexKeys[index], out Vector3 averagedB)
+                    ? averagedB : faceNormal;
+                Vector3 normalC = smoothNormals is not null && smoothNormals.TryGetValue(faceVertexKeys[index + 1], out Vector3 averagedC)
+                    ? averagedC : faceNormal;
 
                 int first = vertices.Count;
-                vertices.Add(new(b * ModelScale, vertexColor, normal, faceUvs[index]));
-                vertices.Add(new(a * ModelScale, vertexColor, normal, faceUvs[0]));
-                vertices.Add(new(c * ModelScale, vertexColor, normal, faceUvs[index + 1]));
+                vertices.Add(new(b * ModelScale, vertexColor, normalB, faceUvs[index]));
+                vertices.Add(new(a * ModelScale, vertexColor, normalA, faceUvs[0]));
+                vertices.Add(new(c * ModelScale, vertexColor, normalC, faceUvs[index + 1]));
                 indices.Add(first); indices.Add(first + 1); indices.Add(first + 2);
             }
         }
 
         return CreateTextureParts(name, pivot, batches);
+    }
+
+    /// <summary>
+    /// Builds area-weighted vertex normals from Blockbench's original vertex
+    /// identifiers. The identifiers keep deliberate vertex splits sharp while
+    /// allowing one smooth normal to cross UV and texture-batch boundaries.
+    /// </summary>
+    private static Dictionary<string, Vector3> CalculateSmoothNormals(
+        JsonElement element,
+        IReadOnlyDictionary<string, Vector3> positions,
+        IReadOnlyDictionary<int, ImportedTexture> textureRegions)
+    {
+        Dictionary<string, Vector3> normals = [];
+        foreach (JsonProperty face in element.GetProperty("faces").EnumerateObject())
+        {
+            if (ReadFaceTextureRegion(face.Value, textureRegions) is null)
+                continue;
+
+            string[] keys = face.Value.GetProperty("vertices").EnumerateArray()
+                .Select(item => item.GetString()!).ToArray();
+            if (keys.Length < 3)
+                continue;
+
+            Vector3 a = positions[keys[0]];
+            for (int index = 1; index < keys.Length - 1; index++)
+            {
+                Vector3 weightedNormal = Vector3.Cross(positions[keys[index]] - a, positions[keys[index + 1]] - a);
+                if (weightedNormal.LengthSquared() <= 0.0f)
+                    continue;
+
+                AddNormal(normals, keys[0], weightedNormal);
+                AddNormal(normals, keys[index], weightedNormal);
+                AddNormal(normals, keys[index + 1], weightedNormal);
+            }
+        }
+
+        foreach (string key in normals.Keys.ToArray())
+            normals[key] = normals[key].LengthSquared() > 0.0f ? Vector3.Normalize(normals[key]) : Vector3.Up;
+        return normals;
+    }
+
+    private static void AddNormal(Dictionary<string, Vector3> normals, string key, Vector3 normal)
+    {
+        normals.TryGetValue(key, out Vector3 current);
+        normals[key] = current + normal;
     }
 
     /// <summary>

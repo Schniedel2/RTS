@@ -53,6 +53,11 @@ public class Camera
         YawAngle = 0;
     }
 
+    public void CenterOn(Vector2 worldPosition)
+    {
+        Position = new Vector3(worldPosition.X, Position.Y, worldPosition.Y);
+    }
+
     public void UpdateMouse(GameTime gameTime)
     {
         Vector3 forward = GetForward();

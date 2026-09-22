@@ -102,7 +102,7 @@ public sealed class NetworkInput
 
         if (message.Type == NetworkMessageType.WorldData && message.WorldData is not null)
         {
-            Globals.World.Terrain.ApplyWorldData(message.WorldData);
+            Globals.World.ApplyWorldData(message.WorldData);
             return;
         }
 

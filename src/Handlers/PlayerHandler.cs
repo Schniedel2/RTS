@@ -19,6 +19,7 @@ public class PlayerHandler
     enum CurrentMode
     {
         EditTerrain,
+        EditGameplayMarkers,
         SelectUnits,
         BuildPreview
     }
@@ -190,6 +191,31 @@ public class PlayerHandler
                     PerformClickAction(_selectedUnits, PressLeftWorldPosition, _buildPreviewDegree);
                     _buildPreviewDegree = 0;
                 }
+        }
+
+        if (GetMode() == CurrentMode.EditGameplayMarkers)
+        {
+            if (IsLeftButtonPressed(mouse))
+            {
+                PressLeftScreenPosition = mouse.Position;
+                PressLeftWorldPosition = MouseWorldPosition;
+            }
+            if (mouse.LeftButton == ButtonState.Pressed)
+            {
+                Point drag = mouse.Position - PressLeftScreenPosition;
+                if (drag.ToVector2().Length() > 8)
+                {
+                    _isDrag = true;
+                    _buildPreviewDegree = -MathHelper.ToDegrees(MathF.Atan2(drag.Y, drag.X));
+                }
+            }
+            if (IsLeftButtonReleased(mouse) && IsMouseOnTerrain && ActiveAction is not null)
+            {
+                RequestAction(ActiveAction, PressLeftWorldPosition, null, _buildPreviewDegree);
+                _buildPreviewDegree = 0;
+            }
+            if (IsRightButtonPressed(mouse))
+                ActiveAction = null;
         }
 
         if (GetMode() == CurrentMode.SelectUnits)
@@ -468,6 +494,16 @@ public class PlayerHandler
                 ActiveAction = null;
                 return;
             }
+            if (action.Type == UnitActionType.PlaceGameplayMarker && action.MarkerType is GameplayMarkerType markerType)
+            {
+                _map.GameplayMarkers.Add(markerType, targetPosition, targetAngleY, _toolSize);
+                return;
+            }
+            if (action.Type == UnitActionType.DeleteGameplayMarker)
+            {
+                _map.GameplayMarkers.RemoveNearest(targetPosition, Math.Max(1.0f, _toolSize * 0.5f));
+                return;
+            }
             if (action.Type is UnitActionType.LevelAndConcrete or UnitActionType.RemoveConcrete)
             {
                 if (_selectedUnits.Count != 1 || _selectedUnits[0] is not GDIBulldozer worker) return;
@@ -549,7 +585,8 @@ public class PlayerHandler
 
         private Unit? FindUnitAt(Camera camera, Viewport viewport, Point screenPosition)
         {
-            return _map.Units.Units.FirstOrDefault(unit => unit.IsSelectable && unit.GetScreenBounds(
+            return _map.Units.Units.FirstOrDefault(unit => unit.IsSelectable &&
+                _map.Visibility.IsUnitVisibleToLocalPlayer(unit) && unit.GetScreenBounds(
                 camera.View, camera.Projection, viewport).Contains(screenPosition));
         }
 
@@ -612,6 +649,9 @@ public class PlayerHandler
         if (ActiveAction.Type == UnitActionType.Build)
             return CurrentMode.BuildPreview;
 
+        if (ActiveAction.Type is UnitActionType.PlaceGameplayMarker or UnitActionType.DeleteGameplayMarker)
+            return CurrentMode.EditGameplayMarkers;
+
         return CurrentMode.SelectUnits;
     }
 
@@ -619,6 +659,9 @@ public class PlayerHandler
     {
         _buildPlacementPreview = null;
         _earthworkPreview = null;
+        bool editorSelected = _selectedUnits.Any(unit => unit is TerrainEditorTool);
+        if (editorSelected)
+            _map.GameplayMarkers.DrawEditor(camera, _map.Terrain, _map.GameGrid);
         //  render editor-tool
         if (IsMouseOnTerrain)
         {
@@ -655,6 +698,9 @@ public class PlayerHandler
             }
             if (ActiveAction is not null)
             {
+                if (ActiveAction.Type == UnitActionType.PlaceGameplayMarker && ActiveAction.MarkerType is GameplayMarkerType markerType)
+                    _map.GameplayMarkers.DrawPreview(camera, _map.Terrain, _map.GameGrid, markerType,
+                        _isDrag ? PressLeftWorldPosition : MouseWorldPosition, _buildPreviewDegree, _toolSize);
                 //  render the active action's visual representation at the mouse world position
                 if (ActiveAction.Type == UnitActionType.Build)
                 {
@@ -698,6 +744,8 @@ public class PlayerHandler
         Camera camera,
         Viewport viewport)
     {                
+        if (_selectedUnits.Any(unit => unit is TerrainEditorTool))
+            _map.GameplayMarkers.DrawLabels(spriteBatch, camera, viewport);
         if (ActiveAction?.Type is UnitActionType.LevelAndConcrete or UnitActionType.RemoveConcrete && _earthworkPreview is EarthworkPreview preview)
         {
             Point mouse = Mouse.GetState().Position;

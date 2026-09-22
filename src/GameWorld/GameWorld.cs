@@ -20,6 +20,8 @@ public class GameWorld
     public TiberiumHandler Tiberium { get; }
     public GameGrid GameGrid { get; }
     public PathfindingManager PathfindingManager { get; }
+    public VisibilitySystem Visibility { get; }
+    public GameplayMarkerHandler GameplayMarkers { get; }
     public Vector3 Center => new Vector3(_terrain.Width * 0.5f, 0.0f, _terrain.Height * 0.5f);
 
     public GameWorld(
@@ -46,6 +48,8 @@ public class GameWorld
         Weather = new WeatherHandler(terrainWidth, terrainHeight);
         Tiberium = new TiberiumHandler();
         PathfindingManager = new PathfindingManager(this);
+        Visibility = new VisibilitySystem(this);
+        GameplayMarkers = new GameplayMarkerHandler();
     }
 
     public void DrawShadow(
@@ -161,6 +165,7 @@ public class GameWorld
         PathfindingManager.Update();
         _terrain.Update(gameTime);
         Units.Update(gameTime);
+        Visibility.Update();
         Markers.Update(gameTime);
         Projectiles.Update(gameTime);
         SmokeEmitters.Update(gameTime);
@@ -180,6 +185,7 @@ public class GameWorld
         _terrain = new Terrain(mapDirectory);
         GameGrid.BindTerrain(_terrain);
         Weather.ResizeWindMap(_terrain.Width, _terrain.Height);
+        GameplayMarkers.Load(mapDirectory);
     }
 
     public void Save(string mapName)
@@ -188,5 +194,15 @@ public class GameWorld
         if (!Directory.Exists(mapDirectory))
             Directory.CreateDirectory(mapDirectory);
         _terrain.Save(mapDirectory);
+        GameplayMarkers.Save(mapDirectory);
+    }
+
+    public RTS.Network.WorldData GetWorldData() =>
+        _terrain.GetWorldData() with { GameplayMarkers = GameplayMarkers.GetStates() };
+
+    public void ApplyWorldData(RTS.Network.WorldData worldData)
+    {
+        _terrain.ApplyWorldData(worldData);
+        GameplayMarkers.ApplyStates(worldData.GameplayMarkers);
     }
 }

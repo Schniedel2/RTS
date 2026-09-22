@@ -16,12 +16,14 @@ public class Helipad : Building
         helicopter.IsAlly(this) && !world.Units.Units.OfType<Helicopter>().Any(other =>
             other != helicopter && other.AssignedHelipadId == UnitId);
 
-    public Vector3 GetLandingPosition(Helicopter helicopter)
+    public Vector3 GetLandingSurfacePosition()
     {
-        Vector3 position = TryGetAnimatedPivotWorldTransform("pivot:landing", out Matrix pivot)
+        return TryGetAnimatedPivotWorldTransform("pivot:landing", out Matrix pivot)
             ? pivot.Translation : Vector3.Transform(LandingLocalPosition, GetWorldMatrix());
-        return position + Vector3.Up * helicopter.GroundOffset;
     }
+
+    public Vector3 GetLandingPosition(Helicopter helicopter) =>
+        GetLandingSurfacePosition() + Vector3.Up * helicopter.GroundOffset;
 
     public Helipad(
         Vector3 position,

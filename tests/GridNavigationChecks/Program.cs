@@ -39,6 +39,16 @@ GameWorld World(GameGrid grid)
     return world;
 }
 
+var visibilityGrid = new VisibilityGrid(9, 9);
+Check(visibilityGrid[new Point(4, 4)] == VisibilityState.Unexplored, "Visibility starts unexplored");
+visibilityGrid.Reveal(new Point(4, 4), 2);
+Check(visibilityGrid[new Point(4, 4)] == VisibilityState.Visible && visibilityGrid[new Point(6, 4)] == VisibilityState.Visible, "Sight radius reveals cells");
+Check(visibilityGrid[new Point(6, 6)] == VisibilityState.Unexplored, "Sight radius is circular");
+visibilityGrid.BeginUpdate();
+Check(visibilityGrid[new Point(4, 4)] == VisibilityState.Explored, "Previous sight remains explored");
+visibilityGrid.Reveal(new Point(0, 0), 2);
+Check(visibilityGrid[new Point(0, 0)] == VisibilityState.Visible && visibilityGrid[new Point(-1, 0)] == VisibilityState.Unexplored, "Sight reveal clips to map bounds");
+
 var terrain = Terrain(6, 6);
 var grid = new GameGrid(6, 6, 1);
 grid.BindTerrain(terrain);
@@ -221,6 +231,29 @@ var host = new NetworkHost(transport, input, world);
 NetworkMessage? Request(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost)
     .GetMethod("TryCreateSetRallyPointCommand", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
 NetworkMessage Wire(NetworkMessage message) => JsonSerializer.Deserialize<NetworkMessage>(JsonSerializer.Serialize(message))!;
+var gameplayMarkers = new GameplayMarkerHandler();
+var firstStart = gameplayMarkers.Add(GameplayMarkerType.PlayerStart, new Vector3(4, 0, 5), 90);
+var secondStart = gameplayMarkers.Add(GameplayMarkerType.PlayerStart, new Vector3(8, 0, 9), 180);
+var resourceField = gameplayMarkers.Add(GameplayMarkerType.ResourceField, new Vector3(12, 0, 13), 0, 8);
+resourceField.Tags.Add("early-game");
+resourceField.Properties["richness"] = "high";
+Check(firstStart.PlayerSlot == 1 && secondStart.PlayerSlot == 2, "Player start markers receive stable sequential slots");
+Check(resourceField.Shape == GameplayMarkerShape.Circle && resourceField.Size == new Vector2(8), "Marker actions retain semantic shape and tool size");
+var markerCopy = new GameplayMarkerHandler();
+markerCopy.ApplyStates(gameplayMarkers.GetStates());
+Check(markerCopy.Markers.Count == 3 && markerCopy.Markers[2].Tags.Contains("early-game") && markerCopy.Markers[2].Properties["richness"] == "high", "Gameplay marker state preserves metadata");
+string markerDirectory = Path.Combine(Path.GetTempPath(), $"rts-marker-{Guid.NewGuid():N}");
+try
+{
+    gameplayMarkers.Save(markerDirectory);
+    markerCopy.Clear();
+    markerCopy.Load(markerDirectory);
+    Check(markerCopy.Markers.Count == 3 && markerCopy.Markers[0].RotationDegrees == 90, "Gameplay markers survive map save and load");
+}
+finally { if (Directory.Exists(markerDirectory)) Directory.Delete(markerDirectory, true); }
+var markerWorldData = new WorldData(1, 1, [0], [0.0f], gameplayMarkers.GetStates());
+var markerMessage = Wire(NetworkCommands.CreateWorldData(Guid.NewGuid(), markerWorldData));
+Check(markerMessage.WorldData?.GameplayMarkers?.Length == 3, "Map publish carries gameplay markers in WorldData");
 void Deliver(NetworkMessage command) => typeof(NetworkInput)
     .GetMethod("HandleNetworkMessage", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(input, new object[] { Wire(command) });
 Vector3 rallyTarget = new(8.5f, 99, 7.5f);
@@ -436,6 +469,39 @@ try
     Check(imported.SubMeshes.Where(p => p.SharedTextureName is not null).All(p => p.RepeatSharedTexture), "All shared cube and mesh batches opt into repeating");
 }
 finally { File.Delete(fixture); }
+
+string shadingFixture = Path.GetTempFileName();
+try
+{
+    atlasRegions[$"bbmodel:{Path.GetFullPath(shadingFixture)}:texture:0"] = new TextureHandler.TextureRegion
+        { AtlasIndex = 0, X = 0, Y = 0, Width = 32, Height = 32, AtlasWidth = 1024, AtlasHeight = 1024 };
+    atlasRegions[$"bbmodel:{Path.GetFullPath(shadingFixture)}:texture:1"] = new TextureHandler.TextureRegion
+        { AtlasIndex = 1, X = 0, Y = 0, Width = 32, Height = 32, AtlasWidth = 1024, AtlasHeight = 1024 };
+    File.WriteAllText(shadingFixture, """
+    {"name":"shading-model","resolution":{"width":32,"height":32},
+     "textures":[{"id":"0","name":"first.png"},{"id":"1","name":"second.png"}],
+     "elements":[
+       {"uuid":"smooth","name":"smooth-part","type":"mesh","shading":"smooth","origin":[0,0,0],
+        "vertices":{"a":[0,0,0],"b":[10,0,0],"c":[0,10,0],"d":[0,0,10]},
+        "faces":{"front":{"texture":0,"vertices":["a","b","c"],"uv":{"a":[0,0],"b":[32,0],"c":[0,32]}},
+                 "bottom":{"texture":1,"vertices":["a","d","b"],"uv":{"a":[0,0],"d":[0,32],"b":[32,0]}}}},
+       {"uuid":"flat","name":"flat-part","type":"mesh","shading":"flat","origin":[20,0,0],
+        "vertices":{"a":[0,0,0],"b":[10,0,0],"c":[0,10,0],"d":[0,0,10]},
+        "faces":{"front":{"texture":0,"vertices":["a","b","c"],"uv":{"a":[0,0],"b":[32,0],"c":[0,32]}},
+                 "bottom":{"texture":1,"vertices":["a","d","b"],"uv":{"a":[0,0],"d":[0,32],"b":[32,0]}}}}
+     ],"outliner":["smooth","flat"]}
+    """);
+
+    var shaded = BBModelLoader.Load(shadingFixture);
+    var smoothVertices = shaded.SubMeshes.Where(part => part.Name == "smooth-part").SelectMany(part => part.Vertices).ToArray();
+    var flatVertices = shaded.SubMeshes.Where(part => part.Name == "flat-part").SelectMany(part => part.Vertices).ToArray();
+    var smoothSeams = smoothVertices.GroupBy(vertex => vertex.Position).Where(group => group.Count() > 1).ToArray();
+    var flatSeams = flatVertices.GroupBy(vertex => vertex.Position).Where(group => group.Count() > 1).ToArray();
+    Check(smoothSeams.Length == 2 && smoothSeams.All(group => group.Select(vertex => vertex.Normal).Distinct().Count() == 1), "Smooth bbmodel shading averages normals across texture batches");
+    Check(flatSeams.Any(group => group.Select(vertex => vertex.Normal).Distinct().Count() > 1), "Flat bbmodel shading retains face normals");
+    Check(smoothVertices.All(vertex => MathF.Abs(vertex.Normal.Length() - 1.0f) < 0.0001f), "Imported smooth vertex normals are normalized");
+}
+finally { File.Delete(shadingFixture); }
 // Continuous bulldozer earthwork: real host controller, headless terrain and wire replay.
 Globals.MeshHandler.Meshes["bulldozer-1"] = Globals.MeshHandler.Meshes["barracks-1"];
 GDIBulldozer SetupEarthwork()
@@ -737,7 +803,8 @@ var actualHeli = new Helicopter(new(10, 0, 10), Guid.NewGuid());
 var actualMeshSet = new MeshSet(Globals.MeshHandler.Meshes["heli-1"]);
 Check(actualMeshSet.SetPivotRotation("pivot:rotor_main", Quaternion.CreateFromAxisAngle(Vector3.Up, 1)), "Actual main rotor pivot is animated");
 Check(actualMeshSet.Pivots.Any(p => p.Name == "pivot:turret"), "Actual helicopter turret pivot imports");
-Check(!actualMeshSet.SetPivotRotation("pivot:rotor_rear", Quaternion.Identity), "Absent rear rotor pivot is optional");
+Check(actualMeshSet.SetPivotRotation("pivot:rotor_rear", Quaternion.Identity), "Actual rear rotor pivot is animated");
+Check(!new MeshSet(Globals.MeshHandler.Meshes["helipad-1"]).SetPivotRotation("pivot:rotor_rear", Quaternion.Identity), "Absent rear rotor pivot is optional");
 var unanimatedMeshSet = new MeshSet(Globals.MeshHandler.Meshes["heli-1"]);
 actualMeshSet.TryGetPivotWorldTransform("pivot:rotor_main", Matrix.Identity, out var animatedRotor);
 unanimatedMeshSet.TryGetPivotWorldTransform("pivot:rotor_main", Matrix.Identity, out var restingRotor);
@@ -776,4 +843,45 @@ FlyTicks(heli, 100);
 Check(heli.HitPoints == 0 && heli.IsLanded, "No safe ground and no fuel results in emergency touchdown failure rather than unlimited hovering");
 var actualBounds = new MeshSet(Globals.MeshHandler.Meshes["heli-1"]).GetBounds();
 Check(actualHeli.Width >= actualBounds.Max.X - actualBounds.Min.X && actualHeli.Length >= actualBounds.Max.Z - actualBounds.Min.Z, "Ground landing footprint includes the authored helicopter geometry");
+var contactNames = new[] { "pivot:landing_contact_1", "pivot:landing_contact_2", "pivot:landing_contact_3" };
+var contactPoints = contactNames.Select(name =>
+{
+    Check(actualMeshSet.TryGetPivotWorldPosition(name, Matrix.Identity, out Vector3 point), $"Actual {name} imports");
+    return point;
+}).ToArray();
+Check(actualMeshSet.TryGetPivotWorldPosition("pivot:flight_center", Matrix.Identity, out Vector3 flightCenter), "Actual flight center pivot imports");
+Quaternion landingAttitude = (Quaternion)typeof(Helicopter).GetField("_landingAttitude", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(actualHeli)!;
+var contactHeights = contactPoints.Select(point => Vector3.Transform(point, landingAttitude).Y).ToArray();
+Check(contactHeights.Max() - contactHeights.Min() < 0.001f, "Three landing contacts define a common flat-ground attitude");
+Check(Math.Abs(actualHeli.GroundOffset + contactHeights.Average()) < 0.001f, "Landing height places all three contacts on ground");
+actualHeli.TakeOff(world);
+actualHeli.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.1)));
+Field(actualHeli, typeof(Helicopter), "_visualPitch", 0.2f);
+Matrix tiltedWorld = actualHeli.GetWorldMatrix();
+Vector3 transformedFlightCenter = Vector3.Transform(flightCenter, tiltedWorld);
+Vector3 untiltedFlightCenter = Vector3.Transform(flightCenter,
+    Matrix.CreateRotationY((float)typeof(Helicopter).GetField("_renderYaw", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(actualHeli)!) *
+    Matrix.CreateTranslation((Vector3)typeof(Helicopter).GetField("_renderPosition", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(actualHeli)!));
+Check(Vector3.Distance(transformedFlightCenter, untiltedFlightCenter) < 0.001f, "Flight tilt rotates the full model around flight center");
+
+// Fixed host simulation poses are interpolated visually, while flight tilt reacts with spring damping.
+heli = SetupHelicopter();
+heli.TryReceiveGotoCommand(world, new(new(25.5f, 20.5f)));
+var visualBeforeTick = heli.GetWorldMatrix().Translation;
+heli.SimulateFlight(world, 0.1f);
+Vector3 authoritativeAfterTick = heli.Position;
+Check(heli.GetWorldMatrix().Translation == visualBeforeTick && authoritativeAfterTick != visualBeforeTick, "Host simulation queues a visual pose instead of jumping immediately");
+heli.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.05)));
+Vector3 visualHalfTick = heli.GetWorldMatrix().Translation;
+Check(Vector3.Distance(visualHalfTick, visualBeforeTick) > 0 && Vector3.Distance(visualHalfTick, authoritativeAfterTick) > 0, "Render pose interpolates between fixed simulation ticks");
+for (int i = 0; i < 20; i++)
+{
+    heli.SimulateFlight(world, 0.1f);
+    for (int frame = 0; frame < 6; frame++) heli.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(1.0 / 60)));
+}
+Check(Math.Abs(heli.VisualPitchDegrees) > 0.5f || Math.Abs(heli.VisualRollDegrees) > 0.5f, "Flight direction produces visible pitch or bank");
+float tiltBeforeStop = Math.Abs(heli.VisualPitchDegrees) + Math.Abs(heli.VisualRollDegrees);
+heli.Stop();
+for (int frame = 0; frame < 120; frame++) heli.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(1.0 / 60)));
+Check(Math.Abs(heli.VisualPitchDegrees) + Math.Abs(heli.VisualRollDegrees) < tiltBeforeStop, "Hover damping settles flight tilt");
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");

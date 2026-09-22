@@ -27,6 +27,9 @@ public static class BuildingFactory
             case "building-4x3x4":
             case "building-1":
                 building = new GenericBuilding(position, unitId, "building-1");
+                break;            
+            case "communicationstower":
+                building = new CommunicationsTower(position, unitId);
                 break;
             case "antenna-1":
                 building = new GenericBuilding(position, unitId, "antenna-1");

@@ -57,6 +57,13 @@ public class Building : Unit
 
     public bool IsCompleted => ConstructionProgress >= TotalBuildingPointsNeeded;
 
+    public override int GetSightRange()
+    {
+        if (!IsCompleted)
+            return 0;
+        return SightRange;
+    }
+
     /// <summary>Returns this building's production time for a supported unit type.</summary>
     public virtual bool TryGetProductionDuration(string unitTypeId, out float durationSeconds)
     {

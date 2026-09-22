@@ -11,7 +11,8 @@ public enum HelicopterFlightState { Landed, TakingOff, Flying, Hovering, Landing
 public enum HelicopterOrder { TakeOff, Land, ReturnToHelipad }
 
 public sealed record HelicopterState(float X, float Y, float Z, float Yaw, HelicopterFlightState Flight,
-    float Fuel, int Ammunition, Guid? HelipadId, float? LandingX, float? LandingY, float? LandingZ);
+    float Fuel, int Ammunition, Guid? HelipadId, float? LandingX, float? LandingY, float? LandingZ,
+    float LandingTiltX = 0, float LandingTiltY = 0, float LandingTiltZ = 0, float LandingTiltW = 1);
 
 /// <summary>Air movement and supplies are simulated by the host; clients animate replicated state.</summary>
 public class Helicopter : MobileUnit
@@ -28,6 +29,12 @@ public class Helicopter : MobileUnit
     public float VerticalSpeed { get; set; } = 4;
     public float RefuelPerSecond { get; set; } = 20;
     public float ReloadPerSecond { get; set; } = 10;
+    public float MaximumForwardTiltDegrees { get; set; } = 11;
+    public float MaximumBankDegrees { get; set; } = 16;
+    public float TiltSpringStrength { get; set; } = 32;
+    public float TiltSpringDamping { get; set; } = 8;
+    public float VisualPitchDegrees => MathHelper.ToDegrees(_visualPitch);
+    public float VisualRollDegrees => MathHelper.ToDegrees(_visualRoll);
     public Guid? AssignedHelipadId { get; private set; }
     public float MainRotorDegree { get; private set; }
     public float RearRotorDegree { get; private set; }
@@ -39,12 +46,27 @@ public class Helicopter : MobileUnit
     public float GroundOffset { get; private set; }
     private Vector2? _destination;
     private Vector3? _landing;
+    private float? _landingSurfaceHeight;
     private float _reloadFraction;
     private double _nextAuthorizedShot;
     private float _yaw;
     private Vector3 _renderPosition;
     private float _renderYaw;
+    private Vector3 _renderFromPosition;
+    private float _renderFromYaw;
+    private Vector3 _renderTargetPosition;
+    private float _renderTargetYaw;
+    private float _renderElapsed;
+    private const float RenderStepSeconds = 0.1f;
     private bool _hasRenderState;
+    private Vector3 _lastRenderPosition;
+    private float _lastRenderYaw;
+    private float _visualPitch, _visualRoll;
+    private float _visualPitchVelocity, _visualRollVelocity;
+    private float _landingBlend;
+    private Quaternion _landingAttitude = Quaternion.Identity;
+    private Vector3 _flightCenterLocal;
+    private Vector3[] _landingContacts = [];
     private bool _returning;
     private bool _emergencyCrash;
 
@@ -89,18 +111,32 @@ public class Helicopter : MobileUnit
             OccupancyOwnershipMode.PreserveOwnership);
         SetMesh(meshName, deriveDimensions: true);
         BoundingBox bounds = _meshSet!.GetBounds();
-        GroundOffset = -bounds.Min.Y;
+        _flightCenterLocal = (bounds.Min + bounds.Max) * 0.5f;
+        if (!_meshSet.TryGetPivotWorldPosition("pivot:flight_center", Matrix.Identity, out _flightCenterLocal))
+            _meshSet.TryGetPivotWorldPosition("pivot:rotor_main", Matrix.Identity, out _flightCenterLocal);
+        _landingContacts = new[] { "pivot:landing_contact_1", "pivot:landing_contact_2", "pivot:landing_contact_3" }
+            .Select(name => _meshSet.TryGetPivotWorldPosition(name, Matrix.Identity, out Vector3 point) ? point : (Vector3?)null)
+            .Where(point => point.HasValue).Select(point => point!.Value).ToArray();
+        if (_landingContacts.Length == 3)
+        {
+            _landingAttitude = RotationBetween(ContactNormal(_landingContacts), Vector3.Up);
+            Matrix landingRotation = Matrix.CreateFromQuaternion(_landingAttitude);
+            GroundOffset = -_landingContacts.Average(point => Vector3.Transform(point, landingRotation).Y);
+        }
+        else GroundOffset = -bounds.Min.Y;
         Height = Math.Max(0.1f, bounds.Max.Y - bounds.Min.Y);
+        SnapRenderPose(position, _yaw);
     }
 
     public bool InitializeOnGround(GameWorld world)
     {
         Vector3 position = Position;
-        position.Y = world.Terrain.GetSurfaceHeight(position.X, position.Z) + GroundOffset;
         float yaw = MathHelper.ToDegrees(MathF.Atan2(-Transform.Forward.X, -Transform.Forward.Z));
+        CalculateLandingPose(world, new(position.X, position.Z), null, out position, out _landingAttitude);
         if (!CanLandOnGround(world, position, yaw) || !world.GameGrid.TryPlace(this, position, yaw)) return false;
         SetPosition(position);
         _yaw = MathF.Atan2(-Transform.Forward.X, -Transform.Forward.Z);
+        SnapRenderPose(position, _yaw);
         return true;
     }
 
@@ -126,6 +162,7 @@ public class Helicopter : MobileUnit
     {
         AssignedHelipadId = null;
         _landing = null;
+        _landingSurfaceHeight = null;
         world.GameGrid.Remove(this);
     }
 
@@ -181,12 +218,15 @@ public class Helicopter : MobileUnit
         if (!ValidTarget(world, target)) return false;
         if (pad is not null && pad.CanAccept(world, this))
         {
-            Vector3 landing = pad.GetLandingPosition(this);
+            Vector3 surface = pad.GetLandingSurfacePosition();
+            CalculateLandingPose(world, new(surface.X, surface.Z), surface.Y, out Vector3 landing, out Quaternion attitude);
             base.Stop();
             if (IsLanded && AssignedHelipadId == pad.UnitId) return true;
             if (IsLanded && !TakeOff(world)) return false;
             ReleaseLanding(world);
             AssignedHelipadId = pad.UnitId;
+            _landingAttitude = attitude;
+            _landingSurfaceHeight = surface.Y;
             _landing = landing; _destination = new(landing.X, landing.Z);
             _returning = true;
             FlightState = HelicopterFlightState.TakingOff;
@@ -202,13 +242,16 @@ public class Helicopter : MobileUnit
         foreach (Point c in candidates)
         {
             Vector3 landing = world.GameGrid.ToWorldPosition(c, 0);
-            if (!CanLandOnGround(world, landing)) continue;
-            landing.Y = world.Terrain.GetSurfaceHeight(landing.X, landing.Z) + GroundOffset;
+            float landingYaw = MathHelper.ToDegrees(_yaw);
+            if (!CanLandOnGround(world, landing, landingYaw)) continue;
+            CalculateLandingPose(world, new(landing.X, landing.Z), null, out landing, out Quaternion attitude);
             if (IsLanded && Vector2.Distance(new(Position.X, Position.Z), new(landing.X, landing.Z)) < 0.1f) return true;
             if (IsLanded && !TakeOff(world)) return false;
             base.Stop();
             ReleaseLanding(world);
-            if (!world.GameGrid.TryPlace(this, landing, 0)) continue;
+            if (!world.GameGrid.TryPlace(this, landing, landingYaw)) continue;
+            _landingAttitude = attitude;
+            _landingSurfaceHeight = null;
             _landing = landing; _destination = new(landing.X, landing.Z);
             _returning = true;
             FlightState = HelicopterFlightState.TakingOff;
@@ -276,8 +319,11 @@ public class Helicopter : MobileUnit
             _returning = true;
             _destination = null;
             Vector3 ground = padLanding ?? new Vector3(Position.X, world.Terrain.GetSurfaceHeight(Position.X, Position.Z) + GroundOffset, Position.Z);
-            _emergencyCrash = padLanding is null && !CanLandOnGround(world, ground);
-            if (!_emergencyCrash && padLanding is null) world.GameGrid.TryPlace(this, ground, 0);
+            if (padLanding is null)
+                CalculateLandingPose(world, new(ground.X, ground.Z), null, out ground, out _landingAttitude);
+            _emergencyCrash = padLanding is null && !CanLandOnGround(world, ground, MathHelper.ToDegrees(_yaw));
+            if (!_emergencyCrash && padLanding is null)
+                world.GameGrid.TryPlace(this, ground, MathHelper.ToDegrees(_yaw));
             _landing = ground;
             FlightState = HelicopterFlightState.EmergencyLanding;
         }
@@ -298,7 +344,6 @@ public class Helicopter : MobileUnit
             if (AssignedHelipadId is null && !_emergencyCrash && !CanLandOnGround(world, landing))
             { ReleaseLanding(world); _returning = false; FlightState = HelicopterFlightState.Hovering; return; }
             position.Y = Math.Max(landing.Y, position.Y - VerticalSpeed * seconds);
-            TurnTo(0, seconds);
             SetPosition(position);
             if (position.Y <= landing.Y + 0.001f)
             {
@@ -324,12 +369,81 @@ public class Helicopter : MobileUnit
                 if (Vector2.Distance(next, _destination ?? next) < 0.01f)
                 {
                     _destination = null;
-                    if (_landing is not null) FlightState = HelicopterFlightState.Landing;
+                    if (_landing is Vector3 pendingLanding)
+                    {
+                        CalculateLandingPose(world, new(pendingLanding.X, pendingLanding.Z), _landingSurfaceHeight,
+                            out Vector3 correctedLanding, out _landingAttitude);
+                        _landing = correctedLanding;
+                        FlightState = HelicopterFlightState.Landing;
+                    }
                 }
             }
             SetPosition(position);
         }
+        QueueRenderPose(Position, _yaw);
         StateRevision++;
+    }
+
+    private void CalculateLandingPose(GameWorld world, Vector2 center, float? flatSurfaceHeight,
+        out Vector3 position, out Quaternion attitude)
+    {
+        if (_landingContacts.Length != 3)
+        {
+            float height = flatSurfaceHeight ?? world.Terrain.GetSurfaceHeight(center.X, center.Y);
+            position = new(center.X, height + GroundOffset, center.Y);
+            attitude = Quaternion.Identity;
+            return;
+        }
+        Matrix yaw = Matrix.CreateRotationY(_yaw);
+        Vector3[] yawed = _landingContacts.Select(point => Vector3.Transform(point, yaw)).ToArray();
+        float[] heights = yawed.Select(point => flatSurfaceHeight ??
+            world.Terrain.GetSurfaceHeight(center.X + point.X, center.Y + point.Z)).ToArray();
+        Vector3[] targets = yawed.Select((point, index) => new Vector3(point.X, heights[index], point.Z)).ToArray();
+        Vector3 targetNormal = ContactNormal(targets);
+        Matrix inverseYaw = Matrix.Invert(yaw);
+        Vector3 targetLocalNormal = Vector3.Normalize(Vector3.TransformNormal(targetNormal, inverseYaw));
+        attitude = RotationBetween(ContactNormal(_landingContacts), targetLocalNormal);
+        Matrix rotation = Matrix.CreateFromQuaternion(attitude) * yaw;
+        float translationY = _landingContacts.Select((point, index) =>
+            heights[index] - Vector3.Transform(point, rotation).Y).Average();
+        position = new(center.X, translationY, center.Y);
+    }
+
+    private static Vector3 ContactNormal(IReadOnlyList<Vector3> points)
+    {
+        Vector3 normal = Vector3.Cross(points[1] - points[0], points[2] - points[0]);
+        if (normal.LengthSquared() < 0.000001f) return Vector3.Up;
+        normal.Normalize();
+        return Vector3.Dot(normal, Vector3.Up) < 0 ? -normal : normal;
+    }
+
+    private static Quaternion RotationBetween(Vector3 from, Vector3 to)
+    {
+        from.Normalize(); to.Normalize();
+        float dot = Math.Clamp(Vector3.Dot(from, to), -1, 1);
+        if (dot > 0.99999f) return Quaternion.Identity;
+        Vector3 axis = Vector3.Cross(from, to);
+        if (axis.LengthSquared() < 0.000001f) axis = Vector3.Right;
+        else axis.Normalize();
+        return Quaternion.CreateFromAxisAngle(axis, MathF.Acos(dot));
+    }
+
+    private void SnapRenderPose(Vector3 position, float yaw)
+    {
+        _renderPosition = _renderFromPosition = _renderTargetPosition = _lastRenderPosition = position;
+        _renderYaw = _renderFromYaw = _renderTargetYaw = _lastRenderYaw = yaw;
+        _renderElapsed = RenderStepSeconds;
+        _hasRenderState = true;
+    }
+
+    private void QueueRenderPose(Vector3 position, float yaw)
+    {
+        if (!_hasRenderState) { SnapRenderPose(position, yaw); return; }
+        _renderFromPosition = _renderPosition;
+        _renderFromYaw = _renderYaw;
+        _renderTargetPosition = position;
+        _renderTargetYaw = yaw;
+        _renderElapsed = 0;
     }
 
     private static float MoveTowards(float value, float target, float step) => value + Math.Clamp(target - value, -step, step);
@@ -365,17 +479,20 @@ public class Helicopter : MobileUnit
 
     public override void Update(GameTime gameTime)
     {
-        if (_hasRenderState && !Globals.Game.Network.IsHost)
+        float seconds = (float)gameTime.ElapsedGameTime.TotalSeconds;
+        if (_hasRenderState)
         {
-            float blend = 1 - MathF.Exp(-20 * (float)gameTime.ElapsedGameTime.TotalSeconds);
-            _renderPosition = Vector3.Lerp(_renderPosition, Position, blend);
-            _renderYaw = MathHelper.WrapAngle(_renderYaw + MathHelper.WrapAngle(_yaw - _renderYaw) * blend);
+            _renderElapsed = Math.Min(RenderStepSeconds, _renderElapsed + seconds);
+            float amount = _renderElapsed / RenderStepSeconds;
+            _renderPosition = Vector3.Lerp(_renderFromPosition, _renderTargetPosition, amount);
+            _renderYaw = MathHelper.WrapAngle(_renderFromYaw + MathHelper.WrapAngle(_renderTargetYaw - _renderFromYaw) * amount);
+            UpdateVisualTilt(seconds);
         }
         UpdateUnitVisuals(gameTime);
         if (IsLanded)
         {
             //  easing towards 0
-            MainRotorSpeed = RearRotorSpeed * 0.99f;
+            MainRotorSpeed *= 0.99f;
             RearRotorSpeed = RearRotorSpeed * 0.99f;
         }
         else
@@ -385,7 +502,6 @@ public class Helicopter : MobileUnit
             RearRotorSpeed += (RearRotorSpeedMax - RearRotorSpeed) * 0.99f;
         }
     
-        float seconds = (float)gameTime.ElapsedGameTime.TotalSeconds;
         MainRotorDegree = (MainRotorDegree + seconds * MainRotorSpeed) % 360;
         RearRotorDegree = (RearRotorDegree + seconds * RearRotorSpeed) % 360;
 
@@ -394,8 +510,45 @@ public class Helicopter : MobileUnit
         _meshSet?.SetParameter(Mesh.TurretAngle, MathHelper.ToRadians(TargetAngleDegrees));
     }
 
-    public override Matrix GetWorldMatrix() => _hasRenderState && !Globals.Game.Network.IsHost
-        ? Matrix.CreateRotationY(_renderYaw) * Matrix.CreateTranslation(_renderPosition) : base.GetWorldMatrix();
+    private void UpdateVisualTilt(float seconds)
+    {
+        if (seconds <= 0) return;
+        Vector3 velocity = (_renderPosition - _lastRenderPosition) / seconds;
+        float yawRate = MathHelper.WrapAngle(_renderYaw - _lastRenderYaw) / seconds;
+        Matrix yaw = Matrix.CreateRotationY(_renderYaw);
+        Vector3 forward = Vector3.TransformNormal(Vector3.Forward, yaw);
+        Vector3 right = Vector3.TransformNormal(Vector3.Right, yaw);
+        float speedScale = Math.Max(0.01f, MoveSpeed);
+        float targetPitch = -MathHelper.ToRadians(MaximumForwardTiltDegrees) *
+            Math.Clamp(Vector3.Dot(velocity, forward) / speedScale, -1, 1);
+        float targetRoll = MathHelper.ToRadians(MaximumBankDegrees) * Math.Clamp(
+            Vector3.Dot(velocity, right) / speedScale + yawRate / Math.Max(0.01f, RotationSpeed) * 0.55f, -1, 1);
+        if (FlightState is HelicopterFlightState.Landing or HelicopterFlightState.Landed or HelicopterFlightState.EmergencyLanding)
+            targetPitch = targetRoll = 0;
+        Spring(ref _visualPitch, ref _visualPitchVelocity, targetPitch, seconds);
+        Spring(ref _visualRoll, ref _visualRollVelocity, targetRoll, seconds);
+        float blendTarget = FlightState is HelicopterFlightState.Landing or HelicopterFlightState.Landed or
+            HelicopterFlightState.EmergencyLanding ? 1 : 0;
+        _landingBlend = MathHelper.Lerp(_landingBlend, blendTarget, 1 - MathF.Exp(-4 * seconds));
+        _lastRenderPosition = _renderPosition;
+        _lastRenderYaw = _renderYaw;
+    }
+
+    private void Spring(ref float value, ref float velocity, float target, float seconds)
+    {
+        velocity += ((target - value) * TiltSpringStrength - velocity * TiltSpringDamping) * seconds;
+        value += velocity * seconds;
+    }
+
+    public override Matrix GetWorldMatrix()
+    {
+        if (!_hasRenderState) return base.GetWorldMatrix();
+        Quaternion flight = Quaternion.CreateFromYawPitchRoll(0, _visualPitch, _visualRoll);
+        Quaternion tilt = Quaternion.Slerp(flight, _landingAttitude, Math.Clamp(_landingBlend, 0, 1));
+        return Matrix.CreateTranslation(-_flightCenterLocal) * Matrix.CreateFromQuaternion(tilt) *
+            Matrix.CreateTranslation(_flightCenterLocal) * Matrix.CreateRotationY(_renderYaw) *
+            Matrix.CreateTranslation(_renderPosition);
+    }
 
     public override void Draw2D(SpriteBatch spriteBatch, Camera camera, Viewport viewport)
     {
@@ -409,7 +562,8 @@ public class Helicopter : MobileUnit
 
     public override UnitState GetState() => new(UnitId, StateRevision, StateTypeId, StateVersion,
         JsonSerializer.SerializeToUtf8Bytes(new HelicopterState(Position.X, Position.Y, Position.Z, _yaw, FlightState,
-            Fuel, Ammunition, AssignedHelipadId, _landing?.X, _landing?.Y, _landing?.Z)));
+            Fuel, Ammunition, AssignedHelipadId, _landing?.X, _landing?.Y, _landing?.Z,
+            _landingAttitude.X, _landingAttitude.Y, _landingAttitude.Z, _landingAttitude.W)));
 
     public override void ApplyState(UnitState state)
     {
@@ -419,16 +573,12 @@ public class Helicopter : MobileUnit
         FlightState = data.Flight; Fuel = Math.Clamp(data.Fuel, 0, MaximumFuel); Ammunition = Math.Clamp(data.Ammunition, 0, MaximumAmmunition);
         AssignedHelipadId = data.HelipadId;
         _landing = data.LandingX is float x && data.LandingY is float y && data.LandingZ is float z ? new(x, y, z) : null;
-        if (!_hasRenderState)
-        {
-            _renderPosition = Position;
-            _renderYaw = MathF.Atan2(-Transform.Forward.X, -Transform.Forward.Z);
-            _hasRenderState = true;
-        }
+        _landingAttitude = Quaternion.Normalize(new(data.LandingTiltX, data.LandingTiltY, data.LandingTiltZ, data.LandingTiltW));
         _yaw = data.Yaw; SetRotationYDegrees(MathHelper.ToDegrees(_yaw)); SetPosition(new(data.X, data.Y, data.Z));
+        QueueRenderPose(Position, _yaw);
         Globals.World.GameGrid.Remove(this);
         if (AssignedHelipadId is null && (IsLanded || _landing is not null))
-            Globals.World.GameGrid.TryPlace(this, _landing ?? Position, IsLanded ? MathHelper.ToDegrees(_yaw) : 0);
+            Globals.World.GameGrid.TryPlace(this, _landing ?? Position, MathHelper.ToDegrees(_yaw));
         Occupancy!.EntryEnabled = IsLanded;
         StateRevision = state.Revision;
     }

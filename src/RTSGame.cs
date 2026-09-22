@@ -29,6 +29,10 @@ public class RTSGame
     public TeamHandler Teams { get; } = new();
     public ArmyHandler Armies { get; } = new();
     public RemoteSelectionHandler RemoteSelections { get; } = new();
+    private readonly FogOfWarTexture _fogTexture;
+    private readonly Minimap _minimap;
+    private float _fogRefreshElapsed;
+    private float _minimapRefreshElapsed;
 
     public RTSGame(
         int terrainWidth,
@@ -63,7 +67,9 @@ public class RTSGame
         Player localPlayer = new(Network.LocalPeerId, Network.DisplayName);
         _players.Add(localPlayer);
         Teams.UpdateMembership(localPlayer.Id, localPlayer.TeamId, localPlayer.TeamId);
-        Armies.EnsureArmy(localPlayer.ArmyId, localPlayer.Id);
+        Armies.EnsureArmy(localPlayer.ArmyId, localPlayer.Id, GuidUtility.FromInt(localPlayer.TeamId));
+        _fogTexture = new FogOfWarTexture(Globals.GraphicsDevice, World.GameGrid, World.Visibility);
+        _minimap = new Minimap(Globals.GraphicsDevice, World, World.Visibility);
         Network.SetPlayerDataProvider(() => _players.Select(player =>
             NetworkCommands.CreatePlayerUpdateCommand(
                 Network.LocalPeerId,
@@ -76,7 +82,7 @@ public class RTSGame
                 player.Skin)));
         Network.SetWorldDataProvider(() => NetworkCommands.CreateWorldData(
             Network.LocalPeerId,
-            World.Terrain.GetWorldData()));
+            World.GetWorldData()));
         NetworkInput = new NetworkInput(Network);
         NetworkHost = new NetworkHost(Network, NetworkInput, World);
         Network.SetHostTimeProvider(() => NetworkHost.HostTime);
@@ -100,14 +106,14 @@ public class RTSGame
             Player added = new(playerId, name, teamId, skin);
             _players.Add(added);
             Teams.UpdateMembership(added.Id, added.TeamId, teamId);
-            Armies.EnsureArmy(added.ArmyId, added.Id);
+            Armies.EnsureArmy(added.ArmyId, added.Id, GuidUtility.FromInt(added.TeamId));
             return;
         }
 
         int previousTeamId = player.TeamId;
         player.SetRequestedData(name, teamId, skin);
         Teams.UpdateMembership(playerId, previousTeamId, teamId);
-        Armies.EnsureArmy(player.ArmyId, player.Id);
+        Armies.EnsureArmy(player.ArmyId, player.Id, GuidUtility.FromInt(player.TeamId));
     }
 
     public void RemovePlayer(Guid playerId)
@@ -136,7 +142,7 @@ public class RTSGame
         Player player = new(Guid.NewGuid(), name.Trim(), teamId, skin);
         _players.Add(player);
         Teams.UpdateMembership(player.Id, player.TeamId, player.TeamId);
-        Armies.EnsureArmy(player.ArmyId, player.Id);
+        Armies.EnsureArmy(player.ArmyId, player.Id, GuidUtility.FromInt(player.TeamId));
         AIPlayer aiPlayer = new(player);
         _aiPlayers.Add(player.Id, aiPlayer);
         return aiPlayer;
@@ -230,14 +236,31 @@ public class RTSGame
         float deltaTime =
             (float)gameTime.ElapsedGameTime.TotalSeconds;
 
-        camera.UpdateMouse(gameTime);
-        if (!Globals.Console.IsOpen)
+        bool minimapConsumed = !Globals.Console.IsOpen && _minimap.Update(camera, viewport);
+        if (!minimapConsumed)
+            camera.UpdateMouse(gameTime);
+        if (!Globals.Console.IsOpen && !minimapConsumed)
             camera.UpdateKeyboard(gameTime);
         bool actionPanelConsumed =
             ActionPanel?.Update(LocalPlayer.SelectedUnits, viewport) == true;
-        if (!actionPanelConsumed)
+        if (!actionPanelConsumed && !minimapConsumed)
             LocalPlayer.Update(gameTime, camera, viewport);
         World.Update(gameTime);
+        _fogRefreshElapsed += deltaTime;
+        _minimapRefreshElapsed += deltaTime;
+        if (TryGetLocalPlayer(out Player viewer))
+        {
+            if (_fogRefreshElapsed >= 0.25f)
+            {
+                _fogRefreshElapsed %= 0.25f;
+                _fogTexture.Update(viewer.ArmyId);
+            }
+            if (_minimapRefreshElapsed >= 0.2f)
+            {
+                _minimapRefreshElapsed %= 0.2f;
+                _minimap.Refresh(viewer.ArmyId);
+            }
+        }
         Network.Update();
         _ = NetworkHost.UpdateAsync(gameTime);
         UpdateConsole(gameTime);
@@ -274,6 +297,7 @@ public class RTSGame
     public void Draw2D(SpriteBatch spriteBatch)
     {
         World.Draw2D(spriteBatch, Globals._camera, Globals.GraphicsDevice.Viewport);
+        _minimap.Draw(spriteBatch, Globals._camera);
 
         if (Globals.Debug_ShadowMap_ShowPreview)
         {
@@ -288,6 +312,9 @@ public class RTSGame
 
     public void Draw3D(Camera camera)
     {
+        Globals._terrainEffect.Parameters["FogTexture"]?.SetValue(_fogTexture.Texture);
+        Globals._terrainEffect.Parameters["FogWidth"]?.SetValue((float)World.GameGrid.Width * World.GameGrid.CellSize);
+        Globals._terrainEffect.Parameters["FogHeight"]?.SetValue((float)World.GameGrid.Height * World.GameGrid.CellSize);
         World.DrawTerrain(
             Matrix.Identity,
             camera.View,
@@ -305,6 +332,12 @@ public class RTSGame
         
         if (Globals.Debug_ShowGameGrid)
             Globals._debugRenderer.DrawGameGrid(World, camera.View, camera.Projection);
+    }
+
+    private bool TryGetLocalPlayer(out Player player)
+    {
+        player = _players.FirstOrDefault(candidate => candidate.Id == Network.LocalPeerId)!;
+        return player is not null;
     }
 
 }

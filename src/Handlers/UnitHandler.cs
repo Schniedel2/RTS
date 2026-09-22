@@ -138,7 +138,7 @@ public class UnitHandler
     public void DrawShadow(Effect effect)
     {
         foreach (Unit unit in _units)
-            if (!unit.IsEmbarked)
+            if (!unit.IsEmbarked && Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
                 unit.DrawShadow(effect);
     }
 
@@ -146,7 +146,7 @@ public class UnitHandler
     {
         foreach (Building unit in _units.OfType<Building>())
         {
-            if (unit.IsEmbarked)
+            if (unit.IsEmbarked || !Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
                 continue;
 
             // Restore the normal building atlas before a BBModel sub-mesh
@@ -180,7 +180,7 @@ public class UnitHandler
     {
         foreach (MobileUnit unit in _units.OfType<MobileUnit>())
         {
-            if (unit.IsEmbarked)
+            if (unit.IsEmbarked || !Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
                 continue;
 
             // Restore the normal unit atlas before a BBModel sub-mesh
@@ -332,7 +332,8 @@ public class UnitHandler
     public void Draw2D(SpriteBatch spriteBatch, Camera camera, Viewport viewport)
     {
         foreach (Unit unit in _units)
-            if (unit is Building or Helicopter) unit.Draw2D(spriteBatch, camera, viewport);
+            if ((unit is Building or Helicopter) && Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
+                unit.Draw2D(spriteBatch, camera, viewport);
     }
 
     private bool SetFootprints(Unit unit, float rotateYDegrees)

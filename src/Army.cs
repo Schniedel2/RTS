@@ -11,6 +11,13 @@ public enum ArmyPermission
     CommandUnits = 1
 }
 
+public sealed class IntelligenceCapabilities
+{
+    public bool ShareExploredMinimap { get; set; }
+    public bool ShareVisibleMinimap { get; set; }
+    public bool ShareWorldVision { get; set; }
+}
+
 /// <summary>Ownership, resources and unit-command permissions for one army.</summary>
 public sealed class Army
 {
@@ -19,6 +26,7 @@ public sealed class Army
     public int Resources { get; set; }
     public HashSet<Guid> OwnerPlayerIds { get; } = [];
     public Dictionary<Guid, ArmyPermission> GrantedPermissions { get; } = [];
+    public IntelligenceCapabilities Intelligence { get; } = new();
 
     public Army(Guid id, Guid ownerPlayerId, Guid? teamId = null)
     {
@@ -44,7 +52,8 @@ public sealed class ArmyHandler
         else
         {
             army.OwnerPlayerIds.Add(ownerPlayerId);
-            army.TeamId ??= teamId;
+            if (teamId is not null)
+                army.TeamId = teamId;
         }
         return army;
     }

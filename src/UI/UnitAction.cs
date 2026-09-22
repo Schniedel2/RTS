@@ -35,6 +35,8 @@ public enum UnitActionType
     ClearRallyPoint,
     LevelAndConcrete,
     RemoveConcrete,
+    PlaceGameplayMarker,
+    DeleteGameplayMarker,
     TakeOff,
     Land,
     ReturnToHelipad,
@@ -47,4 +49,5 @@ public sealed record UnitAction(
     string Name,
     int IconColumn,
     int IconRow,
-    string TargetObjectName = "");
+    string TargetObjectName = "",
+    GameplayMarkerType? MarkerType = null);

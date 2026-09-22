@@ -54,9 +54,13 @@ public abstract class Unit : WorldObject
     }
     public float HitPoints { get; set; }
     public float MaxHitPoints { get; }
+    public int PowerConsumption { get; set; }
+    public int PowerAssigned { get; set; }
     public Guid CreatorPlayerId { get; private set; }
     /// <summary>Current owner. Null represents a neutral/capturable world unit.</summary>
     public Guid? ArmyId { get; private set; }
+    /// <summary>Fog-of-war reveal radius in GameGrid cells.</summary>
+    protected int SightRange { get; set; } = 8;
     public bool IsEmbarked { get; private set; }
     public Guid? ContainerUnitId { get; private set; }
     /// <summary>Optional seats/crew/garrison carried by this unit.</summary>
@@ -86,6 +90,11 @@ public abstract class Unit : WorldObject
     [
         new(UnitActionType.Goto, "Goto", 0, 0)
     ];
+
+    public virtual int GetSightRange()
+    {
+        return SightRange;
+    }
     public override string StateTypeId => "unit";
     public float AttackRange { get; set; } = 12.0f;
     /// <summary>
