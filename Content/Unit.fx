@@ -30,6 +30,12 @@ float2 MaterialMaskSourceUVOffset;
 float2 MaterialMaskUVScale;
 float MaterialMaskUseTexture;
 float MaterialMaskDefaultPlayerMask;
+// Optional per-draw animation of the green emissive mask. Strength == 0 keeps
+// the regular, steady emissive material used by all existing meshes.
+float EmissivePulseTime;
+float EmissivePulseSpeed;
+float EmissivePulsePhase;
+float EmissivePulseStrength;
 
 float2 PlayerSkinUVOffset;
 float2 PlayerSkinUVScale;
@@ -271,11 +277,21 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
     float3 litColor =
         baseColor.rgb * lighting;
 
+    float pulse =
+        0.5 + 0.5 * sin(EmissivePulseTime * EmissivePulseSpeed + EmissivePulsePhase);
+
     float3 finalColor =
         lerp(
             litColor,
             baseColor.rgb,
             emissive);
+
+    // Diffuse and emissive colors can be nearly identical on a sunlit face,
+    // while values above 1.0 are clipped in the LDR target. Modulating the
+    // completed material color makes the pulse visible in light and shadow.
+    float pulseBrightness =
+        1.0 - emissive * EmissivePulseStrength * (1.0 - pulse);
+    finalColor *= pulseBrightness;
 
 
     return float4(
