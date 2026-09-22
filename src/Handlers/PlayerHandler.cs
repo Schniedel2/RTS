@@ -286,6 +286,11 @@ public class PlayerHandler
         _previousMouseState = mouse;
     }
 
+    public bool IsUnitSelected(Unit unit)
+    {
+        return _selectedUnits.Contains(unit);
+    }
+
     UnitActionType SuggestAction(List<Unit> selectedUnits, Vector3 mouseWorldPosition, out Unit? targetUnit)
     {
         targetUnit = null;
@@ -499,6 +504,31 @@ public class PlayerHandler
                 _map.GameplayMarkers.Add(markerType, targetPosition, targetAngleY, _toolSize);
                 return;
             }
+            if (action.Type == UnitActionType.PlaceTiberiumSource)
+            {
+                _map.Units.SpawnBuilding("tiberium-source", targetPosition, targetAngleY, Guid.NewGuid(), Guid.Empty);
+                return;
+            }
+            if (action.Type is UnitActionType.PaintTiberium or UnitActionType.RemoveTiberium or UnitActionType.SimulateTiberiumArea)
+            {
+                Point[] terrainCells = TerrainHelper.GetCells(_map.Terrain,
+                    new Vector2(targetPosition.X, targetPosition.Z), _toolShape, _toolSize);
+                HashSet<Point> cells = terrainCells.Select(cell => new Point(
+                    cell.X / _map.GameGrid.CellSize, cell.Y / _map.GameGrid.CellSize))
+                    .Where(_map.GameGrid.Contains).ToHashSet();
+                if (action.Type == UnitActionType.PaintTiberium)
+                    _map.Tiberium.Paint(cells);
+                else if (action.Type == UnitActionType.RemoveTiberium)
+                {
+                    _map.Tiberium.Remove(cells);
+                    foreach (TiberiumSource source in _map.Units.Units.OfType<TiberiumSource>()
+                        .Where(source => cells.Contains(_map.GameGrid.ToCell(source.Position))).ToArray())
+                        _map.Units.RemoveMapObject(source);
+                }
+                else
+                    _map.Tiberium.SimulateArea(cells, 10.0f, _map.Units.Units.OfType<TiberiumSource>());
+                return;
+            }
             if (action.Type == UnitActionType.DeleteGameplayMarker)
             {
                 _map.GameplayMarkers.RemoveNearest(targetPosition, Math.Max(1.0f, _toolSize * 0.5f));
@@ -643,13 +673,16 @@ public class PlayerHandler
             (ActiveAction.Type == UnitActionType.SharpenTerrain) ||
             (ActiveAction.Type == UnitActionType.SetTerrainTile) ||
             (ActiveAction.Type == UnitActionType.FillTile) 
+            || ActiveAction.Type == UnitActionType.PaintTiberium
+            || ActiveAction.Type == UnitActionType.RemoveTiberium
+            || ActiveAction.Type == UnitActionType.SimulateTiberiumArea
             )
             return CurrentMode.EditTerrain;
         
         if (ActiveAction.Type == UnitActionType.Build)
             return CurrentMode.BuildPreview;
 
-        if (ActiveAction.Type is UnitActionType.PlaceGameplayMarker or UnitActionType.DeleteGameplayMarker)
+        if (ActiveAction.Type is UnitActionType.PlaceGameplayMarker or UnitActionType.DeleteGameplayMarker or UnitActionType.PlaceTiberiumSource)
             return CurrentMode.EditGameplayMarkers;
 
         return CurrentMode.SelectUnits;
@@ -701,6 +734,16 @@ public class PlayerHandler
                 if (ActiveAction.Type == UnitActionType.PlaceGameplayMarker && ActiveAction.MarkerType is GameplayMarkerType markerType)
                     _map.GameplayMarkers.DrawPreview(camera, _map.Terrain, _map.GameGrid, markerType,
                         _isDrag ? PressLeftWorldPosition : MouseWorldPosition, _buildPreviewDegree, _toolSize);
+                if (ActiveAction.Type == UnitActionType.PlaceTiberiumSource)
+                {
+                    Point sourceCell = _map.GameGrid.ToCell(_isDrag ? PressLeftWorldPosition : MouseWorldPosition);
+                    int left = sourceCell.X * _map.GameGrid.CellSize;
+                    int top = sourceCell.Y * _map.GameGrid.CellSize;
+                    for (int z = top; z < top + _map.GameGrid.CellSize; z++)
+                        for (int x = left; x < left + _map.GameGrid.CellSize; x++)
+                            if (x >= 0 && z >= 0 && x < _map.Terrain.Width - 1 && z < _map.Terrain.Height - 1)
+                                _map.Terrain.HighlightCell(camera, x, z, new Color(70, 255, 90, 150));
+                }
                 //  render the active action's visual representation at the mouse world position
                 if (ActiveAction.Type == UnitActionType.Build)
                 {

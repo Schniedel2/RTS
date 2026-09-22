@@ -3,6 +3,8 @@ using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
 
 namespace RTS;
 
@@ -23,6 +25,7 @@ public class GameWorld
     public VisibilitySystem Visibility { get; }
     public GameplayMarkerHandler GameplayMarkers { get; }
     public Vector3 Center => new Vector3(_terrain.Width * 0.5f, 0.0f, _terrain.Height * 0.5f);
+    public bool IsEditorActive => Units.Units.Any(unit => unit is TerrainEditorTool && !unit.IsDying);
 
     public GameWorld(
         int terrainWidth,
@@ -170,7 +173,7 @@ public class GameWorld
         Projectiles.Update(gameTime);
         SmokeEmitters.Update(gameTime);
         Decals.Update(gameTime);
-        Tiberium.Update(gameTime);
+        Tiberium.Update(gameTime, allowGrowth: !IsEditorActive);
         Particles.Update(gameTime);
     }
 
@@ -186,6 +189,8 @@ public class GameWorld
         GameGrid.BindTerrain(_terrain);
         Weather.ResizeWindMap(_terrain.Width, _terrain.Height);
         GameplayMarkers.Load(mapDirectory);
+        LoadMapObjects(mapDirectory);
+        Tiberium.Load(mapDirectory);
     }
 
     public void Save(string mapName)
@@ -195,14 +200,47 @@ public class GameWorld
             Directory.CreateDirectory(mapDirectory);
         _terrain.Save(mapDirectory);
         GameplayMarkers.Save(mapDirectory);
+        SaveMapObjects(mapDirectory);
+        Tiberium.Save(mapDirectory);
     }
 
     public RTS.Network.WorldData GetWorldData() =>
-        _terrain.GetWorldData() with { GameplayMarkers = GameplayMarkers.GetStates() };
+        _terrain.GetWorldData() with
+        {
+            GameplayMarkers = GameplayMarkers.GetStates(),
+            TiberiumCells = Tiberium.GetStates(),
+            MapObjects = GetMapObjectStates()
+        };
 
     public void ApplyWorldData(RTS.Network.WorldData worldData)
     {
         _terrain.ApplyWorldData(worldData);
         GameplayMarkers.ApplyStates(worldData.GameplayMarkers);
+        ApplyMapObjectStates(worldData.MapObjects);
+        Tiberium.ApplyMapStates(worldData.TiberiumCells);
+    }
+
+    private MapObjectState[] GetMapObjectStates() => Units.Units.OfType<TiberiumSource>()
+        .Select(source => new MapObjectState(source.UnitId, "tiberium-source",
+            source.Position.X, source.Position.Y, source.Position.Z)).ToArray();
+
+    private void ApplyMapObjectStates(IEnumerable<MapObjectState>? states)
+    {
+        Units.RemoveMapObjects<TiberiumSource>();
+        if (states is null) return;
+        foreach (MapObjectState state in states.Where(state =>
+            state.TypeId.Equals("tiberium-source", StringComparison.OrdinalIgnoreCase) &&
+            state.Id != Guid.Empty && float.IsFinite(state.X) && float.IsFinite(state.Y) && float.IsFinite(state.Z)))
+            Units.SpawnBuilding(state.TypeId, new Vector3(state.X, state.Y, state.Z), state.RotationDegrees, state.Id, Guid.Empty);
+    }
+
+    private void SaveMapObjects(string mapDirectory) => File.WriteAllText(
+        Path.Combine(mapDirectory, "map-objects.json"),
+        JsonSerializer.Serialize(GetMapObjectStates(), new JsonSerializerOptions { WriteIndented = true }));
+
+    private void LoadMapObjects(string mapDirectory)
+    {
+        string path = Path.Combine(mapDirectory, "map-objects.json");
+        ApplyMapObjectStates(File.Exists(path) ? JsonSerializer.Deserialize<MapObjectState[]>(File.ReadAllText(path)) : null);
     }
 }

@@ -95,6 +95,12 @@ public class ConsoleCommands
         _console.RegisterAsyncCommand(
             "map-pull",
             PullMapAsync);
+        _console.RegisterAsyncCommand(
+            "editor-start",
+            StartEditorAsync);
+        _console.RegisterAsyncCommand(
+            "editor-end",
+            EndEditorAsync);
         _console.RegisterCommand(
             "terrain-hills",
             AddHills);
@@ -1015,6 +1021,59 @@ public class ConsoleCommands
 
         TerrainGenerator.ImproveSymmetry(_world.Terrain, args[0] == "horizontal", blend);
         _console.Print($"{args[0]} terrain symmetry improved.");
+    }
+
+    private async System.Threading.Tasks.Task StartEditorAsync(string[] args)
+    {
+        if (!_rtsGame.Network.IsHost)
+        {
+            _console.Print("Only the session host can start editor mode.");
+            return;
+        }
+        if (_world.IsEditorActive)
+        {
+            _console.Print("Editor mode is already active.");
+            return;
+        }
+
+        Vector3 position = _localPlayer.MouseWorldPosition;
+        if (!float.IsFinite(position.X) || !float.IsFinite(position.Y) || !float.IsFinite(position.Z) ||
+            !_world.GameGrid.Contains(_world.GameGrid.ToCell(position)))
+            position = _world.Center;
+        try
+        {
+            await _rtsGame.NetworkClient.RequestSpawnAsync("editor", position.X, position.Y, position.Z);
+            _console.Print("Editor mode requested. Tiberium simulation will pause when the editor unit spawns.");
+        }
+        catch (Exception ex)
+        {
+            _console.Print($"Editor start error: {ex.Message}");
+        }
+    }
+
+    private async System.Threading.Tasks.Task EndEditorAsync(string[] args)
+    {
+        if (!_rtsGame.Network.IsHost)
+        {
+            _console.Print("Only the session host can end editor mode.");
+            return;
+        }
+
+        TerrainEditorTool[] editors = _world.Units.Units.OfType<TerrainEditorTool>().ToArray();
+        if (editors.Length == 0)
+        {
+            _console.Print("Editor mode is not active.");
+            return;
+        }
+
+        foreach (TerrainEditorTool editor in editors)
+        {
+            NetworkMessage destroy = NetworkCommands.CreateDestroyUnitCommand(
+                _rtsGame.Network.LocalPeerId, editor.UnitId);
+            _rtsGame.Network.EnqueueLocalMessage(destroy);
+            await _rtsGame.Network.BroadcastAsync(destroy);
+        }
+        _console.Print($"Editor mode ended; removed {editors.Length} editor unit(s).");
     }
 
     private void ListArmies(string[] args)

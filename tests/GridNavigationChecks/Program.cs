@@ -254,6 +254,41 @@ finally { if (Directory.Exists(markerDirectory)) Directory.Delete(markerDirector
 var markerWorldData = new WorldData(1, 1, [0], [0.0f], gameplayMarkers.GetStates());
 var markerMessage = Wire(NetworkCommands.CreateWorldData(Guid.NewGuid(), markerWorldData));
 Check(markerMessage.WorldData?.GameplayMarkers?.Length == 3, "Map publish carries gameplay markers in WorldData");
+Field(terrain, typeof(Terrain), "_tiles", new TerrainTile[12, 12]);
+var tiberium = new TiberiumHandler();
+Field(world, typeof(GameWorld), "<Tiberium>k__BackingField", tiberium);
+Point plantedCell = new(3, 3);
+tiberium.Paint([plantedCell]);
+float plantedAmount = tiberium.Cells[plantedCell].Amount;
+tiberium.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(30)), allowGrowth: false);
+Check(tiberium.Cells[plantedCell].Amount == plantedAmount, "Editor pause freezes Tiberium growth");
+tiberium.SimulateArea(new HashSet<Point> { plantedCell }, 10, []);
+Check(tiberium.Cells[plantedCell].Amount > plantedAmount, "Area simulation advances selected Tiberium by ten seconds");
+var outsideCell = new Point(4, 4);
+tiberium.Paint([outsideCell]);
+float outsideAmount = tiberium.Cells[outsideCell].Amount;
+tiberium.SimulateArea(new HashSet<Point> { plantedCell }, 10, []);
+Check(tiberium.Cells[outsideCell].Amount == outsideAmount, "Area simulation leaves Tiberium outside its shape unchanged");
+string tiberiumDirectory = Path.Combine(Path.GetTempPath(), $"rts-tiberium-{Guid.NewGuid():N}");
+try
+{
+    tiberium.Save(tiberiumDirectory);
+    tiberium.Remove([plantedCell, outsideCell]);
+    tiberium.Load(tiberiumDirectory);
+    Check(tiberium.Cells.Count == 2 && tiberium.Cells[plantedCell].Amount > plantedAmount, "Tiberium cells survive map save and load");
+}
+finally { if (Directory.Exists(tiberiumDirectory)) Directory.Delete(tiberiumDirectory, true); }
+var editor = Empty<TerrainEditorTool>();
+((List<Unit>)units.Units).Add(editor);
+Check(world.IsEditorActive, "Terrain editor presence activates editor mode");
+((List<Unit>)units.Units).Remove(editor);
+Check(!world.IsEditorActive, "Removing the terrain editor leaves editor mode");
+var publishedTiberium = new WorldData(1, 1, [0], [0.0f],
+    TiberiumCells: tiberium.GetStates(),
+    MapObjects: [new MapObjectState(Guid.NewGuid(), "tiberium-source", 2, 0, 2)]);
+var publishedTiberiumMessage = Wire(NetworkCommands.CreateWorldData(Guid.NewGuid(), publishedTiberium));
+Check(publishedTiberiumMessage.WorldData?.TiberiumCells?.Length == 2 && publishedTiberiumMessage.WorldData.MapObjects?.Length == 1,
+    "Map publish carries Tiberium cells and sources");
 void Deliver(NetworkMessage command) => typeof(NetworkInput)
     .GetMethod("HandleNetworkMessage", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(input, new object[] { Wire(command) });
 Vector3 rallyTarget = new(8.5f, 99, 7.5f);

@@ -95,7 +95,9 @@ public sealed record WorldData(
     int Height,
     byte[] TileMap,
     float[] HeightMap,
-    GameplayMarkerState[]? GameplayMarkers = null);
+    GameplayMarkerState[]? GameplayMarkers = null,
+    TiberiumSeedState[]? TiberiumCells = null,
+    MapObjectState[]? MapObjects = null);
 
 public sealed record NetworkMessage(
     NetworkMessageType Type,

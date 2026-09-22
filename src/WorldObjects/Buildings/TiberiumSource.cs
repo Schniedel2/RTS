@@ -10,8 +10,8 @@ public class TiberiumSource : Building
 {
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
 
-    private const int SpreadRadius = 3;
-    private const double SpreadIntervalSeconds = 2.0;
+    internal const int SpreadRadius = 3;
+    internal const double SpreadIntervalSeconds = 2.0;
     private double _nextSpreadTime;
     private Point? _pendingSeedCell;
 
@@ -33,6 +33,12 @@ public class TiberiumSource : Building
     {
         base.UpdateHost(gameTime);
         double now = gameTime.TotalGameTime.TotalSeconds;
+        if (Globals.World.IsEditorActive)
+        {
+            _pendingSeedCell = null;
+            _nextSpreadTime = now + SpreadIntervalSeconds;
+            return;
+        }
         if (now < _nextSpreadTime || _pendingSeedCell is not null)
             return;
 

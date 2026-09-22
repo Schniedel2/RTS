@@ -98,7 +98,7 @@ public class GDIBulldozer : Car
         new(UnitActionType.Build, "Build Reaktor", 1, 4, "Reaktor"),
         new(UnitActionType.Build, "Build Base", 1, 4, "GDI-Base"),
         new(UnitActionType.Build, "Build Barracks", 2, 4, "GDI-Barracks"),
-        new(UnitActionType.Build, "Build Radio Tower", 2, 4, "RadioTower"),
+        new(UnitActionType.Build, "Build Communications Tower", 2, 4, "CommunicationsTower"),
         new(UnitActionType.Build, "Build Helipad", 2, 4, "Helipad"),
         new(UnitActionType.BuildConstruction, "Build construction site", 0, 4),
         new(UnitActionType.LevelAndConcrete, "Level & concrete", 1, 4),

@@ -111,6 +111,17 @@ public class UnitHandler
         return _units.FirstOrDefault(unit => unit.UnitId == unitId);
     }
 
+    public void RemoveMapObjects<T>() where T : Unit
+    {
+        foreach (T unit in _units.OfType<T>().ToArray())
+            RemoveImmediately(unit);
+    }
+
+    public void RemoveMapObject(Unit unit)
+    {
+        if (_units.Contains(unit)) RemoveImmediately(unit);
+    }
+
     public MobileUnit? FindMobileUnitById(Guid unitId)
     {
         return _units.FirstOrDefault(unit => unit.UnitId == unitId) as MobileUnit;
