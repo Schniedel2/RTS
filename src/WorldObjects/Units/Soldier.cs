@@ -60,13 +60,14 @@ public class Soldier : MobileUnit
     private bool _isDying;
     private float _deathElapsed;
     private float _deathAnimationDuration = 0.65f;
-    private const float DeathSinkDuration = 0.65f;
+    private const float DeathRestDuration = 1.25f;
+    private const float DeathSinkDuration = 0.85f;
     private const float DeathSinkDepth = 1.8f;
 
     public override bool IsDying => _isDying;
     public override bool HasDeathExplosion => false;
     public override bool IsReadyForRemoval =>
-        _isDying && _deathElapsed >= _deathAnimationDuration + DeathSinkDuration;
+        _isDying && _deathElapsed >= _deathAnimationDuration + DeathRestDuration + DeathSinkDuration;
 
     public Soldier(
         Vector3 position,
@@ -316,7 +317,10 @@ public class Soldier : MobileUnit
     public override void Draw(Effect effect)
     {
         float sinkProgress = _isDying
-            ? MathHelper.Clamp((_deathElapsed - _deathAnimationDuration) / DeathSinkDuration, 0.0f, 1.0f)
+            ? MathHelper.Clamp(
+                (_deathElapsed - _deathAnimationDuration - DeathRestDuration) / DeathSinkDuration,
+                0.0f,
+                1.0f)
             : 0.0f;
         Matrix deathSink = Matrix.CreateTranslation(Vector3.Down * (DeathSinkDepth * sinkProgress));
 
@@ -327,7 +331,17 @@ public class Soldier : MobileUnit
             "pivot:barrel",
             MathHelper.ToRadians(_minigunRotationDegrees));
 
-        _meshSet?.Draw(effect, GetVisualWorldMatrix() * deathSink, GetMeshAnimationPose());
+        EffectParameter? opacity = effect.Parameters["Opacity"];
+        opacity?.SetValue(1.0f - sinkProgress);
+        try
+        {
+            _meshSet?.Draw(effect, GetVisualWorldMatrix() * deathSink, GetMeshAnimationPose());
+        }
+        finally
+        {
+            // Unit.fx is shared by every object drawn afterwards.
+            opacity?.SetValue(1.0f);
+        }
     }
 
     protected override AnimationPose GetMeshAnimationPose() => _animationPlayer.EvaluatePose();
