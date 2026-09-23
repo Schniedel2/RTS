@@ -13,7 +13,7 @@ public class Tank : MobileUnit
     // rotating hull does not automatically drag the turret around in world space.
     public float ReverseSpeed { get; set; } = 1.4f;
     public float ReverseWithoutTurningDistance { get; set; } = 6.0f;
-    public float TurnInPlaceDotThreshold { get; set; } = 0.5f;
+    public float TurnInPlaceDotThreshold { get; set; } = 0.995f;
     /// <summary>Current local barrel displacement, used for visual recoil.</summary>
     public Vector3 BarrelRecoilOffset { get; private set; }
     public Vector3 BarrelRecoilOnShot { get; set; } = new(0.0f, 0.0f, 0.3f);
@@ -45,6 +45,7 @@ public class Tank : MobileUnit
         Behavior = UnitBehavior.Passive;
         MoveSpeed = 3.0f;
         RotationSpeed = 1.0f;
+        SightRange = 24;
         HeadingSnapAngle = 0.0f;
         CanOnlyMoveForward = true;
         CanTurnInPlace = true;
@@ -87,23 +88,25 @@ public class Tank : MobileUnit
         float directionDot = Vector3.Dot(forward, desiredDirection);
         float deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
 
-        // A nearby waypoint directly behind the tank is most naturally reached
-        // in reverse.  Do not rotate the hull for this small correction.
+        // Reverse towards nearby rear waypoints, steering the rear towards
+        // the target as well. Straight reversing cannot reach offset targets.
         bool canReverse = directionDot < -0.35f &&
             distanceToTarget <= ReverseWithoutTurningDistance;
         if (canReverse)
         {
+            forward = TurnTowards(-desiredDirection, gameTime);
+            if (Vector3.Dot(-forward, desiredDirection) < TurnInPlaceDotThreshold)
+                return;
             LogMovementMode("reverse", distanceToTarget, directionDot);
-            TryMoveTo(Position - forward * ReverseSpeed * deltaTime);
+            TryMoveTo(Position - forward * Math.Min(distanceToTarget, ReverseSpeed * deltaTime));
             return;
         }
 
         // Start driving only once the hull is reasonably aligned.  The former
         // threshold allowed nearly sideways movement, which let the tank orbit
         // its first waypoint instead of converging on it.
-        bool needsTurnInPlace = directionDot < TurnInPlaceDotThreshold;
         forward = TurnTowards(desiredDirection, gameTime);
-        if (needsTurnInPlace)
+        if (Vector3.Dot(forward, desiredDirection) < TurnInPlaceDotThreshold)
         {
             LogMovementMode("turn-in-place", distanceToTarget, directionDot);
             return;
@@ -114,7 +117,7 @@ public class Tank : MobileUnit
         float alignment = MathF.Max(0.0f, Vector3.Dot(forward, desiredDirection));
         float speed = MoveSpeed * MathHelper.Lerp(0.45f, 1.0f, alignment);
         LogMovementMode("forward", distanceToTarget, alignment);
-        TryMoveTo(Position + forward * speed * deltaTime);
+        TryMoveTo(Position + forward * Math.Min(distanceToTarget, speed * deltaTime));
     }
 
     public override void Update(GameTime gameTime)

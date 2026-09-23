@@ -8,13 +8,25 @@ namespace RTS;
 
 public class Helipad : Building
 {
+    public bool DeliveryPending { get; internal set; }
+    public bool IsReservedForDelivery => DeliveryPending || ProductionQueue.ActiveOrder is not null;
+    public bool CanOrderHelicopter(GameWorld world) => IsCompleted && !IsDying &&
+        !IsReservedForDelivery && !world.Units.Units.OfType<Helicopter>().Any(h =>
+            !h.IsDying && h.AssignedHelipadId == UnitId);
+
+    public override bool TryGetProductionDuration(string unitTypeId, out float durationSeconds)
+    {
+        durationSeconds = string.Equals(unitTypeId, "helicopter", StringComparison.OrdinalIgnoreCase) ? 10f : 0f;
+        return durationSeconds > 0;
+    }
+
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
     /// <summary>Center/top of this model's landing slab; optional pivot:landing overrides it.</summary>
     public Vector3 LandingLocalPosition { get; set; } = new(2.4f, 0.1f, -0.8f);
 
-    public bool CanAccept(GameWorld world, Helicopter helicopter) => IsCompleted && !IsDying &&
+    public bool CanAccept(GameWorld world, Helicopter helicopter) => IsCompleted && !IsDying && !IsReservedForDelivery &&
         helicopter.IsAlly(this) && !world.Units.Units.OfType<Helicopter>().Any(other =>
-            other != helicopter && other.AssignedHelipadId == UnitId);
+            other != helicopter && !other.IsDying && other.AssignedHelipadId == UnitId);
 
     public Vector3 GetLandingSurfacePosition()
     {
@@ -35,6 +47,7 @@ public class Helipad : Building
     {
         SetMesh(meshName, deriveDimensions: true);
 
+        ProductionQueue.Capacity = 1;
         TotalBuildingPointsNeeded = 1500;
         HitPoints = MaxHitPoints = 1500;
     }
@@ -55,6 +68,7 @@ public class Helipad : Building
         {
             actions = 
             [
+                new(UnitActionType.TrainUnit, "Buy helicopter (0 resources, 10s)", 6, 1, "helicopter"),
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1),
                 new(UnitActionType.Stop, "Destroy", 7, 1)
             ];

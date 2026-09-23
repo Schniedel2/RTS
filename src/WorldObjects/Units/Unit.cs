@@ -60,7 +60,7 @@ public abstract class Unit : WorldObject
     /// <summary>Current owner. Null represents a neutral/capturable world unit.</summary>
     public Guid? ArmyId { get; private set; }
     /// <summary>Fog-of-war reveal radius in GameGrid cells.</summary>
-    protected int SightRange { get; set; } = 8;
+    protected int SightRange { get; set; } = 16;
     public bool IsEmbarked { get; private set; }
     public Guid? ContainerUnitId { get; private set; }
     /// <summary>Optional seats/crew/garrison carried by this unit.</summary>

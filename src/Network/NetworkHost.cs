@@ -324,6 +324,8 @@ public sealed class NetworkHost
             return null;
         }
 
+        if (building is Helipad pad && !pad.CanOrderHelicopter(_world)) return null;
+
         Guid orderId = request.ProductionOrderId ?? Guid.NewGuid();
         Guid requestedByPlayerId = request.PlayerId ?? request.SenderId;
         if (!building.TryQueueProduction(
@@ -483,6 +485,18 @@ public sealed class NetworkHost
             if (!building.UpdateProduction(elapsedSeconds, out ProductionOrder? completedOrder) ||
                 completedOrder is null)
             {
+                continue;
+            }
+
+            if (building is Helipad pad)
+            {
+                pad.DeliveryPending = true;
+                Vector3 landing = pad.GetLandingSurfacePosition();
+                NetworkMessage delivery = NetworkCommands.CreateProducedUnitCommand(
+                    _networkHandler.LocalPeerId, building, completedOrder,
+                    landing + Vector3.Up * 30f, landing);
+                _networkHandler.EnqueueLocalMessage(delivery);
+                _ = _networkHandler.BroadcastAsync(delivery, CancellationToken.None);
                 continue;
             }
 

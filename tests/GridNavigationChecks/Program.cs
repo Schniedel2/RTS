@@ -921,4 +921,31 @@ float tiltBeforeStop = Math.Abs(heli.VisualPitchDegrees) + Math.Abs(heli.VisualR
 heli.Stop();
 for (int frame = 0; frame < 120; frame++) heli.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(1.0 / 60)));
 Check(Math.Abs(heli.VisualPitchDegrees) + Math.Abs(heli.VisualRollDegrees) < tiltBeforeStop, "Hover damping settles flight tilt");
+// Exercise the actual tank steering loop at different frame rates, including
+// offset rear targets which straight reversing could never reach.
+foreach (float step in new[] { 1f / 60, 0.1f, 0.25f })
+foreach (Point destination in new[] { new Point(22, 18), new Point(22, 23), new Point(20, 19) })
+{
+    var steeringGrid = new GameGrid(48, 48, 1);
+    steeringGrid.BindTerrain(Terrain(48, 48));
+    Globals.World = World(steeringGrid);
+    Tank tank = Empty<Tank>();
+    Field(tank, typeof(Unit), "<Width>k__BackingField", 2);
+    Field(tank, typeof(Unit), "<Length>k__BackingField", 4);
+    Field(tank, typeof(MobileUnit), "<MovementProfile>k__BackingField", new GroundMovementProfile());
+    Field(tank, typeof(MobileUnit), "_plannedPath", new List<Point> { destination });
+    tank.SetTransform(Matrix.CreateTranslation(20.5f, 0, 20.5f));
+    tank.MoveSpeed = 3;
+    tank.RotationSpeed = 1;
+    tank.WaypointArrivalRadius = 0.2f;
+    tank.ReverseSpeed = 1.4f;
+    tank.ReverseWithoutTurningDistance = 6;
+    tank.TurnInPlaceDotThreshold = 0.995f;
+    var move = typeof(Tank).GetMethod("MoveAlongPath", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    for (int frame = 0; frame < 20 / step && tank.PlannedPath.Count > 0; frame++)
+        move.Invoke(tank, new object[] { new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(step)) });
+    Check(tank.PlannedPath.Count == 0, $"Tank reaches offset waypoint {destination} at timestep {step}");
+    Check(Vector3.Distance(tank.Position, new Vector3(destination.X + 0.5f, 0, destination.Y + 0.5f)) <= 0.2f,
+        "Tank arrives without overshooting or oscillating");
+}
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");

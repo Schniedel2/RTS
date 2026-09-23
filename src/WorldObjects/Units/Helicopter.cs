@@ -129,6 +129,24 @@ public class Helicopter : MobileUnit
         SnapRenderPose(position, _yaw);
     }
 
+    internal void InitializeDelivery(GameWorld world, Helipad pad, Vector3 spawnPosition)
+    {
+        Vector3 surface = pad.GetLandingSurfacePosition();
+        CalculateLandingPose(world, new(surface.X, surface.Z), surface.Y, out Vector3 landing, out Quaternion attitude);
+        AssignedHelipadId = pad.UnitId;
+        _landing = landing;
+        _landingSurfaceHeight = surface.Y;
+        _landingAttitude = attitude;
+        _destination = null;
+        _returning = true;
+        FlightState = HelicopterFlightState.Landing;
+        Occupancy!.EntryEnabled = false;
+        MainRotorSpeed = MainRotorSpeedMax;
+        RearRotorSpeed = RearRotorSpeedMax;
+        SetPosition(spawnPosition);
+        SnapRenderPose(spawnPosition, _yaw);
+    }
+
     public bool InitializeOnGround(GameWorld world)
     {
         Vector3 position = Position;

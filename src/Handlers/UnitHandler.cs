@@ -73,7 +73,13 @@ public class UnitHandler
             return null;
 
         unit.SetArmy(armyId);
-        unit.BeginLeavingBuilding(sourceBuildingId, exitPosition);
+        if (unit is Helicopter helicopter && FindById(sourceBuildingId) is Helipad pad)
+        {
+            helicopter.InitializeDelivery(Globals.World, pad, spawnPosition);
+            pad.DeliveryPending = false;
+        }
+        else
+            unit.BeginLeavingBuilding(sourceBuildingId, exitPosition);
         _units.Add(unit);
         if (unit.Occupancy?.Slots.Any(slot => slot.Role == OccupantRole.Driver) == true &&
             creatorPlayerId != Guid.Empty &&
