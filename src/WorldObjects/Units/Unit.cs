@@ -116,6 +116,17 @@ public abstract class Unit : WorldObject
         new(UnitActionType.Goto, "Goto", 0, 0)
     ];
 
+    public virtual string GetDebugCommandText()
+    {
+        if (IsDying) return "Dying";
+        if (IsEmbarked) return $"Embarked in {ContainerUnitId?.ToString("N")[..8]}";
+        if (AttackTargetId is Guid attackId) return $"Attack unit {attackId.ToString("N")[..8]}";
+        if (AttackGroundTarget is Vector3 ground) return $"Attack ground ({ground.X:0.0}, {ground.Z:0.0})";
+        if (FollowUnitId is Guid followId) return $"Follow {followId.ToString("N")[..8]}";
+        if (CurrentCommand is GotoCommand command) return $"Goto ({command.Target.X:0.0}, {command.Target.Y:0.0})";
+        return "Idle";
+    }
+
     public virtual int GetSightRange()
     {
         return SightRange;

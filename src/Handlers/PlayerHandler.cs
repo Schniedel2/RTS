@@ -108,6 +108,10 @@ public class PlayerHandler
             case UnitActionType.Scouting:
                 _scouting.Start(_selectedUnits);
                 return false;
+            case UnitActionType.ReturnToStorage:
+                foreach (Harvester harvester in _selectedUnits.OfType<Harvester>())
+                    _ = Globals.Game.NetworkClient.RequestHarvesterReturnAsync(harvester.UnitId);
+                return false;
             case UnitActionType.TrainUnit:
                 {
                     Building? building = _selectedUnits.Count == 1
@@ -593,8 +597,19 @@ public class PlayerHandler
             {
                 Building? preview = BuildingFactory.SpawnBuilding(action.TargetObjectName, targetPosition,
                     targetAngleY, Guid.Empty, Guid.Empty);
-                if (preview is null || !preview.EvaluatePlacement(_map, targetPosition, targetAngleY).IsAllowed)
+                if (preview is null)
                     return;
+                BuildingPlacement placement = preview.EvaluatePlacement(_map, targetPosition, targetAngleY);
+                if (!placement.IsAllowed)
+                {
+                    if (TryGetMovablePlacementBlockers(placement, out MobileUnit[] blockers))
+                    {
+                        _scouting.Stop(blockers);
+                        foreach (MobileUnit blocker in blockers)
+                            _ = Globals.Game.NetworkClient.RequestMoveAwayAsync(blocker.UnitId, targetPosition);
+                    }
+                    return;
+                }
                 Guid buildingId = Guid.NewGuid();
                 Globals.Game.NetworkClient.RequestBuildAsync(action.TargetObjectName, targetPosition, targetAngleY, buildingId);
                 Globals.Game.NetworkClient.RequestBuildConstructionAsync(_selectedUnits, buildingId);
@@ -615,6 +630,17 @@ public class PlayerHandler
                 Globals.Game.NetworkClient.RequestToolActionAsync(action, _toolShape, _toolSize, targetPosition, _currentTerrainTile);
             }
         }
+
+        private bool TryGetMovablePlacementBlockers(
+            BuildingPlacement placement,
+            out MobileUnit[] blockers) =>
+            placement.TryGetMovableBlockers(_map.GameGrid,
+                mobile => Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, mobile.ArmyId),
+                out blockers);
+
+        private bool IsMovablePlacementBlocker(PlacementCell cell) =>
+            BuildingPlacement.IsMovableBlocker(cell, _map.GameGrid,
+                mobile => Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, mobile.ArmyId));
 
         private void RequestBuildConstruction(Building constructionSite)
         {
@@ -794,7 +820,9 @@ public class PlayerHandler
                         foreach (PlacementCell cell in _buildPlacementPreview.Cells)
                         {
                             Color tint = cell.Issues != PlacementIssue.None
-                                ? new Color(255, 40, 40, 150)
+                                ? IsMovablePlacementBlocker(cell)
+                                    ? new Color(255, 150, 30, 150)
+                                    : new Color(255, 40, 40, 150)
                                 : cell.IsClearance
                                     ? new Color(50, 150, 255, 110)
                                     : new Color(40, 220, 80, 100);
@@ -829,9 +857,10 @@ public class PlayerHandler
         if (ActiveAction?.Type == UnitActionType.Build && _buildPlacementPreview is BuildingPlacement placement)
         {
             Point mouse = Mouse.GetState().Position;
-            string status = placement.IsAllowed ? "Build here" : "Cannot build here";
+            bool canClear = TryGetMovablePlacementBlockers(placement, out _);
+            string status = placement.IsAllowed ? "Build here" : canClear ? "Click to clear area" : "Cannot build here";
             RenderHelper.DrawTextCentered(spriteBatch, Globals._debugFont, status,
-                new Vector2(mouse.X, mouse.Y + 28), placement.IsAllowed ? Color.LimeGreen : Color.Red);
+                new Vector2(mouse.X, mouse.Y + 28), placement.IsAllowed ? Color.LimeGreen : canClear ? Color.Orange : Color.Red);
         }
         foreach (Unit unit in _selectedUnits)
         {
@@ -846,6 +875,11 @@ public class PlayerHandler
                 Color.Transparent,
                 Color.White,
                 borderThickness: 2);
+            if (Globals.Debug_ShowUnitCommands)
+                RenderHelper.DrawTextCentered(spriteBatch, Globals._debugFont,
+                    unit.GetDebugCommandText(),
+                    new Vector2(unitBounds.Center.X, unitBounds.Top - 12),
+                    Color.Yellow);
         }
 
         foreach (Unit unit in _selectedUnits)

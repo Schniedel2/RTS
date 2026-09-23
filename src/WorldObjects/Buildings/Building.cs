@@ -40,6 +40,14 @@ public class Building : Unit
     public float CrewProductionBonusPerOccupant { get; set; }
     public override string StateTypeId => "building-state";
 
+    public override string GetDebugCommandText()
+    {
+        if (!IsCompleted) return $"Constructing {ConstructionPercentage * 100.0f:0}%";
+        if (ProductionQueue.ActiveOrder is ProductionOrder order)
+            return $"Producing {order.UnitTypeId} {order.Progress * 100.0f:0}%";
+        return base.GetDebugCommandText();
+    }
+
     public Building(
         Vector3 position,
         Guid unitId

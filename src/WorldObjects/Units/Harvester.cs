@@ -16,15 +16,19 @@ public enum HarvestPhase
 
 public sealed class Harvester : Car
 {
-    public const float DefaultCargoCapacity = 100.0f;
+    public const float DefaultCargoCapacity = 300.0f;
     public override bool CanFireWeapon => false;
     public float CargoCapacity { get; set; } = DefaultCargoCapacity;
     public float CargoAmount { get; private set; }
     public HarvestPhase HarvestPhase { get; private set; }
 
+    public override string GetDebugCommandText() =>
+        $"Harvest={HarvestPhase} cargo={CargoAmount:0.0}/{CargoCapacity:0.0} | {base.GetDebugCommandText()}";
+
     public override IReadOnlyList<UnitAction> Actions =>
     [
         new(UnitActionType.Harvest, "Harvest", 3, 1),
+        new(UnitActionType.ReturnToStorage, "Return & unload", 4, 1),
         new(UnitActionType.MoveAway, "AI: Move away", 4, 1),
         new(UnitActionType.Goto, "Goto", 0, 1),
         new(UnitActionType.Stop, "Stop", 7, 1)

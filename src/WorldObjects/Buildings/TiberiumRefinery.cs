@@ -8,7 +8,7 @@ namespace RTS;
 
 public class TiberiumRefinery : Building
 {
-    public override float ResourceCapacity => 2000.0f;
+    public override float ResourceCapacity => 5000.0f;
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
 
     public TiberiumRefinery(

@@ -15,6 +15,33 @@ public sealed record BuildingPlacement(IReadOnlyList<PlacementCell> Cells, float
 {
     public bool IsAllowed => Cells.Count > 0 && Cells.All(cell => cell.Issues == PlacementIssue.None);
 
+    public bool TryGetMovableBlockers(
+        GameGrid grid,
+        Func<MobileUnit, bool> canMove,
+        out MobileUnit[] blockers)
+    {
+        HashSet<MobileUnit> result = [];
+        foreach (PlacementCell cell in Cells)
+        {
+            if (cell.Issues == PlacementIssue.None) continue;
+            if (!IsMovableBlocker(cell, grid, canMove))
+            {
+                blockers = [];
+                return false;
+            }
+            result.Add((MobileUnit)grid.GetOccupant(cell.Cell)!);
+        }
+        blockers = result.ToArray();
+        return blockers.Length > 0;
+    }
+
+    public static bool IsMovableBlocker(
+        PlacementCell cell,
+        GameGrid grid,
+        Func<MobileUnit, bool> canMove) =>
+        cell.Issues == PlacementIssue.Occupied &&
+        grid.GetOccupant(cell.Cell) is MobileUnit mobile && canMove(mobile);
+
     public static BuildingPlacement Evaluate(GameWorld world, Unit unit, Vector3 position, float rotation, float tolerance)
     {
         if (!float.IsFinite(tolerance) || tolerance < 0)

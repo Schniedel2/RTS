@@ -67,4 +67,5 @@ public static class Globals
     public static bool Debug_ShowMarkers = false;
     public static bool Debug_ShowNetworkMessages = false;
     public static bool Debug_ShowPathfindingMessages = false;
+    public static bool Debug_ShowUnitCommands = false;
 }

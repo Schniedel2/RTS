@@ -38,7 +38,7 @@ public static class BuildingFactory
                 building = new Helipad(position, unitId);
                 break;
             case "silo":
-                building = new Silo(position, unitId);
+                building = new Silo(position, unitId, "silo-1");
                 break;
             case "tiberium-refinery":
                 building = new TiberiumRefinery(position, unitId, "tiberium-refinery-1");

@@ -94,6 +94,20 @@ public class MobileUnit : Unit
     private Vector2? _lastFollowApproachTarget;
     private bool _followPathActive;
 
+    public override string GetDebugCommandText()
+    {
+        if (IsLeavingBuilding)
+            return $"Leaving building -> ({SpawnExitPosition.X:0.0}, {SpawnExitPosition.Z:0.0})";
+        if (PendingEnterContainerId is Guid containerId)
+            return $"Enter {containerId.ToString("N")[..8]} | path={_plannedPath.Count}";
+        if (IsBuilding && TargetBuildingId is Guid buildingId)
+            return $"Construct {buildingId.ToString("N")[..8]}";
+        if (CurrentCommand is GotoCommand command)
+            return $"Goto ({command.Target.X:0.0}, {command.Target.Y:0.0}) | path={_plannedPath.Count} queue={_commandQueue.Count}";
+        string commandText = base.GetDebugCommandText();
+        return _commandQueue.Count > 0 ? $"{commandText} | queue={_commandQueue.Count}" : commandText;
+    }
+
     public MobileUnit(
         Vector3 position,
         int length,

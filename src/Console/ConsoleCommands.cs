@@ -787,6 +787,7 @@ public class ConsoleCommands
             _console.Print($"Markers: {Globals.Debug_ShowMarkers}");
             _console.Print($"Network, networkmessages: {Globals.Debug_ShowNetworkMessages}");
             _console.Print($"Path, pathfinding, pathmessages: {Globals.Debug_ShowPathfindingMessages}");
+            _console.Print($"Unitcommands, commands: {Globals.Debug_ShowUnitCommands}");
             return;
         }
 
@@ -832,6 +833,11 @@ public class ConsoleCommands
             case "pathmessages":
                 Globals.Debug_ShowPathfindingMessages = enable;
                 _console.Print($"Pathfinding debug {(enable ? "enabled" : "disabled")}.");
+                break;
+            case "unitcommands":
+            case "commands":
+                Globals.Debug_ShowUnitCommands = enable;
+                _console.Print($"Unit command debug {(enable ? "enabled" : "disabled")}.");
                 break;
             default:
                 _console.Print($"Unknown flag: {name}");

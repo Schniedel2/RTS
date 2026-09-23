@@ -37,6 +37,8 @@ public sealed class NetworkHost
         public Guid? SiloId { get; set; }
         public bool MoveIssued { get; set; }
         public float UnloadElapsed { get; set; }
+        public bool ResumeAfterUnload { get; set; } = true;
+        public Vector3? StorageApproach { get; set; }
     }
     private const int HarvestSearchRadius = 24;
     private const float HarvestRatePerSecond = 18.0f;
@@ -165,6 +167,7 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.HelicopterOrderRequest &&
             message.Type != NetworkMessageType.HarvestRequest &&
             message.Type != NetworkMessageType.MoveAwayRequest &&
+            message.Type != NetworkMessageType.HarvesterReturnRequest &&
             message.Type != NetworkMessageType.EnterUnitRequest &&
             message.Type != NetworkMessageType.LeaveContainerRequest &&
             message.Type != NetworkMessageType.NotifyUnitsSelected &&
@@ -253,6 +256,7 @@ public sealed class NetworkHost
                     NetworkMessageType.HelicopterOrderRequest => TryCreateHelicopterOrder(request),
                     NetworkMessageType.HarvestRequest => TryCreateHarvestCommand(request),
                     NetworkMessageType.MoveAwayRequest => TryCreateMoveAwayCommand(request),
+                    NetworkMessageType.HarvesterReturnRequest => TryCreateHarvesterReturnCommand(request),
                     NetworkMessageType.EnterUnitRequest => TryCreateEnterUnitCommand(request),
                     NetworkMessageType.LeaveContainerRequest => TryCreateLeaveContainerCommand(request),
                     NetworkMessageType.NotifyUnitsSelected => request,
@@ -339,6 +343,25 @@ public sealed class NetworkHost
         harvester.ApplyHarvestState(HarvestPhase.DrivingToField, harvester.CargoAmount);
         _harvestJobs[id] = new HarvestJob(center);
         return CreateHarvestStateCommand(harvester, HarvestPhase.DrivingToField);
+    }
+
+    private NetworkMessage? TryCreateHarvesterReturnCommand(NetworkMessage request)
+    {
+        if (request.UnitId is not Guid id || _world.Units.FindById(id) is not Harvester harvester ||
+            harvester.IsDying || harvester.CargoAmount <= 0.001f ||
+            !Globals.Game.Armies.CanControl(request.SenderId, harvester.ArmyId) ||
+            FindNearestSilo(harvester) is not Building storage)
+            return null;
+
+        harvester.Stop();
+        harvester.ApplyHarvestState(HarvestPhase.ReturningToSilo, harvester.CargoAmount);
+        _harvestJobs[id] = new HarvestJob(_world.GameGrid.ToCell(harvester.Position))
+        {
+            Phase = HarvestPhase.ReturningToSilo,
+            SiloId = storage.UnitId,
+            ResumeAfterUnload = false
+        };
+        return CreateHarvestStateCommand(harvester, HarvestPhase.ReturningToSilo);
     }
 
     private NetworkMessage? TryCreateMoveAwayCommand(NetworkMessage request)
@@ -433,10 +456,21 @@ public sealed class NetworkHost
                 if (silo is null || silo.IsDying || !silo.IsCompleted || silo.ArmyId != harvester.ArmyId ||
                     silo.AvailableResourceCapacity <= 0.001f)
                 {
-                    silo = FindNearestSilo(harvester); job.SiloId = silo?.UnitId; job.MoveIssued = false;
+                    silo = FindNearestSilo(harvester); job.SiloId = silo?.UnitId;
+                    job.MoveIssued = false; job.StorageApproach = null;
                 }
                 if (silo is null) { await EndHarvestAsync(harvester); continue; }
-                Vector3 unload = silo.GetResourceUnloadPosition();
+                if (job.StorageApproach is not Vector3 unload)
+                {
+                    Vector3 preferredUnload = silo.GetResourceUnloadPosition();
+                    if (!ProductionExitResolver.TryResolve(_world, silo, harvester,
+                        harvester.Position, preferredUnload, out unload))
+                    {
+                        await EndHarvestAsync(harvester);
+                        continue;
+                    }
+                    job.StorageApproach = unload;
+                }
                 if (!job.MoveIssued) { job.MoveIssued = await PublishHarvesterGotoAsync(harvester, unload); continue; }
                 if (harvester.CurrentCommand is null)
                 {
@@ -466,9 +500,14 @@ public sealed class NetworkHost
                 await PublishAsync(new(NetworkMessageType.ArmyResourcesCommand, _networkHandler.LocalPeerId,
                     ArmyId: armyId, ResourceAmount: army.Resources));
             }
+            if (!job.ResumeAfterUnload && harvester.CargoAmount <= 0.001f)
+            {
+                await EndHarvestAsync(harvester);
+                continue;
+            }
             job.Phase = harvester.CargoAmount > 0.001f ? HarvestPhase.ReturningToSilo : HarvestPhase.DrivingToField;
             harvester.ApplyHarvestState(job.Phase, harvester.CargoAmount);
-            job.SiloId = null; job.MoveIssued = false;
+            job.SiloId = null; job.MoveIssued = false; job.StorageApproach = null;
             await PublishHarvestStateAsync(harvester, job.Phase);
         }
     }
@@ -492,6 +531,7 @@ public sealed class NetworkHost
     {
         job.Phase = HarvestPhase.ReturningToSilo; job.MoveIssued = false;
         job.SiloId = FindNearestSilo(harvester)?.UnitId;
+        job.StorageApproach = null;
         await PublishHarvestStateAsync(harvester, job.Phase);
     }
 
@@ -795,6 +835,13 @@ public sealed class NetworkHost
             int terrainX = Math.Clamp((int)MathF.Floor(exitPosition.X), 0, _world.Terrain.Width - 1);
             int terrainZ = Math.Clamp((int)MathF.Floor(exitPosition.Z), 0, _world.Terrain.Height - 1);
             exitPosition.Y = _world.Terrain.GetHeight(terrainX, terrainZ);
+
+            MobileUnit? producedShape = UnitFactory.SpawnUnit(completedOrder.UnitTypeId,
+                spawnPosition, 0.0f, Guid.NewGuid(), completedOrder.RequestedByPlayerId);
+            if (producedShape is not null &&
+                ProductionExitResolver.TryResolve(_world, building, producedShape,
+                    spawnPosition, exitPosition, out Vector3 resolvedExit))
+                exitPosition = resolvedExit;
 
             NetworkMessage command = NetworkCommands.CreateProducedUnitCommand(
                 _networkHandler.LocalPeerId,

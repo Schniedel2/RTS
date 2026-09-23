@@ -31,6 +31,10 @@ public sealed class NetworkClient
             _networkHandler.LocalPeerId, UnitId: unitId,
             X: target.X, Y: target.Y, Z: target.Z));
 
+    public Task RequestHarvesterReturnAsync(Guid unitId) =>
+        _networkHandler.SendToHostAsync(new(NetworkMessageType.HarvesterReturnRequest,
+            _networkHandler.LocalPeerId, UnitId: unitId));
+
     public Task RequestMoveAwayAsync(Guid unitId, Vector3 fromPosition) =>
         _networkHandler.SendToHostAsync(new(NetworkMessageType.MoveAwayRequest,
             _networkHandler.LocalPeerId, UnitId: unitId,

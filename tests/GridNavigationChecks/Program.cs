@@ -1026,12 +1026,12 @@ Check(clearanceMesh.SubMeshes.All(part => part.Name != "clearance-region"), "Cle
 Globals.MeshHandler.Meshes["silo-1"] = Globals.MeshHandler.Meshes["barracks-1"];
 Globals.MeshHandler.Meshes["tiberium-refinery-1"] = Globals.MeshHandler.Meshes["barracks-1"];
 var storageSilo = new Silo(Vector3.Zero, Guid.NewGuid());
-Check(Math.Abs(storageSilo.StoreResources(1200) - 1000) < 0.001f &&
+Check(Math.Abs(storageSilo.StoreResources(storageSilo.ResourceCapacity + 200) - storageSilo.ResourceCapacity) < 0.001f &&
     Math.Abs(storageSilo.StoredResources - storageSilo.ResourceCapacity) < 0.001f,
     "Silo accepts resources only up to its capacity");
 var storageReplay = new Silo(Vector3.Zero, storageSilo.UnitId);
 storageReplay.ApplyState(storageSilo.GetState());
-Check(Math.Abs(storageReplay.StoredResources - 1000) < 0.001f,
+Check(Math.Abs(storageReplay.StoredResources - storageReplay.ResourceCapacity) < 0.001f,
     "Silo fill level is included in building network state");
 var refinery = new TiberiumRefinery(Vector3.Zero, Guid.NewGuid());
 refinery.AdvanceConstruction(refinery.TotalBuildingPointsNeeded);
@@ -1041,4 +1041,70 @@ Check(refinery.TryQueueIncludedHarvester(refineryOwner) &&
     "Completed refinery queues its included harvester");
 Check(!refinery.TryQueueIncludedHarvester(refineryOwner),
     "Refinery grants its included harvester only once");
+Globals.MeshHandler.Meshes["harvester-1"] = Globals.MeshHandler.Meshes["barracks-1"];
+var returnHarvester = new Harvester(Vector3.Zero, Guid.NewGuid());
+Check(returnHarvester.Actions.Any(action => action.Type == UnitActionType.ReturnToStorage),
+    "Harvester exposes return and unload action");
+var returnRequest = Wire(new NetworkMessage(NetworkMessageType.HarvesterReturnRequest,
+    Guid.NewGuid(), UnitId: returnHarvester.UnitId));
+Check(returnRequest.Type == NetworkMessageType.HarvesterReturnRequest &&
+    returnRequest.UnitId == returnHarvester.UnitId,
+    "Harvester return request survives network serialization");
+returnHarvester.ReceiveCommand(new GotoCommand(new Vector2(12.5f, 14.5f)));
+string harvesterDebug = returnHarvester.GetDebugCommandText();
+Check(harvesterDebug.Contains("Harvest=Idle") && harvesterDebug.Contains("cargo=") &&
+    harvesterDebug.Contains("Goto (") && harvesterDebug.Contains("path="),
+    "Harvester debug text combines AI phase, cargo and movement command");
+
+var exitTerrain = Terrain(50, 50);
+var exitGrid = new GameGrid(50, 50, 1);
+exitGrid.BindTerrain(exitTerrain);
+var exitWorld = World(exitGrid);
+Field(exitWorld, typeof(GameWorld), "_terrain", exitTerrain);
+Globals.World = exitWorld;
+Building rotatedFactory = Empty<Building>();
+Field(rotatedFactory, typeof(Unit), "<Width>k__BackingField", 8);
+Field(rotatedFactory, typeof(Unit), "<Length>k__BackingField", 6);
+rotatedFactory.SetPosition(new Vector3(25.5f, 0, 25.5f));
+rotatedFactory.SetRotationYDegrees(45);
+Check(exitGrid.TryPlace(rotatedFactory, rotatedFactory.Position, 45), "Rotated production building placed for exit test");
+MobileUnit producedVehicle = Unit(width: 3, length: 4);
+Vector3 blockedExit = rotatedFactory.Position + Vector3.TransformNormal(Vector3.Forward,
+    Matrix.CreateRotationY(MathHelper.ToRadians(45))) * 3.0f;
+Check(!exitGrid.CanPlace(producedVehicle, blockedExit, 45), "Authored exit may overlap rotated building footprint");
+Check(ProductionExitResolver.TryResolve(exitWorld, rotatedFactory, producedVehicle,
+    rotatedFactory.Position, blockedExit, out Vector3 safeExit), "Production exit resolver finds exterior vehicle placement");
+Check(exitGrid.TryMove(producedVehicle, exitGrid.ToCell(safeExit)),
+    "Resolved production exit accepts complete rotated vehicle footprint");
+exitGrid.Remove(producedVehicle);
+producedVehicle.SetPosition(new Vector3(15.5f, 0, 25.5f));
+Check(exitGrid.TryMove(producedVehicle, exitGrid.ToCell(producedVehicle.Position)),
+    "Returning vehicle registered away from storage");
+Check(ProductionExitResolver.TryResolve(exitWorld, rotatedFactory, producedVehicle,
+    producedVehicle.Position, blockedExit, out Vector3 unloadApproach) &&
+    new Pathfinder(exitWorld).TryFindPath(producedVehicle, producedVehicle.MovementProfile,
+        new Vector2(unloadApproach.X, unloadApproach.Z), out _),
+    "Returning vehicle receives reachable unload approach outside rotated storage footprint");
+
+var clearTerrain = Terrain(20, 20);
+var clearGrid = new GameGrid(20, 20, 1);
+clearGrid.BindTerrain(clearTerrain);
+var clearWorld = World(clearGrid);
+Field(clearWorld, typeof(GameWorld), "_terrain", clearTerrain);
+MobileUnit friendlyBlocker = Unit();
+Check(clearGrid.TryMove(friendlyBlocker, new Point(8, 8)), "Friendly placement blocker registered");
+Building clearPreview = Empty<Building>();
+Field(clearPreview, typeof(Unit), "<Width>k__BackingField", 2);
+Field(clearPreview, typeof(Unit), "<Length>k__BackingField", 2);
+BuildingPlacement clearablePlacement = BuildingPlacement.Evaluate(clearWorld, clearPreview,
+    new Vector3(8.5f, 0, 8.5f), 0, 1);
+Check(clearablePlacement.TryGetMovableBlockers(clearGrid, _ => true, out MobileUnit[] clearBlockers) &&
+    clearBlockers.SequenceEqual(new[] { friendlyBlocker }),
+    "Placement occupied only by controllable units is clearable");
+Check(!clearablePlacement.TryGetMovableBlockers(clearGrid, _ => false, out _),
+    "Uncontrolled unit keeps building placement invalid");
+var mixedPlacement = new BuildingPlacement(
+    [new PlacementCell(new Point(8, 8), PlacementIssue.Occupied | PlacementIssue.Blocked, 0, 0)], 0);
+Check(!mixedPlacement.TryGetMovableBlockers(clearGrid, _ => true, out _),
+    "Move away is not offered when placement has additional terrain problems");
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");

@@ -8,7 +8,7 @@ namespace RTS;
 
 public class Silo : Building
 {
-    public override float ResourceCapacity => 1000.0f;
+    public override float ResourceCapacity => 2500.0f;
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
 
     public Silo(
