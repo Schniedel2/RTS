@@ -103,6 +103,8 @@ public class GDIBulldozer : Car
         new(UnitActionType.Build, "Build Communications Tower", 2, 4, "CommunicationsTower"),
         new(UnitActionType.Build, "Build Helipad", 2, 4, "Helipad"),
         new(UnitActionType.Build, "Build Silo", 2, 4, "Silo"),
+        new(UnitActionType.Build, "Build Tiberium Refinery", 3, 4, "Tiberium-Refinery"),
+        new(UnitActionType.Build, "Build Tiberium Refinery", 2, 4, "Tiberium-Refinery"),
         new(UnitActionType.BuildConstruction, "Build construction site", 0, 4),
         new(UnitActionType.LevelAndConcrete, "Level & concrete", 1, 4),
         new(UnitActionType.RemoveConcrete, "Remove concrete", 7, 1),

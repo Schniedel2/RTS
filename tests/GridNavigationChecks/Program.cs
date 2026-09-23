@@ -1022,4 +1022,23 @@ hierarchyRoot.Children.Add(clearancePivot);
 var clearanceMesh = new Mesh("clearance-test", hierarchyRoot);
 Check(clearanceMesh.ClearanceBounds.Count == 1, "Mesh extracts pivot:clearance geometry");
 Check(clearanceMesh.SubMeshes.All(part => part.Name != "clearance-region"), "Clearance helper geometry is not rendered");
+
+Globals.MeshHandler.Meshes["silo-1"] = Globals.MeshHandler.Meshes["barracks-1"];
+Globals.MeshHandler.Meshes["tiberium-refinery-1"] = Globals.MeshHandler.Meshes["barracks-1"];
+var storageSilo = new Silo(Vector3.Zero, Guid.NewGuid());
+Check(Math.Abs(storageSilo.StoreResources(1200) - 1000) < 0.001f &&
+    Math.Abs(storageSilo.StoredResources - storageSilo.ResourceCapacity) < 0.001f,
+    "Silo accepts resources only up to its capacity");
+var storageReplay = new Silo(Vector3.Zero, storageSilo.UnitId);
+storageReplay.ApplyState(storageSilo.GetState());
+Check(Math.Abs(storageReplay.StoredResources - 1000) < 0.001f,
+    "Silo fill level is included in building network state");
+var refinery = new TiberiumRefinery(Vector3.Zero, Guid.NewGuid());
+refinery.AdvanceConstruction(refinery.TotalBuildingPointsNeeded);
+Guid refineryOwner = Guid.NewGuid();
+Check(refinery.TryQueueIncludedHarvester(refineryOwner) &&
+    refinery.ProductionQueue.ActiveOrder?.UnitTypeId == "harvester",
+    "Completed refinery queues its included harvester");
+Check(!refinery.TryQueueIncludedHarvester(refineryOwner),
+    "Refinery grants its included harvester only once");
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");

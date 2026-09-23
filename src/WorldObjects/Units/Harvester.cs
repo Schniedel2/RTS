@@ -58,4 +58,10 @@ public sealed class Harvester : Car
         _meshSet.SetParameter(Mesh.WheelAngle, -MathHelper.ToRadians(WheelRotationDegrees));
         _meshSet.Draw(effect, GetVisualWorldMatrix());
     }
+
+    public override void Draw2D(SpriteBatch spriteBatch, Camera camera, Viewport viewport)
+    {
+        ResourceBarRenderer.Draw(spriteBatch, camera, viewport, this,
+            CargoAmount, CargoCapacity, Color.LimeGreen);
+    }
 }

@@ -12,7 +12,9 @@ public class Building : Unit
     private sealed record BuildingState(
         float ConstructionProgress,
         ProductionQueueState ProductionQueue,
-        RallyPointState? RallyPoint = null);
+        RallyPointState? RallyPoint = null,
+        float StoredResources = 0.0f,
+        bool IncludedUnitGranted = false);
     private readonly BuildingFlag _ownerFlag = new();
 
     public float ConstructionProgress { get; private set; }
@@ -30,6 +32,10 @@ public class Building : Unit
     /// <summary>Draw a local cloth flag when the building mesh exposes <c>pivot:flag</c>.</summary>
     public bool ShowOwnerFlag { get; set; } = true;
     public ProductionQueue ProductionQueue { get; } = new();
+    public virtual float ResourceCapacity => 0.0f;
+    public float StoredResources { get; private set; }
+    public float AvailableResourceCapacity => Math.Max(0.0f, ResourceCapacity - StoredResources);
+    public bool IncludedUnitGranted { get; protected set; }
     /// <summary>Optional production bonus for each embarked Crew unit (0.25 = +25%).</summary>
     public float CrewProductionBonusPerOccupant { get; set; }
     public override string StateTypeId => "building-state";
@@ -112,6 +118,23 @@ public class Building : Unit
     public bool TryGetProductionExitPosition(out Vector3 position) =>
         TryGetPivotPosition("pivot:exit", out position);
 
+    public virtual Vector3 GetResourceUnloadPosition()
+    {
+        if (TryGetAnimatedPivotWorldTransform("pivot:unload", out Matrix pivot))
+            return pivot.Translation;
+        TryGetEntryWorldPosition(out Vector3 fallback);
+        return fallback;
+    }
+
+    public float StoreResources(float amount)
+    {
+        float accepted = Math.Min(Math.Max(0.0f, amount), AvailableResourceCapacity);
+        if (accepted <= 0.0f) return 0.0f;
+        StoredResources += accepted;
+        MarkStateDirty();
+        return accepted;
+    }
+
     private bool TryGetPivotPosition(string pivotName, out Vector3 position)
     {
         if (_meshSet?.TryGetPivotWorldPosition(pivotName, GetWorldMatrix(), out position) == true)
@@ -121,7 +144,7 @@ public class Building : Unit
         return false;
     }
 
-    private void MarkStateDirty()
+    protected void MarkStateDirty()
     {
         StateRevision++;
         NetworkStateDirty = true;
@@ -170,7 +193,8 @@ public class Building : Unit
     public override UnitState GetState()
     {
         byte[] payload = JsonSerializer.SerializeToUtf8Bytes(
-            new BuildingState(ConstructionProgress, ProductionQueue.GetState(), GetRallyPointState()));
+            new BuildingState(ConstructionProgress, ProductionQueue.GetState(), GetRallyPointState(),
+                StoredResources, IncludedUnitGranted));
         return new UnitState(
             UnitId,
             StateRevision,
@@ -200,6 +224,8 @@ public class Building : Unit
         ProductionQueue.ApplyState(payload.ProductionQueue);
         if (payload.RallyPoint is RallyPointState rallyPoint)
             ApplyRallyPointState(rallyPoint);
+        StoredResources = Math.Clamp(payload.StoredResources, 0.0f, ResourceCapacity);
+        IncludedUnitGranted = payload.IncludedUnitGranted;
         StateRevision = state.Revision;
         NetworkStateDirty = false;
     }

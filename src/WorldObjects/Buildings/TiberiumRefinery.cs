@@ -6,23 +6,24 @@ using System.Linq;
 
 namespace RTS;
 
-public class Silo : Building
+public class TiberiumRefinery : Building
 {
-    public override float ResourceCapacity => 1000.0f;
+    public override float ResourceCapacity => 2000.0f;
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
 
-    public Silo(
+    public TiberiumRefinery(
         Vector3 position,
         Guid unitId,
-        string meshName = "silo-1"
+        string meshName = "tiberium-refinery-1"
         ) : base(
             position,
             unitId)
     {
         SetMesh(meshName, deriveDimensions: true);
 
-        TotalBuildingPointsNeeded = 1500;
-        HitPoints = MaxHitPoints = 1500;
+        ProductionQueue.Capacity = 1;
+        TotalBuildingPointsNeeded = 4500;
+        HitPoints = MaxHitPoints = 2500;
     }
 
     public override void Draw(Effect effect)
@@ -36,6 +37,17 @@ public class Silo : Building
         if (IsCompleted)
             ResourceBarRenderer.Draw(spriteBatch, camera, viewport, this,
                 StoredResources, ResourceCapacity, Color.LimeGreen);
+    }
+
+    public bool TryQueueIncludedHarvester(Guid ownerPlayerId)
+    {
+        if (!IsCompleted || IncludedUnitGranted || ProductionQueue.ActiveOrder is not null || ownerPlayerId == Guid.Empty)
+            return false;
+        if (!TryQueueProduction(Guid.NewGuid(), "harvester", ownerPlayerId, 0.1f))
+            return false;
+        IncludedUnitGranted = true;
+        MarkStateDirty();
+        return true;
     }
 
     public IReadOnlyList<UnitAction> GetUnitActions()

@@ -51,6 +51,7 @@ public class MeshHandler
         Meshes["antenna-1"] = BBModelLoader.Load(Path.Combine(directory, "buildings/antenna-1.bbmodel"), Color.White);
         Meshes["helipad-1"] = BBModelLoader.Load(Path.Combine(directory, "buildings/helipad-1.bbmodel"), Color.White);
         Meshes["silo-1"] = BBModelLoader.Load(Path.Combine(directory, "buildings/silo-1.bbmodel"), Color.White);
+        Meshes["tiberium-refinery-1"] = BBModelLoader.Load(Path.Combine(directory, "buildings/tiberium-refinery-1.bbmodel"), Color.White);
         
         //  environment
         Meshes["tiberium-1"] = BBModelLoader.Load(Path.Combine(directory, "environment/tiberium-1.bbmodel"), Color.White);

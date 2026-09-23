@@ -349,7 +349,7 @@ public class UnitHandler
     public void Draw2D(SpriteBatch spriteBatch, Camera camera, Viewport viewport)
     {
         foreach (Unit unit in _units)
-            if ((unit is Building or Helicopter) && Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
+            if ((unit is Building or Helicopter or Harvester) && Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
                 unit.Draw2D(spriteBatch, camera, viewport);
     }
 

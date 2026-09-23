@@ -429,13 +429,14 @@ public sealed class NetworkHost
             }
             if (job.Phase == HarvestPhase.ReturningToSilo)
             {
-                Silo? silo = job.SiloId is Guid siloId ? _world.Units.FindById(siloId) as Silo : null;
-                if (silo is null || silo.IsDying || !silo.IsCompleted || silo.ArmyId != harvester.ArmyId)
+                Building? silo = job.SiloId is Guid siloId ? _world.Units.FindById(siloId) as Building : null;
+                if (silo is null || silo.IsDying || !silo.IsCompleted || silo.ArmyId != harvester.ArmyId ||
+                    silo.AvailableResourceCapacity <= 0.001f)
                 {
                     silo = FindNearestSilo(harvester); job.SiloId = silo?.UnitId; job.MoveIssued = false;
                 }
                 if (silo is null) { await EndHarvestAsync(harvester); continue; }
-                Vector3 unload = silo.GetUnloadPosition();
+                Vector3 unload = silo.GetResourceUnloadPosition();
                 if (!job.MoveIssued) { job.MoveIssued = await PublishHarvesterGotoAsync(harvester, unload); continue; }
                 if (harvester.CurrentCommand is null)
                 {
@@ -450,14 +451,24 @@ public sealed class NetworkHost
             }
             job.UnloadElapsed += elapsed;
             if (job.UnloadElapsed < UnloadSeconds) continue;
+            Building? storage = job.SiloId is Guid storageId ? _world.Units.FindById(storageId) as Building : null;
+            if (storage is null || storage.ArmyId != harvester.ArmyId || !storage.IsCompleted)
+            {
+                await BeginReturnAsync(harvester, job);
+                continue;
+            }
+            float accepted = storage.StoreResources(harvester.CargoAmount);
+            harvester.ApplyHarvestState(HarvestPhase.Unloading, harvester.CargoAmount - accepted);
             if (harvester.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
             {
-                army.Resources += (int)MathF.Round(harvester.CargoAmount);
+                army.Resources = (int)MathF.Floor(_world.Units.Units.OfType<Building>()
+                    .Where(building => building.ArmyId == armyId).Sum(building => building.StoredResources));
                 await PublishAsync(new(NetworkMessageType.ArmyResourcesCommand, _networkHandler.LocalPeerId,
                     ArmyId: armyId, ResourceAmount: army.Resources));
             }
-            harvester.ApplyHarvestState(HarvestPhase.DrivingToField, 0);
-            job.Phase = HarvestPhase.DrivingToField; job.MoveIssued = false;
+            job.Phase = harvester.CargoAmount > 0.001f ? HarvestPhase.ReturningToSilo : HarvestPhase.DrivingToField;
+            harvester.ApplyHarvestState(job.Phase, harvester.CargoAmount);
+            job.SiloId = null; job.MoveIssued = false;
             await PublishHarvestStateAsync(harvester, job.Phase);
         }
     }
@@ -472,8 +483,9 @@ public sealed class NetworkHost
         return nearest.HasValue;
     }
 
-    private Silo? FindNearestSilo(Harvester harvester) => _world.Units.Units.OfType<Silo>()
-        .Where(silo => silo.ArmyId == harvester.ArmyId && silo.IsCompleted && !silo.IsDying)
+    private Building? FindNearestSilo(Harvester harvester) => _world.Units.Units.OfType<Building>()
+        .Where(silo => silo.ResourceCapacity > 0.0f && silo.AvailableResourceCapacity > 0.001f &&
+            silo.ArmyId == harvester.ArmyId && silo.IsCompleted && !silo.IsDying)
         .OrderBy(silo => HorizontalDistanceSquared(harvester.Position, silo.Position)).FirstOrDefault();
 
     private async Task BeginReturnAsync(Harvester harvester, HarvestJob job)
@@ -735,6 +747,13 @@ public sealed class NetworkHost
     {
         foreach (Building building in _world.Units.Units.OfType<Building>().ToArray())
         {
+            if (building is TiberiumRefinery refinery && refinery.IsCompleted && !refinery.IncludedUnitGranted)
+            {
+                Guid ownerPlayerId = refinery.ArmyId is Guid armyId
+                    ? Globals.Game.Armies.Find(armyId)?.OwnerPlayerIds.OrderBy(id => id).FirstOrDefault() ?? Guid.Empty
+                    : refinery.CreatorPlayerId;
+                refinery.TryQueueIncludedHarvester(ownerPlayerId);
+            }
             if (!building.UpdateProduction(elapsedSeconds, out ProductionOrder? completedOrder) ||
                 completedOrder is null)
             {

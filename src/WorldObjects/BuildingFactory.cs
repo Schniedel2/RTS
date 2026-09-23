@@ -40,6 +40,9 @@ public static class BuildingFactory
             case "silo":
                 building = new Silo(position, unitId);
                 break;
+            case "tiberium-refinery":
+                building = new TiberiumRefinery(position, unitId, "tiberium-refinery-1");
+                break;
             case "tiberium-source":
                 building = new TiberiumSource(position, unitId);
                 break;
