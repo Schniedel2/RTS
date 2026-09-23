@@ -103,5 +103,8 @@ public class PathfindingManager
             Globals.Console.Print($"[PATH] {message}");
     }
 
+    public bool TryFindPath(MobileUnit unit, Point start, Vector2 target, out List<Point> path) =>
+        _pathfinder.TryFindPathFrom(unit, unit.MovementProfile, start, target, out path);
+
     private static string ShortId(Guid id) => id.ToString("N")[..8];
 }

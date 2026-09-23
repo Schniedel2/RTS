@@ -2,6 +2,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace RTS;
 
@@ -75,12 +76,17 @@ public class MobileUnit : Unit
     public IReadOnlyList<Point> PlannedPath => _plannedPath;
     public override IReadOnlyList<UnitAction> Actions =>
     [
+        new(UnitActionType.Scouting, "AI: Scouting", 5, 1),
         new(UnitActionType.Goto, "Goto", 0, 0),
         new(UnitActionType.Follow, "Follow", 6, 1),
         new(UnitActionType.Stop, "Stop", 2, 0)
     ];
 
     private readonly List<Point> _plannedPath = [];
+    private readonly Queue<(GotoCommand Command, Point[]? Route)> _commandQueue = [];
+    public Vector2 LastQueuedTarget => _commandQueue is { Count: > 0 }
+        ? _commandQueue.Last().Command.Target
+        : CurrentCommand?.Target ?? new Vector2(Position.X, Position.Z);
     private double _nextAttackReplanTime;
     private Vector2? _lastAttackApproachTarget;
     private double _nextFollowReplanTime;
@@ -255,7 +261,13 @@ public class MobileUnit : Unit
             }
 
             PathDebug("destination reached; command completed");
-            ClearCommand();
+            if (_commandQueue is { Count: > 0 })
+            {
+                var queued = _commandQueue.Dequeue();
+                StartGoto(Globals.World, queued.Command, queued.Route);
+            }
+            else
+                ClearCommand();
         }
     }
 
@@ -401,7 +413,20 @@ public class MobileUnit : Unit
 
     public virtual bool TryReceiveGotoCommand(
         GameWorld map,
-        GotoCommand command)
+        GotoCommand command,
+        bool appendToQueue = false,
+        IReadOnlyList<Point>? route = null)
+    {
+        if (appendToQueue && (CurrentCommand is not null || _plannedPath.Count > 0))
+        {
+            _commandQueue.Enqueue((command, route?.ToArray()));
+            return true;
+        }
+        _commandQueue.Clear();
+        return StartGoto(map, command, route);
+    }
+
+    private bool StartGoto(GameWorld map, GotoCommand command, IReadOnlyList<Point>? route = null)
     {
         _productionRallyPoint = null;
         PendingEnterContainerId = null;
@@ -412,6 +437,11 @@ public class MobileUnit : Unit
         _plannedPath.Clear();
         PathDebug($"path search requested target=({command.Target.X:0.0},{command.Target.Y:0.0}) request={_pathRequestId}");
 
+        if (route is not null)
+        {
+            SetPlannedPath(route);
+            return true;
+        }
         map.PathfindingManager.RequestPath(
             this,
             MovementProfile,
@@ -477,6 +507,7 @@ public class MobileUnit : Unit
 
     public override void ClearCommand()
     {
+        _commandQueue?.Clear();
         if (CurrentCommand is not null || _plannedPath.Count > 0)
             PathDebug($"command cleared remainingWaypoints={_plannedPath.Count}");
         _plannedPath.Clear();

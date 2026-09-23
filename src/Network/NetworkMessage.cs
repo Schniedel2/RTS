@@ -1,4 +1,5 @@
 using System;
+using Microsoft.Xna.Framework;
 
 namespace RTS.Network;
 
@@ -99,6 +100,8 @@ public sealed record WorldData(
     TiberiumSeedState[]? TiberiumCells = null,
     MapObjectState[]? MapObjects = null);
 
+public sealed record UnitRoute(Guid UnitId, Point[] Cells);
+
 public sealed record NetworkMessage(
     NetworkMessageType Type,
     Guid SenderId,
@@ -157,4 +160,6 @@ public sealed record NetworkMessage(
     int CellZ = 0,
     int[]? EarthworkCells = null,
     HelicopterOrder? HelicopterOrder = null,
-    TiberiumSeedState? TiberiumSeed = null);
+    TiberiumSeedState? TiberiumSeed = null,
+    bool AppendToQueue = false,
+    UnitRoute[]? Routes = null);

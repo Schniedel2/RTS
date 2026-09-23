@@ -73,15 +73,15 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
     
-    public Task RequestGotoAsync(List<Unit> units, Vector3 position)
+    public Task RequestGotoAsync(List<Unit> units, Vector3 position, bool appendToQueue = false, UnitRoute[]? routes = null)
     {
         Guid[] unitIds = units.Select(unit => unit.UnitId).ToArray();
-        return RequestGotoAsync(unitIds, position.X, position.Y, position.Z, CancellationToken.None);
+        return RequestGotoAsync(unitIds, position.X, position.Y, position.Z, CancellationToken.None, appendToQueue, routes);
     }
 
-    public Task RequestGotoAsync(Guid[] unitIds, float x, float y, float z, CancellationToken cancellationToken = default)
+    public Task RequestGotoAsync(Guid[] unitIds, float x, float y, float z, CancellationToken cancellationToken = default, bool appendToQueue = false, UnitRoute[]? routes = null)
     {
-        NetworkMessage request = NetworkCommands.CreateGotoRequest( _networkHandler.LocalPeerId, unitIds, x, y, z);
+        NetworkMessage request = NetworkCommands.CreateGotoRequest( _networkHandler.LocalPeerId, unitIds, x, y, z, appendToQueue, routes);
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
 

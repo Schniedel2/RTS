@@ -948,4 +948,15 @@ foreach (Point destination in new[] { new Point(22, 18), new Point(22, 23), new 
     Check(Vector3.Distance(tank.Position, new Vector3(destination.X + 0.5f, 0, destination.Y + 0.5f)) <= 0.2f,
         "Tank arrives without overshooting or oscillating");
 }
+var maskGrid = new GameGrid(40, 40, 1);
+maskGrid.BindTerrain(Terrain(40, 40));
+MobileUnit lShaped = Unit();
+Field(lShaped, typeof(Unit), "<FootprintRegions>k__BackingField", new BoundingBox[]
+{
+    new(new Vector3(-1.4f, 0, -1.4f), new Vector3(-0.6f, 1, 1.4f)),
+    new(new Vector3(-0.4f, 0, 0.6f), new Vector3(1.4f, 1, 1.4f))
+});
+IReadOnlyList<Point> lCells = maskGrid.GetFootprintCells(lShaped, new Vector3(20.5f, 0, 20.5f), 0);
+Check(lCells.Contains(new Point(19, 20)) && lCells.Contains(new Point(20, 21)), "Authored footprint combines multiple regions");
+Check(!lCells.Contains(new Point(20, 20)), "L-shaped footprint keeps its inner corner free");
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");

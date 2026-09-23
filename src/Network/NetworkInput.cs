@@ -427,7 +427,8 @@ public sealed class NetworkInput
             // The host already issued its own work movement before broadcasting it.
             if (message.EarthworkOrderId is not null && Globals.Game.Network.IsHost) continue;
             unit?.ClearFollowUnit();
-            unit?.TryReceiveGotoCommand(Globals.World, command);
+            Point[] route = message.Routes?.FirstOrDefault(candidate => candidate.UnitId == unitId)?.Cells ?? [];
+            unit?.TryReceiveGotoCommand(Globals.World, command, message.AppendToQueue, route);
         }
 
         if (message.EarthworkOrderId is null)

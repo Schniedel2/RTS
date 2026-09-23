@@ -1,6 +1,7 @@
 using Microsoft.Xna.Framework;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace RTS;
 
@@ -166,6 +167,8 @@ public class GameGrid
                 // a mobile unit's candidate cell.
                 if (unit is MobileUnit mobileUnit && occupant is Building building)
                 {
+                    if (building.HasAuthoredFootprint)
+                        return false;
                     if (testedBuildings!.Add(building) &&
                         MobileFootprintIntersectsBuilding(mobileUnit, footprint, building))
                     {
@@ -264,6 +267,9 @@ public class GameGrid
     /// <summary>Returns every grid cell intersected by the unit's rotated local rectangle.</summary>
     public IReadOnlyList<Point> GetFootprintCells(Unit unit, Vector3 position, float rotationDegrees)
     {
+        if (unit.HasAuthoredFootprint)
+            return GetAuthoredFootprintCells(unit, position, rotationDegrees);
+
         float yawDegrees = unit is MobileUnit
             ? MathF.Round(rotationDegrees / 90.0f) * 90.0f
             : rotationDegrees;
@@ -299,6 +305,34 @@ public class GameGrid
             }
         }
         return cells;
+    }
+
+    private IReadOnlyList<Point> GetAuthoredFootprintCells(Unit unit, Vector3 position, float rotationDegrees)
+    {
+        float yawDegrees = unit is MobileUnit
+            ? MathF.Round(rotationDegrees / 90.0f) * 90.0f
+            : rotationDegrees;
+        Matrix rotation = Matrix.CreateRotationY(MathHelper.ToRadians(yawDegrees));
+        Vector3 right3 = Vector3.TransformNormal(Vector3.Right, rotation);
+        Vector3 forward3 = Vector3.TransformNormal(Vector3.Forward, rotation);
+        Vector2 right = new(right3.X, right3.Z);
+        Vector2 forward = new(forward3.X, forward3.Z);
+        HashSet<Point> cells = [];
+        foreach (BoundingBox region in unit.FootprintRegions)
+        {
+            Vector3 localCenter = (region.Min + region.Max) * 0.5f;
+            Vector3 worldCenter = position + Vector3.TransformNormal(localCenter, rotation);
+            Vector2 center = new(worldCenter.X / CellSize, worldCenter.Z / CellSize);
+            float halfWidth = (region.Max.X - region.Min.X) * 0.5f / CellSize;
+            float halfLength = (region.Max.Z - region.Min.Z) * 0.5f / CellSize;
+            float extentX = MathF.Abs(right.X) * halfWidth + MathF.Abs(forward.X) * halfLength;
+            float extentY = MathF.Abs(right.Y) * halfWidth + MathF.Abs(forward.Y) * halfLength;
+            for (int y = (int)MathF.Floor(center.Y - extentY) - 1; y <= (int)MathF.Floor(center.Y + extentY) + 1; y++)
+                for (int x = (int)MathF.Floor(center.X - extentX) - 1; x <= (int)MathF.Floor(center.X + extentX) + 1; x++)
+                    if (IntersectsCell(center, right, forward, halfWidth, halfLength, x, y))
+                        cells.Add(new Point(x, y));
+        }
+        return cells.ToArray();
     }
 
     /// <summary>

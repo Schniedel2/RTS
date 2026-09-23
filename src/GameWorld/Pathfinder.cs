@@ -46,6 +46,9 @@ public class Pathfinder
         return result;
     }
 
+    public bool TryFindPathFrom(MobileUnit unit, IMovementProfile profile, Point start, Vector2 target, out List<Point> path) =>
+        FindPath(unit, profile, target, true, out path, start);
+
     public bool TryFindPath_AStar(
         MobileUnit unit,
         IMovementProfile movementProfile,
@@ -58,10 +61,10 @@ public class Pathfinder
     public bool TryFindPath_Dijkstra(MobileUnit unit, IMovementProfile movementProfile, Vector2 target, out List<Point> path) =>
         FindPath(unit, movementProfile, target, false, out path);
 
-    private bool FindPath(MobileUnit unit, IMovementProfile profile, Vector2 target, bool useHeuristic, out List<Point> path)
+    private bool FindPath(MobileUnit unit, IMovementProfile profile, Vector2 target, bool useHeuristic, out List<Point> path, Point? startOverride = null)
     {
         GameGrid grid = _map.GameGrid;
-        Point start = grid.ToCell(unit.Position);
+        Point start = startOverride ?? grid.ToCell(unit.Position);
         Point destination = grid.ToCell(new Vector3(target.X, 0, target.Y));
         path = [];
         if (!grid.Contains(start) || !profile.CanEnter(_map, unit, start))

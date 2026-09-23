@@ -47,6 +47,7 @@ public class PlayerHandler
     private float _buildPreviewDegree;
     private BuildingPlacement? _buildPlacementPreview;
     private EarthworkPreview? _earthworkPreview;
+    private readonly ScoutingController _scouting;
 
     public bool SelectAction(UnitAction action, bool alternateAction)
     {
@@ -99,10 +100,14 @@ public class PlayerHandler
                 return false;
             case UnitActionType.Stop:
                 {
+                    _scouting.Stop(_selectedUnits);
                     if (action.Type == UnitActionType.Stop)
                         _ = Globals.Game.NetworkClient.RequestStopAsync(_selectedUnits);
                     return false;
                 }
+            case UnitActionType.Scouting:
+                _scouting.Start(_selectedUnits);
+                return false;
             case UnitActionType.TrainUnit:
                 {
                     Building? building = _selectedUnits.Count == 1
@@ -138,6 +143,7 @@ public class PlayerHandler
     {
         _map = map;
         _markerHandler = markerHandler;
+        _scouting = new ScoutingController(map);
         _renderStates = new RenderStateStack(Globals.GraphicsDevice);
 
         _toolSize = 8;
@@ -147,6 +153,7 @@ public class PlayerHandler
 
     public void Update(GameTime gameTime, Camera camera, Viewport viewport)
     {
+        _scouting.Update(gameTime);
         if (_selectedUnits.RemoveAll(unit =>
                 !unit.IsSelectable ||
                 !Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, unit.ArmyId)) > 0)
@@ -452,7 +459,9 @@ public class PlayerHandler
 
             if (actionType == UnitActionType.Goto)
             {
-                Globals.Game.NetworkClient.RequestGotoAsync(_selectedUnits, targetPosition);
+                _scouting.Stop(_selectedUnits);
+                Globals.Game.NetworkClient.RequestGotoAsync(_selectedUnits, targetPosition,
+                    Keyboard.GetState().IsKeyDown(Keys.LeftShift) || Keyboard.GetState().IsKeyDown(Keys.RightShift));
                 return true;
             }
             if (actionType == UnitActionType.Attack)
@@ -552,7 +561,9 @@ public class PlayerHandler
             }
             if (action.Type == UnitActionType.Goto)
             {
-                Globals.Game.NetworkClient.RequestGotoAsync(_selectedUnits, targetPosition);
+                _scouting.Stop(_selectedUnits);
+                Globals.Game.NetworkClient.RequestGotoAsync(_selectedUnits, targetPosition,
+                    Keyboard.GetState().IsKeyDown(Keys.LeftShift) || Keyboard.GetState().IsKeyDown(Keys.RightShift));
             }
             if (action.Type == UnitActionType.Attack)
             {

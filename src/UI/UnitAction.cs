@@ -44,6 +44,7 @@ public enum UnitActionType
     TakeOff,
     Land,
     ReturnToHelipad,
+    Scouting,
     max
 
 }

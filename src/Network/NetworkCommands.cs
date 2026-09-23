@@ -208,7 +208,9 @@ public static class NetworkCommands
         Guid[] unitIds,
         float x,
         float y,
-        float z)
+        float z,
+        bool appendToQueue = false,
+        UnitRoute[]? routes = null)
     {
         return new NetworkMessage(
             NetworkMessageType.GotoRequest,
@@ -217,12 +219,15 @@ public static class NetworkCommands
             UnitIds: unitIds,
             X: x,
             Y: y,
-            Z: z);
+            Z: z,
+            AppendToQueue: appendToQueue,
+            Routes: routes);
     }
 
     public static NetworkMessage CreateGotoCommand(
         Guid hostId,
-        NetworkMessage request)
+        NetworkMessage request,
+        UnitRoute[] routes)
     {
         return new NetworkMessage(
             NetworkMessageType.GotoCommand,
@@ -231,7 +236,9 @@ public static class NetworkCommands
             UnitIds: request.UnitIds,
             X: request.X,
             Y: request.Y,
-            Z: request.Z);
+            Z: request.Z,
+            AppendToQueue: request.AppendToQueue,
+            Routes: routes);
     }
 
     public static NetworkMessage CreateStopRequest(Guid senderId, Guid[] unitIds) =>

@@ -13,6 +13,7 @@ public class Jeep : Car
     public override IReadOnlyList<UnitAction> Actions =>
     [
         new(UnitActionType.Goto, "Goto", 0, 1),
+        new(UnitActionType.Scouting, "AI: Scouting", 5, 1),
         new(UnitActionType.Attack, "Attack", 1, 1),
         new(UnitActionType.Follow, "Follow", 6, 1),
         new(UnitActionType.LeaveContainer, "Leave", 5, 1),

@@ -73,6 +73,8 @@ public abstract class Unit : WorldObject
     /// BBModels are not required to be authored around their origin.
     /// </summary>
     public Vector3 FootprintLocalCenter { get; protected set; }
+    public IReadOnlyList<BoundingBox> FootprintRegions { get; private set; } = Array.Empty<BoundingBox>();
+    public bool HasAuthoredFootprint => FootprintRegions?.Count > 0;
     public bool IsSelected { get; set; }
     public GotoCommand? CurrentCommand { get; protected set; }
     /// <summary>True while this unit is visually playing its death sequence.</summary>
@@ -340,11 +342,32 @@ public abstract class Unit : WorldObject
         if (!deriveDimensions)
             return;
 
-        Vector3 size = bounds.Max - bounds.Min + new Vector3(padding * 2.0f);
-        FootprintLocalCenter = (bounds.Min + bounds.Max) * 0.5f;
+        FootprintRegions = meshSet.RootMesh.FootprintBounds
+            .Select(region => TransformBounds(region, meshSet.RootMesh.LocalTransform))
+            .ToArray();
+        BoundingBox footprintBounds = FootprintRegions.Count > 0
+            ? new BoundingBox(
+                FootprintRegions.Select(region => region.Min).Aggregate(Vector3.Min),
+                FootprintRegions.Select(region => region.Max).Aggregate(Vector3.Max))
+            : bounds;
+        Vector3 size = footprintBounds.Max - footprintBounds.Min + new Vector3(padding * 2.0f);
+        FootprintLocalCenter = (footprintBounds.Min + footprintBounds.Max) * 0.5f;
         Width = Math.Max(1, (int)MathF.Ceiling(size.X));
         Length = Math.Max(1, (int)MathF.Ceiling(size.Z));
-        Height = Math.Max(0.01f, size.Y);
+        Height = Math.Max(0.01f, bounds.Max.Y - bounds.Min.Y + padding * 2.0f);
+    }
+
+    private static BoundingBox TransformBounds(BoundingBox bounds, Matrix transform)
+    {
+        Vector3[] corners = bounds.GetCorners();
+        Vector3 minimum = Vector3.Transform(corners[0], transform), maximum = minimum;
+        for (int index = 1; index < corners.Length; index++)
+        {
+            Vector3 point = Vector3.Transform(corners[index], transform);
+            minimum = Vector3.Min(minimum, point);
+            maximum = Vector3.Max(maximum, point);
+        }
+        return new BoundingBox(minimum, maximum);
     }
 
     /// <summary>Returns the world-space center used for the grid footprint.</summary>

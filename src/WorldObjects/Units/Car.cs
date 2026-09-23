@@ -11,6 +11,7 @@ public class Car : MobileUnit
     public override IReadOnlyList<UnitAction> Actions =>
     [
         new(UnitActionType.Goto, "Goto", 0, 1),
+        new(UnitActionType.Scouting, "AI: Scouting", 5, 1),
         new(UnitActionType.Attack, "Attack", 1, 1),
         new(UnitActionType.Follow, "Follow", 6, 1),
         new(UnitActionType.LeaveContainer, "Leave", 5, 1),
@@ -48,9 +49,9 @@ public class Car : MobileUnit
         CanTurnInPlace = false;
     }
 
-    public override bool TryReceiveGotoCommand(GameWorld map, GotoCommand command)
+    public override bool TryReceiveGotoCommand(GameWorld map, GotoCommand command, bool appendToQueue = false, IReadOnlyList<Point>? route = null)
     {
-        bool accepted = base.TryReceiveGotoCommand(map, command);
+        bool accepted = base.TryReceiveGotoCommand(map, command, appendToQueue, route);
         _isManeuvering = accepted && CanOnlyMoveForward && !CanTurnInPlace;
 
         return accepted;

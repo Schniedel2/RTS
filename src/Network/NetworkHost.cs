@@ -16,6 +16,7 @@ public sealed class NetworkHost
     private readonly Queue<NetworkMessage> _earthworkBroadcasts = new();
     private readonly ConcurrentQueue<NetworkMessage> _requestQueue = new();
     private readonly SemaphoreSlim _updateGate = new(1, 1);
+    private readonly Dictionary<Guid, Vector2> _gotoQueueEnds = [];
     private const int MaximumQueuedRequests = 1024;
     private const int MaximumRequestsPerUpdate = 32;
     private const int MaximumStateUpdatesPerTick = 32;
@@ -215,8 +216,8 @@ public sealed class NetworkHost
                 NetworkMessage? command = request.Type switch
                 {
                     NetworkMessageType.SpawnRequest => NetworkCommands.CreateSpawnCommand(_networkHandler.LocalPeerId, request),
-                    NetworkMessageType.GotoRequest => NetworkCommands.CreateGotoCommand(_networkHandler.LocalPeerId, request),
-                    NetworkMessageType.StopRequest => NetworkCommands.CreateStopCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.GotoRequest => TryCreateGotoCommand(request),
+                    NetworkMessageType.StopRequest => CreateStopCommand(request),
                     NetworkMessageType.AttackRequest => TryCreateAttackCommand(request),
                     NetworkMessageType.AttackTargetRequest => NetworkCommands.CreateAttackTargetCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.AttackGroundRequest => NetworkCommands.CreateAttackGroundCommand(_networkHandler.LocalPeerId, request),
@@ -264,6 +265,41 @@ public sealed class NetworkHost
             : null;
         return NetworkCommands.CreateTransferUnitCommand(
             _networkHandler.LocalPeerId, request, recipient?.ArmyId ?? Guid.Empty);
+    }
+
+    private NetworkMessage? TryCreateGotoCommand(NetworkMessage request)
+    {
+        Vector2 target = new(request.X, request.Z);
+        if (!float.IsFinite(target.X) || !float.IsFinite(target.Y)) return null;
+        Point destination = _world.GameGrid.ToCell(new Vector3(target.X, 0, target.Y));
+        if (!_world.GameGrid.Contains(destination)) return null;
+        List<UnitRoute> routes = [];
+        foreach (Guid id in request.UnitIds ?? [])
+        {
+            if (_world.Units.FindMobileUnitById(id) is not MobileUnit unit ||
+                !Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId)) continue;
+            Point[]? proposed = request.Routes?.FirstOrDefault(route => route.UnitId == id)?.Cells;
+            bool plausible = proposed is { Length: <= 4096 } && proposed.All(_world.GameGrid.Contains) &&
+                (proposed.Length == 0 || proposed[^1] == destination);
+            if (!plausible)
+            {
+                Vector2 startPosition = request.AppendToQueue && _gotoQueueEnds.TryGetValue(id, out Vector2 queuedEnd)
+                    ? queuedEnd : new Vector2(unit.Position.X, unit.Position.Z);
+                Point start = _world.GameGrid.ToCell(new Vector3(startPosition.X, 0, startPosition.Y));
+                if (!_world.PathfindingManager.TryFindPath(unit, start, target, out List<Point> path)) continue;
+                proposed = path.ToArray();
+            }
+            routes.Add(new UnitRoute(id, proposed!));
+            _gotoQueueEnds[id] = target;
+        }
+        return routes.Count == 0 ? null : NetworkCommands.CreateGotoCommand(_networkHandler.LocalPeerId,
+            request with { UnitIds = routes.Select(route => route.UnitId).ToArray() }, routes.ToArray());
+    }
+
+    private NetworkMessage CreateStopCommand(NetworkMessage request)
+    {
+        foreach (Guid id in request.UnitIds ?? []) _gotoQueueEnds.Remove(id);
+        return NetworkCommands.CreateStopCommand(_networkHandler.LocalPeerId, request);
     }
 
     private NetworkMessage? TryCreateBuildCommand(NetworkMessage request)

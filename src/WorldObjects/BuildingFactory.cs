@@ -35,7 +35,10 @@ public static class BuildingFactory
                 building = new GenericBuilding(position, unitId, "antenna-1");
                 break;
             case "helipad":
-                building = new Helipad(position, unitId, "helipad-1");
+                building = new Helipad(position, unitId);
+                break;
+            case "silo":
+                building = new Silo(position, unitId);
                 break;
             case "tiberium-source":
                 building = new TiberiumSource(position, unitId);
