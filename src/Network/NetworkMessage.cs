@@ -88,7 +88,11 @@ public enum NetworkMessageType
     EarthworkCellCommand,
     EarthworkEndCommand,
     HelicopterOrderRequest,
-    TiberiumSeedCommand
+    TiberiumSeedCommand,
+    HarvestRequest,
+    HarvestCommand,
+    TiberiumHarvestCommand,
+    ArmyResourcesCommand
 }
 
 public sealed record WorldData(
@@ -162,4 +166,8 @@ public sealed record NetworkMessage(
     HelicopterOrder? HelicopterOrder = null,
     TiberiumSeedState? TiberiumSeed = null,
     bool AppendToQueue = false,
-    UnitRoute[]? Routes = null);
+    UnitRoute[]? Routes = null,
+    HarvestPhase? HarvestPhase = null,
+    float CargoAmount = 0.0f,
+    float TiberiumAmount = 0.0f,
+    int ResourceAmount = 0);

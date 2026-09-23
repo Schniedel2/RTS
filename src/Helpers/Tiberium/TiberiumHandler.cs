@@ -163,6 +163,21 @@ public sealed class TiberiumHandler
         return harvested;
     }
 
+    /// <summary>Applies the host-authoritative amount remaining after a harvest tick.</summary>
+    public void ApplyHarvest(Point cell, float remainingAmount, double gameTimeSeconds)
+    {
+        if (remainingAmount <= 0.0f)
+        {
+            if (_cells.Remove(cell)) RemoveFromRenderChunk(cell);
+            return;
+        }
+        if (!_cells.TryGetValue(cell, out TiberiumCell? tiberium)) return;
+        tiberium.Amount = remainingAmount;
+        tiberium.CreatedAt = gameTimeSeconds - remainingAmount /
+            (GrowthPerSecond * Math.Max(0.0001f, tiberium.GrowthFactor));
+        tiberium.CurrentSize = remainingAmount / MaximumAmount * tiberium.MaxSize;
+    }
+
     public void Update(GameTime gameTime, bool allowGrowth = true)
     {
         // The visual pulse keeps running while growth is paused in editor mode.

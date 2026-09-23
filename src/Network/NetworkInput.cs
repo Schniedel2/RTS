@@ -178,6 +178,29 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type == NetworkMessageType.TiberiumHarvestCommand)
+        {
+            Globals.World.Tiberium.ApplyHarvest(new Point(message.CellX, message.CellZ),
+                message.TiberiumAmount, message.ServerTime);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.HarvestCommand)
+        {
+            if (message.UnitId is Guid harvesterId &&
+                Globals.World.Units.FindById(harvesterId) is Harvester harvester &&
+                message.HarvestPhase is HarvestPhase phase)
+                harvester.ApplyHarvestState(phase, message.CargoAmount);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.ArmyResourcesCommand)
+        {
+            if (message.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
+                army.Resources = message.ResourceAmount;
+            return;
+        }
+
         if (message.Type == NetworkMessageType.SetRallyPointCommand)
         {
             // A client may request a change, but may not inject its own confirmation on the host.

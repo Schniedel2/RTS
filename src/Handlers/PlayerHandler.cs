@@ -513,6 +513,13 @@ public class PlayerHandler
                 _map.GameplayMarkers.Add(markerType, targetPosition, targetAngleY, _toolSize);
                 return;
             }
+            if (action.Type == UnitActionType.Harvest)
+            {
+                foreach (Harvester harvester in _selectedUnits.OfType<Harvester>())
+                    _ = Globals.Game.NetworkClient.RequestHarvestAsync(harvester.UnitId, targetPosition);
+                ActiveAction = null;
+                return;
+            }
             if (action.Type == UnitActionType.PlaceTiberiumSource)
             {
                 _map.Units.SpawnBuilding("tiberium-source", targetPosition, targetAngleY, Guid.NewGuid(), Guid.Empty);

@@ -26,6 +26,11 @@ public sealed class NetworkClient
             _networkHandler.LocalPeerId, UnitId: unitId, TargetId: helipadId, HelicopterOrder: order,
             X: target.X, Y: target.Y, Z: target.Z));
 
+    public Task RequestHarvestAsync(Guid unitId, Vector3 target) =>
+        _networkHandler.SendToHostAsync(new(NetworkMessageType.HarvestRequest,
+            _networkHandler.LocalPeerId, UnitId: unitId,
+            X: target.X, Y: target.Y, Z: target.Z));
+
     private uint _selectionRevision;
 
     public Task NotifyUnitsSelectedAsync(Guid[] unitIds, CancellationToken cancellationToken = default)

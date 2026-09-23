@@ -17,6 +17,7 @@ public sealed class NetworkHost
     private readonly ConcurrentQueue<NetworkMessage> _requestQueue = new();
     private readonly SemaphoreSlim _updateGate = new(1, 1);
     private readonly Dictionary<Guid, Vector2> _gotoQueueEnds = [];
+    private readonly Dictionary<Guid, HarvestJob> _harvestJobs = [];
     private const int MaximumQueuedRequests = 1024;
     private const int MaximumRequestsPerUpdate = 32;
     private const int MaximumStateUpdatesPerTick = 32;
@@ -28,6 +29,18 @@ public sealed class NetworkHost
     public double HostTime => _hostTime;
     private readonly List<HostProjectile> _hostProjectiles = [];
     private readonly List<ProjectileImpact> _projectileImpacts = [];
+    private sealed class HarvestJob(Point fieldCenter)
+    {
+        public Point FieldCenter { get; } = fieldCenter;
+        public HarvestPhase Phase { get; set; } = HarvestPhase.DrivingToField;
+        public Point? ResourceCell { get; set; }
+        public Guid? SiloId { get; set; }
+        public bool MoveIssued { get; set; }
+        public float UnloadElapsed { get; set; }
+    }
+    private const int HarvestSearchRadius = 24;
+    private const float HarvestRatePerSecond = 18.0f;
+    private const float UnloadSeconds = 2.0f;
 
     private sealed class HostProjectile(
         Guid projectileId,
@@ -150,6 +163,7 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.SetRallyPointRequest &&
             message.Type != NetworkMessageType.EarthworkRequest &&
             message.Type != NetworkMessageType.HelicopterOrderRequest &&
+            message.Type != NetworkMessageType.HarvestRequest &&
             message.Type != NetworkMessageType.EnterUnitRequest &&
             message.Type != NetworkMessageType.LeaveContainerRequest &&
             message.Type != NetworkMessageType.NotifyUnitsSelected &&
@@ -201,6 +215,7 @@ public sealed class NetworkHost
             UpdateHostSimulation(gameTime);
             await PublishEarthworkAsync();
             await PublishHelicoptersAsync();
+            await PublishHarvestersAsync(gameTime);
             await PublishProjectileImpactsAsync();
 
             for (int index = 0; index < MaximumRequestsPerUpdate; index++)
@@ -231,6 +246,7 @@ public sealed class NetworkHost
                     NetworkMessageType.SetRallyPointRequest => TryCreateSetRallyPointCommand(request),
                     NetworkMessageType.EarthworkRequest => _earthworks.Start(request),
                     NetworkMessageType.HelicopterOrderRequest => TryCreateHelicopterOrder(request),
+                    NetworkMessageType.HarvestRequest => TryCreateHarvestCommand(request),
                     NetworkMessageType.EnterUnitRequest => TryCreateEnterUnitCommand(request),
                     NetworkMessageType.LeaveContainerRequest => TryCreateLeaveContainerCommand(request),
                     NetworkMessageType.NotifyUnitsSelected => request,
@@ -298,8 +314,173 @@ public sealed class NetworkHost
 
     private NetworkMessage CreateStopCommand(NetworkMessage request)
     {
-        foreach (Guid id in request.UnitIds ?? []) _gotoQueueEnds.Remove(id);
+        foreach (Guid id in request.UnitIds ?? [])
+        {
+            _gotoQueueEnds.Remove(id);
+            _harvestJobs.Remove(id);
+        }
         return NetworkCommands.CreateStopCommand(_networkHandler.LocalPeerId, request);
+    }
+
+    private NetworkMessage? TryCreateHarvestCommand(NetworkMessage request)
+    {
+        if (request.UnitId is not Guid id || _world.Units.FindById(id) is not Harvester harvester ||
+            harvester.IsDying || !Globals.Game.Armies.CanControl(request.SenderId, harvester.ArmyId) ||
+            !float.IsFinite(request.X) || !float.IsFinite(request.Z)) return null;
+        Point center = _world.GameGrid.ToCell(new Vector3(request.X, 0, request.Z));
+        if (!_world.GameGrid.Contains(center)) return null;
+        harvester.Stop();
+        harvester.ApplyHarvestState(HarvestPhase.DrivingToField, harvester.CargoAmount);
+        _harvestJobs[id] = new HarvestJob(center);
+        return CreateHarvestStateCommand(harvester, HarvestPhase.DrivingToField);
+    }
+
+    private async Task PublishHarvestersAsync(GameTime gameTime)
+    {
+        float elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
+        foreach ((Guid id, HarvestJob job) in _harvestJobs.ToArray())
+        {
+            if (_world.Units.FindById(id) is not Harvester harvester || harvester.IsDying)
+            {
+                _harvestJobs.Remove(id);
+                continue;
+            }
+            if (job.Phase == HarvestPhase.DrivingToField)
+            {
+                if (harvester.CargoAmount >= harvester.CargoCapacity - 0.001f || !TryFindTiberium(job.FieldCenter, out Point resourceCell))
+                {
+                    if (harvester.CargoAmount <= 0.001f) { await EndHarvestAsync(harvester); continue; }
+                    await BeginReturnAsync(harvester, job); continue;
+                }
+                job.ResourceCell = resourceCell;
+                Vector3 target = _world.GameGrid.ToWorldPosition(resourceCell, 0);
+                if (!job.MoveIssued) { job.MoveIssued = await PublishHarvesterGotoAsync(harvester, target); continue; }
+                if (harvester.CurrentCommand is null)
+                {
+                    if (HorizontalDistanceSquared(harvester.Position, target) <= 4.0f)
+                    {
+                        job.Phase = HarvestPhase.Harvesting; job.MoveIssued = false;
+                        await PublishHarvestStateAsync(harvester, job.Phase);
+                    }
+                    else job.MoveIssued = false;
+                }
+                continue;
+            }
+            if (job.Phase == HarvestPhase.Harvesting)
+            {
+                if (job.ResourceCell is not Point cell || !_world.Tiberium.Cells.ContainsKey(cell))
+                {
+                    job.Phase = HarvestPhase.DrivingToField;
+                    await PublishHarvestStateAsync(harvester, job.Phase); continue;
+                }
+                float harvested = _world.Tiberium.TryHarvest(cell,
+                    Math.Min(harvester.CargoCapacity - harvester.CargoAmount, HarvestRatePerSecond * elapsed), _hostTime);
+                if (harvested > 0)
+                {
+                    harvester.ApplyHarvestState(job.Phase, harvester.CargoAmount + harvested);
+                    float remaining = _world.Tiberium.Cells.TryGetValue(cell, out TiberiumCell? value) ? value.Amount : 0;
+                    await PublishAsync(new(NetworkMessageType.TiberiumHarvestCommand, _networkHandler.LocalPeerId,
+                        CellX: cell.X, CellZ: cell.Y, TiberiumAmount: remaining, ServerTime: _hostTime));
+                    await PublishHarvestStateAsync(harvester, job.Phase);
+                }
+                if (harvester.CargoAmount >= harvester.CargoCapacity - 0.001f) await BeginReturnAsync(harvester, job);
+                else if (!_world.Tiberium.Cells.ContainsKey(cell))
+                {
+                    job.Phase = HarvestPhase.DrivingToField;
+                    await PublishHarvestStateAsync(harvester, job.Phase);
+                }
+                continue;
+            }
+            if (job.Phase == HarvestPhase.ReturningToSilo)
+            {
+                Silo? silo = job.SiloId is Guid siloId ? _world.Units.FindById(siloId) as Silo : null;
+                if (silo is null || silo.IsDying || !silo.IsCompleted || silo.ArmyId != harvester.ArmyId)
+                {
+                    silo = FindNearestSilo(harvester); job.SiloId = silo?.UnitId; job.MoveIssued = false;
+                }
+                if (silo is null) { await EndHarvestAsync(harvester); continue; }
+                Vector3 unload = silo.GetUnloadPosition();
+                if (!job.MoveIssued) { job.MoveIssued = await PublishHarvesterGotoAsync(harvester, unload); continue; }
+                if (harvester.CurrentCommand is null)
+                {
+                    if (HorizontalDistanceSquared(harvester.Position, unload) <= 6.25f)
+                    {
+                        job.Phase = HarvestPhase.Unloading; job.UnloadElapsed = 0;
+                        await PublishHarvestStateAsync(harvester, job.Phase);
+                    }
+                    else job.MoveIssued = false;
+                }
+                continue;
+            }
+            job.UnloadElapsed += elapsed;
+            if (job.UnloadElapsed < UnloadSeconds) continue;
+            if (harvester.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
+            {
+                army.Resources += (int)MathF.Round(harvester.CargoAmount);
+                await PublishAsync(new(NetworkMessageType.ArmyResourcesCommand, _networkHandler.LocalPeerId,
+                    ArmyId: armyId, ResourceAmount: army.Resources));
+            }
+            harvester.ApplyHarvestState(HarvestPhase.DrivingToField, 0);
+            job.Phase = HarvestPhase.DrivingToField; job.MoveIssued = false;
+            await PublishHarvestStateAsync(harvester, job.Phase);
+        }
+    }
+
+    private bool TryFindTiberium(Point center, out Point cell)
+    {
+        Point? nearest = _world.Tiberium.Cells.Where(pair => pair.Value.Amount > 0.001f &&
+            Math.Abs(pair.Key.X - center.X) <= HarvestSearchRadius && Math.Abs(pair.Key.Y - center.Y) <= HarvestSearchRadius)
+            .OrderBy(pair => Math.Abs(pair.Key.X - center.X) + Math.Abs(pair.Key.Y - center.Y))
+            .Select(pair => (Point?)pair.Key).FirstOrDefault();
+        cell = nearest ?? default;
+        return nearest.HasValue;
+    }
+
+    private Silo? FindNearestSilo(Harvester harvester) => _world.Units.Units.OfType<Silo>()
+        .Where(silo => silo.ArmyId == harvester.ArmyId && silo.IsCompleted && !silo.IsDying)
+        .OrderBy(silo => HorizontalDistanceSquared(harvester.Position, silo.Position)).FirstOrDefault();
+
+    private async Task BeginReturnAsync(Harvester harvester, HarvestJob job)
+    {
+        job.Phase = HarvestPhase.ReturningToSilo; job.MoveIssued = false;
+        job.SiloId = FindNearestSilo(harvester)?.UnitId;
+        await PublishHarvestStateAsync(harvester, job.Phase);
+    }
+
+    private async Task EndHarvestAsync(Harvester harvester)
+    {
+        _harvestJobs.Remove(harvester.UnitId);
+        harvester.ApplyHarvestState(HarvestPhase.Idle, harvester.CargoAmount);
+        await PublishHarvestStateAsync(harvester, HarvestPhase.Idle);
+    }
+
+    private async Task<bool> PublishHarvesterGotoAsync(Harvester harvester, Vector3 target)
+    {
+        Guid sender = harvester.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army
+            ? army.OwnerPlayerIds.FirstOrDefault() : _networkHandler.LocalPeerId;
+        NetworkMessage? command = TryCreateGotoCommand(NetworkCommands.CreateGotoRequest(sender,
+            [harvester.UnitId], target.X, target.Y, target.Z));
+        if (command is null) return false;
+        await PublishAsync(command);
+        return true;
+    }
+
+    private NetworkMessage CreateHarvestStateCommand(Harvester harvester, HarvestPhase phase) =>
+        new(NetworkMessageType.HarvestCommand, _networkHandler.LocalPeerId, UnitId: harvester.UnitId,
+            HarvestPhase: phase, CargoAmount: harvester.CargoAmount);
+
+    private Task PublishHarvestStateAsync(Harvester harvester, HarvestPhase phase) => PublishAsync(CreateHarvestStateCommand(harvester, phase));
+
+    private async Task PublishAsync(NetworkMessage command)
+    {
+        _networkHandler.EnqueueLocalMessage(command);
+        await _networkHandler.BroadcastAsync(command, CancellationToken.None);
+    }
+
+    private static float HorizontalDistanceSquared(Vector3 first, Vector3 second)
+    {
+        float x = first.X - second.X, z = first.Z - second.Z;
+        return x * x + z * z;
     }
 
     private NetworkMessage? TryCreateBuildCommand(NetworkMessage request)

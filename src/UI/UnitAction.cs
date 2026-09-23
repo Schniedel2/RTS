@@ -45,6 +45,7 @@ public enum UnitActionType
     Land,
     ReturnToHelipad,
     Scouting,
+    Harvest,
     max
 
 }

@@ -29,6 +29,15 @@ public class Silo : Building
         base.Draw(effect);
     }
 
+    public Vector3 GetUnloadPosition()
+    {
+        if (TryGetAnimatedPivotWorldTransform("pivot:unload", out Matrix pivot))
+            return pivot.Translation;
+
+        TryGetEntryWorldPosition(out Vector3 fallback);
+        return fallback;
+    }
+
     public IReadOnlyList<UnitAction> GetUnitActions()
     {
         IReadOnlyList<UnitAction> actions =

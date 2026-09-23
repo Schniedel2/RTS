@@ -41,6 +41,9 @@ public static class UnitFactory
             case "gdi-bulldozer":
                 unit = new GDIBulldozer(position, unitId);
                 break;
+            case "harvester":
+                unit = new Harvester(position, unitId);
+                break;
             default:            
                 return null;
         }
