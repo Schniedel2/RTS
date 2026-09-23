@@ -9,6 +9,7 @@ namespace RTS;
 
 public class Building : Unit
 {
+    private const float SellDurationSeconds = 1.0f;
     private sealed record BuildingState(
         float ConstructionProgress,
         ProductionQueueState ProductionQueue,
@@ -16,6 +17,7 @@ public class Building : Unit
         float StoredResources = 0.0f,
         bool IncludedUnitGranted = false);
     private readonly BuildingFlag _ownerFlag = new();
+    private float _sellElapsed;
 
     public float ConstructionProgress { get; private set; }
     // Buildings without construction costs are immediately complete; avoid 0 / 0 in their world matrix.
@@ -36,6 +38,13 @@ public class Building : Unit
     public float StoredResources { get; private set; }
     public float AvailableResourceCapacity => Math.Max(0.0f, ResourceCapacity - StoredResources);
     public bool IncludedUnitGranted { get; protected set; }
+    public int PurchasePrice { get; }
+    public int SellRefund => PurchasePrice / 2;
+    public bool IsSelling { get; private set; }
+    public override bool IsDying => IsSelling || base.IsDying;
+    public override bool HasDeathExplosion => !IsSelling && base.HasDeathExplosion;
+    public override bool IsReadyForRemoval =>
+        IsSelling && _sellElapsed >= SellDurationSeconds || base.IsReadyForRemoval;
     /// <summary>Optional production bonus for each embarked Crew unit (0.25 = +25%).</summary>
     public float CrewProductionBonusPerOccupant { get; set; }
     public override string StateTypeId => "building-state";
@@ -50,7 +59,8 @@ public class Building : Unit
 
     public Building(
         Vector3 position,
-        Guid unitId
+        Guid unitId,
+        int purchasePrice = 0
         ) : base(
             position,
             length: 1,
@@ -58,6 +68,7 @@ public class Building : Unit
             height: 1,
             unitId)
     {
+        PurchasePrice = Math.Max(0, purchasePrice);
         Occupancy = new OccupancyComponent(
             this,
             [
@@ -70,6 +81,19 @@ public class Building : Unit
     }
 
     public bool IsCompleted => ConstructionProgress >= TotalBuildingPointsNeeded;
+
+    protected IReadOnlyList<UnitAction> WithSellAction(IEnumerable<UnitAction> actions) =>
+        [.. actions, new(UnitActionType.SellBuilding, $"Sell (+{SellRefund})", 6, 1)];
+
+    public void BeginSelling()
+    {
+        if (IsSelling) return;
+        IsSelling = true;
+        _sellElapsed = 0.0f;
+        IsSelected = false;
+        ProductionQueue.ApplyState(null);
+        MarkStateDirty();
+    }
 
     public override int GetSightRange()
     {
@@ -256,7 +280,10 @@ public class Building : Unit
 
     public override Matrix GetWorldMatrix()
     {
-        return Matrix.CreateScale(1.0f, GetConstructionScaleFactor(), 1.0f) * base.GetWorldMatrix();
+        float sellScale = IsSelling
+            ? Math.Max(0.0f, 1.0f - _sellElapsed / SellDurationSeconds)
+            : 1.0f;
+        return Matrix.CreateScale(1.0f, GetConstructionScaleFactor() * sellScale, 1.0f) * base.GetWorldMatrix();
     }
     public float GetConstructionScaleFactor()
     {
@@ -306,6 +333,8 @@ public class Building : Unit
 
     public override void Update(GameTime gameTime)
     {
+        if (IsSelling)
+            _sellElapsed += (float)gameTime.ElapsedGameTime.TotalSeconds;
         base.Update(gameTime);
         if (ShowOwnerFlag && ArmyId is not null)
             _ownerFlag.Update(this, gameTime);

@@ -40,10 +40,11 @@ public class Helipad : Building
     public Helipad(
         Vector3 position,
         Guid unitId,
-        string meshName = "helipad-1"
+        string meshName = "helipad-1",
+        int purchasePrice = 0
         ) : base(
             position,
-            unitId)
+            unitId, purchasePrice)
     {
         SetMesh(meshName, deriveDimensions: true);
 
@@ -74,7 +75,7 @@ public class Helipad : Building
             ];
         }
         
-        return actions;
+        return WithSellAction(actions);
     }
 
 }

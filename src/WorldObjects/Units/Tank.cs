@@ -55,7 +55,7 @@ public class Tank : MobileUnit
         VisualRecoilPivot = new Vector3(0.0f, 0.0f, -0.2f);
         HitPoints = MaxHitPoints = 500;
 
-        SetMesh("Tank-1", deriveDimensions: true);
+        SetMesh("tank-1", deriveDimensions: true);
         /*
         _meshSet = new MeshSet(Globals.MeshHandler.Meshes["TankBody-1"]);
         _meshSet.SetAttachment("pivot:turret", Globals.MeshHandler.Meshes["TankTurret-1"]);

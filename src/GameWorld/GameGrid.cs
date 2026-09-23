@@ -346,6 +346,79 @@ public class GameGrid
         return cells;
     }
 
+    /// <summary>Checks whether two footprints touch along an edge or at a corner.</summary>
+    public bool AreFootprintsAdjacent(Unit first, Unit second) =>
+        AreCellSetsAdjacent(GetCurrentGridFootprintCells(first), GetCurrentGridFootprintCells(second));
+
+    public bool AreFootprintsAdjacent(
+        Unit first, Vector3 firstPosition, float firstRotationDegrees,
+        Unit second, Vector3 secondPosition, float secondRotationDegrees)
+    {
+        IReadOnlyList<Point> firstCells = GetGridFootprintCells(
+            first, firstPosition, firstRotationDegrees);
+        IReadOnlyList<Point> secondCells = GetGridFootprintCells(
+            second, secondPosition, secondRotationDegrees);
+        return AreCellSetsAdjacent(firstCells, secondCells);
+    }
+
+    private IReadOnlyList<Point> GetCurrentGridFootprintCells(Unit unit)
+    {
+        if (_occupiedCells.TryGetValue(unit, out IReadOnlyList<Point>? cells))
+            return cells;
+        if (_occupiedFootprints.TryGetValue(unit, out Rectangle footprint))
+            return EnumerateCells(footprint);
+        return GetGridFootprintCells(unit, unit.Position, GetYawDegrees(unit.Transform));
+    }
+
+    private IReadOnlyList<Point> GetGridFootprintCells(
+        Unit unit, Vector3 position, float rotationDegrees)
+    {
+        if (unit is not MobileUnit)
+            return GetFootprintCells(unit, position, rotationDegrees);
+
+        Point centerCell = ToCell(position);
+        int footprintWidth = unit.Width;
+        int footprintHeight = unit.Length;
+        float radians = MathHelper.ToRadians(rotationDegrees);
+        if (MathF.Abs(MathF.Sin(radians)) > MathF.Abs(MathF.Cos(radians)))
+            (footprintWidth, footprintHeight) = (footprintHeight, footprintWidth);
+
+        int left = centerCell.X - (footprintWidth - 1) / 2;
+        int top = centerCell.Y - (footprintHeight - 1) / 2;
+        return EnumerateCells(new Rectangle(left, top, footprintWidth, footprintHeight));
+    }
+
+    private static IReadOnlyList<Point> EnumerateCells(Rectangle footprint)
+    {
+        List<Point> cells = new(footprint.Width * footprint.Height);
+        for (int y = footprint.Top; y < footprint.Bottom; y++)
+            for (int x = footprint.Left; x < footprint.Right; x++)
+                cells.Add(new Point(x, y));
+        return cells;
+    }
+
+    private static bool AreCellSetsAdjacent(
+        IReadOnlyList<Point> firstCells,
+        IReadOnlyList<Point> secondFootprint)
+    {
+        HashSet<Point> secondCells = secondFootprint.ToHashSet();
+
+        // Freely rotated buildings conservatively register every touched cell.
+        // A mobile footprint may therefore share such a cell while its real
+        // rectangle merely touches the building edge. CanPlace has already
+        // ruled out a positive-area collision for every approach candidate.
+        if (firstCells.Any(secondCells.Contains))
+            return true;
+
+        foreach (Point cell in firstCells)
+            for (int y = -1; y <= 1; y++)
+                for (int x = -1; x <= 1; x++)
+                    if ((x != 0 || y != 0) && secondCells.Contains(cell + new Point(x, y)))
+                        return true;
+
+        return false;
+    }
+
     /// <summary>Returns cells which must remain free of building footprints but remain traversable.</summary>
     public IReadOnlyList<Point> GetClearanceCells(Unit unit, Vector3 position, float rotationDegrees) =>
         unit.HasAuthoredClearance
@@ -556,15 +629,23 @@ public class GameGrid
         int cellX,
         int cellY)
     {
+        const float epsilon = 0.00001f;
         Vector2 delta = new(cellX + 0.5f - rectangleCenter.X, cellY + 0.5f - rectangleCenter.Y);
         // Separating-axis test: the rectangle's local axes and the cell's
         // world X/Y axes are sufficient for two rectangles in the plane.
-        if (MathF.Abs(Vector2.Dot(delta, right)) > halfWidth + 0.5f * (MathF.Abs(right.X) + MathF.Abs(right.Y)))
+        // Merely touching a cell edge has zero area and must not reserve that
+        // neighbouring cell; otherwise an axis-aligned 1x1 footprint becomes
+        // an artificial 3x3 footprint.
+        if (MathF.Abs(Vector2.Dot(delta, right)) >=
+            halfWidth + 0.5f * (MathF.Abs(right.X) + MathF.Abs(right.Y)) - epsilon)
             return false;
-        if (MathF.Abs(Vector2.Dot(delta, forward)) > halfLength + 0.5f * (MathF.Abs(forward.X) + MathF.Abs(forward.Y)))
+        if (MathF.Abs(Vector2.Dot(delta, forward)) >=
+            halfLength + 0.5f * (MathF.Abs(forward.X) + MathF.Abs(forward.Y)) - epsilon)
             return false;
-        if (MathF.Abs(delta.X) > 0.5f + halfWidth * MathF.Abs(right.X) + halfLength * MathF.Abs(forward.X))
+        if (MathF.Abs(delta.X) >=
+            0.5f + halfWidth * MathF.Abs(right.X) + halfLength * MathF.Abs(forward.X) - epsilon)
             return false;
-        return MathF.Abs(delta.Y) <= 0.5f + halfWidth * MathF.Abs(right.Y) + halfLength * MathF.Abs(forward.Y);
+        return MathF.Abs(delta.Y) <
+            0.5f + halfWidth * MathF.Abs(right.Y) + halfLength * MathF.Abs(forward.Y) - epsilon;
     }
 }

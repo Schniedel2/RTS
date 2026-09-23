@@ -52,13 +52,14 @@ public class MeshHandler
         Meshes["helipad-1"] = BBModelLoader.Load(Path.Combine(directory, "buildings/helipad-1.bbmodel"), Color.White);
         Meshes["silo-1"] = BBModelLoader.Load(Path.Combine(directory, "buildings/silo-1.bbmodel"), Color.White);
         Meshes["tiberium-refinery-1"] = BBModelLoader.Load(Path.Combine(directory, "buildings/tiberium-refinery-1.bbmodel"), Color.White);
+        Meshes["vehicle-factory-1"] = BBModelLoader.Load(Path.Combine(directory, "buildings/vehicle-factory-1.bbmodel"), Color.White);
         
         //  environment
         Meshes["tiberium-1"] = BBModelLoader.Load(Path.Combine(directory, "environment/tiberium-1.bbmodel"), Color.White);
         Meshes["tiberiumSource-1"] = BBModelLoader.Load(Path.Combine(directory, "environment/tiberiumSource-1.bbmodel"), Color.White);
 
         //  vehicles        
-        Meshes["Tank-1"] = BBModelLoader.Load(Path.Combine(directory, "vehicles/tank-1.bbmodel"), Color.White);
+        Meshes["tank-1"] = BBModelLoader.Load(Path.Combine(directory, "vehicles/tank-1.bbmodel"), Color.White);
         Meshes["heli-1"] = BBModelLoader.Load(Path.Combine(directory, "vehicles/heli-1.bbmodel"), Color.White);
         Meshes["harvester-1"] = BBModelLoader.Load(Path.Combine(directory, "vehicles/harvester-1.bbmodel"), Color.White);
 

@@ -48,6 +48,7 @@ public enum UnitActionType
     Harvest,
     ReturnToStorage,
     MoveAway,
+    SellBuilding,
     max
 
 }
@@ -58,4 +59,5 @@ public sealed record UnitAction(
     int IconColumn,
     int IconRow,
     string TargetObjectName = "",
-    GameplayMarkerType? MarkerType = null);
+    GameplayMarkerType? MarkerType = null,
+    int ResourceCost = 0);

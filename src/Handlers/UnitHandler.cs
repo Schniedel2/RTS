@@ -249,6 +249,21 @@ public class UnitHandler
         return true;
     }
 
+    public bool SellBuilding(Guid unitId)
+    {
+        if (FindById(unitId) is not Building building || building is GenericBuilding ||
+            building.IsDying || building.Occupancy?.Occupants.Count > 0)
+            return false;
+
+        foreach (Unit other in _units)
+            if (other != building)
+                other.ClearReferencesToDestroyedUnit(unitId);
+
+        Globals.World.GameGrid.Remove(building);
+        building.BeginSelling();
+        return true;
+    }
+
     public bool EmbarkUnit(Guid occupantId, Guid containerId, OccupantRole? requestedRole = null)
     {
         if (FindById(occupantId) is not MobileUnit occupant ||

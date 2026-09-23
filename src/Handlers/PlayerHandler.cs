@@ -4,6 +4,7 @@ using Microsoft.Xna.Framework.Input;
 using System.Collections.Generic;
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace RTS;
 
@@ -135,10 +136,24 @@ public class PlayerHandler
                         _ = Globals.Game.NetworkClient.RequestLeaveContainerAsync(_selectedUnits[0].UnitId);
                     return false;
                 }
+            case UnitActionType.SellBuilding:
+                foreach (Building building in _selectedUnits.OfType<Building>().Where(
+                    building => building is not GenericBuilding &&
+                        Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, building.ArmyId)))
+                    _ = RequestSellBuildingAsync(building);
+                return false;
         }
 
         ActiveAction = action;        
         return true;
+    }
+
+    private static async Task RequestSellBuildingAsync(Building building)
+    {
+        int occupants = building.Occupancy?.Occupants.Count ?? 0;
+        for (int index = 0; index < occupants; index++)
+            await Globals.Game.NetworkClient.RequestLeaveContainerAsync(building.UnitId);
+        await Globals.Game.NetworkClient.RequestSellBuildingAsync(building.UnitId);
     }
 
     public PlayerHandler(

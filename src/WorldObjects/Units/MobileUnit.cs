@@ -174,7 +174,7 @@ public class MobileUnit : Unit
             return;
         }
 
-        Vector3 target = new(nextCell.X + 0.5f, Position.Y, (nextCell.Y + 0.5f));
+        Vector3 target = Globals.World.GameGrid.ToWorldPosition(nextCell, Position.Y);
         Vector3 toTarget = target - Position;
         toTarget.Y = 0.0f;
 
@@ -182,7 +182,14 @@ public class MobileUnit : Unit
         float movementDistance = MoveSpeed *
             (float)gameTime.ElapsedGameTime.TotalSeconds;
 
-        if (distanceToTarget <= WaypointArrivalRadius)
+        // Vehicles normally use a generous arrival radius so they do not
+        // wobble around ordinary destinations. At the final construction
+        // waypoint that radius could finish the route before the vehicle has
+        // entered the selected approach cell and actually touches the site.
+        float arrivalRadius = TargetBuildingId is not null && _plannedPath.Count == 1
+            ? Math.Min(WaypointArrivalRadius, 0.15f)
+            : WaypointArrivalRadius;
+        if (distanceToTarget <= arrivalRadius)
         {
             CompleteWaypoint();
             return;
@@ -270,8 +277,12 @@ public class MobileUnit : Unit
 
             if (TargetBuildingId is not null)
             {
-                IsBuilding = true;
-                PathDebug("arrived at construction site; building starts");
+                UpdateConstructionMovement();
+                if (!IsBuilding)
+                {
+                    PathDebug("construction approach ended without footprint adjacency");
+                    ClearCommand();
+                }
                 return;
             }
 
@@ -484,32 +495,52 @@ public class MobileUnit : Unit
         GameWorld map,
         Building constructionSite)
     {
-        Vector3 sitePosition = constructionSite.Position;
-        float approachDistance = Math.Max(constructionSite.Length, constructionSite.Width) * 0.5f +
-            Math.Max(Length, Width) * 0.5f + 1.0f;
-
-        Vector2[] offsets =
-        [
-            new(-approachDistance, 0.0f), new(approachDistance, 0.0f),
-            new(0.0f, -approachDistance), new(0.0f, approachDistance),
-            new(-approachDistance, -approachDistance), new(approachDistance, -approachDistance),
-            new(-approachDistance, approachDistance), new(approachDistance, approachDistance)
-        ];
-
-        foreach (Vector2 offset in offsets)
+        TargetBuildingId = constructionSite.UnitId;
+        if (map.GameGrid.AreFootprintsAdjacent(this, constructionSite))
         {
-            Vector2 target = new(sitePosition.X + offset.X, sitePosition.Z + offset.Y);
-            Point targetCell = map.GameGrid.ToCell(new Vector3(target.X, 0.0f, target.Y));
-            if (!map.GameGrid.CanPlace(this, targetCell))
-                continue;
-
-            bool accepted = TryReceiveGotoCommand(map, new GotoCommand(target));
-            if (accepted)
-                TargetBuildingId = constructionSite.UnitId;
-
-            return accepted;
+            BeginConstructionAtCurrentPosition();
+            return true;
         }
 
+        IReadOnlyList<Point> siteCells = map.GameGrid.GetFootprintCells(
+            constructionSite, constructionSite.Position, GetYawDegrees(constructionSite.Transform));
+        int margin = Math.Max(Width, Length) + 2;
+        int minX = siteCells.Min(cell => cell.X) - margin;
+        int maxX = siteCells.Max(cell => cell.X) + margin;
+        int minY = siteCells.Min(cell => cell.Y) - margin;
+        int maxY = siteCells.Max(cell => cell.Y) + margin;
+        Point start = map.GameGrid.ToCell(Position);
+        float yaw = GetYawDegrees(Transform);
+
+        IEnumerable<Point> candidates =
+            from y in Enumerable.Range(minY, maxY - minY + 1)
+            from x in Enumerable.Range(minX, maxX - minX + 1)
+            let cell = new Point(x, y)
+            let world = map.GameGrid.ToWorldPosition(cell, Position.Y)
+            where map.GameGrid.Contains(cell)
+                && map.GameGrid.CanPlace(this, cell)
+                && map.GameGrid.AreFootprintsAdjacent(
+                    this, world, yaw,
+                    constructionSite, constructionSite.Position, GetYawDegrees(constructionSite.Transform))
+            orderby Vector3.DistanceSquared(Position, world)
+            select cell;
+
+        foreach (Point candidate in candidates)
+        {
+            Vector3 world = map.GameGrid.ToWorldPosition(candidate, Position.Y);
+            Vector2 target = new(world.X, world.Z);
+            if (!map.PathfindingManager.TryFindPath(this, start, target, out List<Point> route))
+                continue;
+
+            bool accepted = TryReceiveGotoCommand(map, new GotoCommand(target), route: route);
+            if (accepted)
+            {
+                TargetBuildingId = constructionSite.UnitId;
+                return true;
+            }
+        }
+
+        TargetBuildingId = null;
         return false;
     }
 
@@ -550,9 +581,41 @@ public class MobileUnit : Unit
 
         UpdateFollowMovement(gameTime);
         UpdateAttackMovement(gameTime);
+        UpdateConstructionMovement();
         MoveAlongPath(gameTime);
         AlignToTerrain(gameTime);
         base.Update(gameTime);
+    }
+
+    private void UpdateConstructionMovement()
+    {
+        if (IsBuilding || TargetBuildingId is not Guid buildingId)
+            return;
+
+        if (Globals.World.Units.FindById(buildingId) is not Building constructionSite ||
+            constructionSite.IsDying || constructionSite.IsCompleted)
+        {
+            ClearCommand();
+            return;
+        }
+
+        if (Globals.World.GameGrid.AreFootprintsAdjacent(this, constructionSite))
+            BeginConstructionAtCurrentPosition();
+    }
+
+    private void BeginConstructionAtCurrentPosition()
+    {
+        _plannedPath.Clear();
+        _commandQueue.Clear();
+        CurrentCommand = null;
+        IsBuilding = true;
+        PathDebug("construction footprints are adjacent; building starts");
+    }
+
+    private static float GetYawDegrees(Matrix transform)
+    {
+        Vector3 forward = transform.Forward;
+        return MathHelper.ToDegrees(MathF.Atan2(-forward.X, -forward.Z));
     }
 
     private void UpdateAttackMovement(GameTime gameTime)

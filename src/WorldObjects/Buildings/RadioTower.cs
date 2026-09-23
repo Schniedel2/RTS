@@ -11,10 +11,11 @@ public class CommunicationsTower : Building
 
     public CommunicationsTower(
         Vector3 position,
-        Guid unitId
+        Guid unitId,
+        int purchasePrice = 0
         ) : base(
             position,
-            unitId)
+            unitId, purchasePrice)
     {
         SightRange = 50;
         TotalBuildingPointsNeeded = 500;
@@ -39,12 +40,11 @@ public class CommunicationsTower : Building
         {
             actions = 
             [
-                new(UnitActionType.Follow, "Sell", 6, 1),
                 new(UnitActionType.Stop, "Destroy", 7, 1)
             ];
         }
         
-        return actions;
+        return WithSellAction(actions);
     }
 
 }

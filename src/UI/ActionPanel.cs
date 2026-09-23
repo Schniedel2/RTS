@@ -17,6 +17,7 @@ public sealed class ActionPanel
     private readonly Texture2D _iconSheet;
     private readonly Texture2D _pixel;
     private readonly List<(Rectangle Bounds, UnitAction Action)> _buttons = [];
+    private readonly HashSet<UnitAction> _disabledActions = [];
     private MouseState _previousMouseState;
     private UnitAction? _activeAction;
     private UnitAction? _hoverAction;
@@ -35,6 +36,7 @@ public sealed class ActionPanel
         _tooltipText = "";
         _isMouseOnPanel = false;
         _buttons.Clear();
+        _disabledActions.Clear();
         if (selectedUnits.Count == 0)
         {
             _activeAction = null;
@@ -56,6 +58,9 @@ public sealed class ActionPanel
         int index = 0;
         foreach (UnitAction action in availableActions)
         {
+            if (action.ResourceCost > 0 && selectedUnits.FirstOrDefault()?.ArmyId is Guid armyId &&
+                (Globals.Game.Armies.Find(armyId)?.Resources ?? 0) < action.ResourceCost)
+                _disabledActions.Add(action);
             int row = index / ButtonsPerRow;
             int column = index % ButtonsPerRow;
             _buttons.Add((new Rectangle(
@@ -90,6 +95,8 @@ public sealed class ActionPanel
             {
                 _hoverAction = action;
                 _tooltipText = _hoverAction!.Name;
+                if (_hoverAction.ResourceCost > 0)
+                    _tooltipText += $" ({_hoverAction.ResourceCost} resources)";
                 if (_hoverAction.Type == UnitActionType.TilePreview)
                     _tooltipText = $"{_hoverAction!.Name} ({Globals.LocalPlayer._currentTerrainTile})";
             }
@@ -100,13 +107,13 @@ public sealed class ActionPanel
             if (mouse.LeftButton == ButtonState.Pressed &&
                 _previousMouseState.LeftButton == ButtonState.Released)
             {       
-                if (Globals.LocalPlayer.SelectAction(_hoverAction, false))
+                if (!_disabledActions.Contains(_hoverAction) && Globals.LocalPlayer.SelectAction(_hoverAction, false))
                     _activeAction = _hoverAction;
             }
             if (mouse.RightButton == ButtonState.Pressed &&
                 _previousMouseState.RightButton == ButtonState.Released)
             {       
-                if (Globals.LocalPlayer.SelectAction(_hoverAction, true))
+                if (!_disabledActions.Contains(_hoverAction) && Globals.LocalPlayer.SelectAction(_hoverAction, true))
                     _activeAction = _hoverAction;
             }
         }
@@ -170,7 +177,8 @@ public sealed class ActionPanel
                 IconSize);
 
             // TODO: if action is disabled: spriteBatch.Draw(_pixel, bounds, Color.DimGray);
-            spriteBatch.Draw(_iconSheet, iconBounds, source, Color.White);
+            spriteBatch.Draw(_iconSheet, iconBounds, source,
+                _disabledActions.Contains(action) ? Color.DimGray : Color.White);
 
             if (_activeAction is not null)
                 if (action == _activeAction)

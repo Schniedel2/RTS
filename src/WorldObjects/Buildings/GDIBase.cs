@@ -14,10 +14,11 @@ public class GDIBase : Building
 
     public GDIBase(
         Vector3 position,
-        Guid unitId
+        Guid unitId,
+        int purchasePrice = 0
         ) : base(
             position,
-            unitId)
+            unitId, purchasePrice)
     {
         SetMesh("gdi-base", deriveDimensions: true);
 
@@ -44,12 +45,11 @@ public class GDIBase : Building
             [
                 new(UnitActionType.TrainUnit, "Bulldozer", 6, 1),
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1),
-                new(UnitActionType.Follow, "Sell", 6, 1),
                 new(UnitActionType.Stop, "Destroy", 7, 1)
             ];
         }
         
-        return actions;
+        return WithSellAction(actions);
     }
 
     public override void Update(GameTime gameTime)

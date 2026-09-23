@@ -11,10 +11,11 @@ public class Reaktor : Building
 
     public Reaktor(
         Vector3 position,
-        Guid unitId
+        Guid unitId,
+        int purchasePrice = 0
         ) : base(
             position,
-            unitId)
+            unitId, purchasePrice)
     {
         Length = 4;
         Width = 5;
@@ -48,12 +49,11 @@ public class Reaktor : Building
             [
                 new(UnitActionType.Goto, "Override", 0, 1),
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1),
-                new(UnitActionType.Follow, "Sell", 6, 1),
                 new(UnitActionType.Stop, "Destroy", 7, 1)
             ];
         }
         
-        return actions;
+        return WithSellAction(actions);
     }
 
 }

@@ -65,8 +65,8 @@ public class TiberiumSource : Building
         return true;
     }
 
-    public IReadOnlyList<UnitAction> GetUnitActions() =>
+    public IReadOnlyList<UnitAction> GetUnitActions() => WithSellAction(
     [
         new(UnitActionType.Stop, "Destroy", 7, 1)
-    ];
+    ]);
 }

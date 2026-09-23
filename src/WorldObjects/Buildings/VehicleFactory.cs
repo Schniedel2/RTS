@@ -5,28 +5,25 @@ using System.Collections.Generic;
 
 namespace RTS;
 
-public class GDIBarracks : Building
+public class VehicleFactory : Building
 {
     public override bool SupportsRallyPoint => true;
 
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
 
-    public GDIBarracks(
+    public VehicleFactory(
         Vector3 position,
         Guid unitId,
+        string meshName,
         int purchasePrice = 0
         ) : base(
             position,
             unitId, purchasePrice)
     {
-        Length = 2;
-        Width = 4;
-        Height = 4;
-
         TotalBuildingPointsNeeded = 2500;
         HitPoints = MaxHitPoints = 2500;
 
-        SetMesh("barracks-1", deriveDimensions: true);
+        SetMesh(meshName, deriveDimensions: true);
     }
 
     public override void Draw(Effect effect)
@@ -38,10 +35,7 @@ public class GDIBarracks : Building
     {
         durationSeconds = unitTypeId.ToLowerInvariant() switch
         {
-            "rak-zero" => 4.0f,
-            "grunt" => 5.0f,
-            "flamer" => 6.0f,
-            "invasor" => 8.0f,
+            "tank" => 10.0f,
             _ => 0.0f
         };
         return durationSeconds > 0.0f;
@@ -60,10 +54,7 @@ public class GDIBarracks : Building
         {
             actions = 
             [
-                new(UnitActionType.TrainUnit, "Rak Zero", 6, 1, "rak-zero"),
-                new(UnitActionType.TrainUnit, "Grunt", 6, 1, "grunt"),
-                new(UnitActionType.TrainUnit, "Flamer", 6, 1, "flamer"),
-                new(UnitActionType.TrainUnit, "Invasor", 6, 1, "invasor"),
+                new(UnitActionType.TrainUnit, "Tank", 6, 1, "tank"),
                 new(UnitActionType.SetRallyPoint, "Set rally point", 0, 1),
                 new(UnitActionType.ClearRallyPoint, "Clear rally point", 7, 1),
                 new(UnitActionType.Goto, "Cancel", 0, 1),

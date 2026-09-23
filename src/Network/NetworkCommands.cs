@@ -84,7 +84,9 @@ public static class NetworkCommands
             X: request.X,
             Y: request.Y,
             Z: request.Z,
-            TargetAngleY: request.TargetAngleY);
+            TargetAngleY: request.TargetAngleY,
+            ArmyId: request.ArmyId,
+            ResourceAmount: request.ResourceAmount);
     }
 
     public static NetworkMessage CreateTextMessage(Guid senderId, string text)
@@ -549,6 +551,14 @@ public static class NetworkCommands
             UnitIds: unitIds,
             ConstructionSiteId: constructionSiteId);
     }
+
+    public static NetworkMessage CreateSellBuildingRequest(Guid senderId, Guid buildingId) =>
+        new(NetworkMessageType.SellBuildingRequest, senderId, UnitId: buildingId);
+
+    public static NetworkMessage CreateSellBuildingCommand(
+        Guid hostId, Building building, int armyResources) =>
+        new(NetworkMessageType.SellBuildingCommand, hostId,
+            UnitId: building.UnitId, ArmyId: building.ArmyId, ResourceAmount: armyResources);
 
     public static NetworkMessage CreateBuildConstructionCommand(
         Guid hostId,

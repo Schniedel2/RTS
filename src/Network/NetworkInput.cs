@@ -201,6 +201,15 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type == NetworkMessageType.SellBuildingCommand)
+        {
+            if (message.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
+                army.Resources = message.ResourceAmount;
+            if (message.UnitId is Guid buildingId)
+                Globals.World.Units.SellBuilding(buildingId);
+            return;
+        }
+
         if (message.Type == NetworkMessageType.SetRallyPointCommand)
         {
             // A client may request a change, but may not inject its own confirmation on the host.
@@ -233,6 +242,8 @@ public sealed class NetworkInput
             Guid unitId = message.UnitId ?? Guid.NewGuid();
             if (message.PlayerId is Guid playerId && message.UnitTypeId is not null)
                 SpawnBuildingLocally(message.UnitTypeId, playerId, unitId, message.X, message.Y, message.Z, message.TargetAngleY);
+            if (message.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
+                army.Resources = message.ResourceAmount;
 
             return;
         }

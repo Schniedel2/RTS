@@ -23,7 +23,7 @@ public sealed class Army
 {
     public Guid Id { get; }
     public Guid? TeamId { get; internal set; }
-    public int Resources { get; set; }
+    public int Resources { get; set; } = 10000;
     public HashSet<Guid> OwnerPlayerIds { get; } = [];
     public Dictionary<Guid, ArmyPermission> GrantedPermissions { get; } = [];
     public IntelligenceCapabilities Intelligence { get; } = new();

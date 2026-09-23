@@ -94,6 +94,17 @@ Check(grid.TryMove(car, new Point(2, 1)), "Planning exclusion allows explicit mo
 Check(grid.GetOccupant(1, 1) is null && ReferenceEquals(grid.GetOccupant(2, 1), car), "Move updates occupancy");
 grid.Remove(car);
 Check(grid.GetOccupant(2, 1) is null, "Remove clears occupancy");
+
+var constructionSite = new Building(new Vector3(5.5f, 0, 5.5f), Guid.NewGuid());
+var builder = new MobileUnit(new Vector3(4.5f, 0, 5.5f), 1, 1, 1, Guid.NewGuid());
+Check(grid.GetFootprintCells(constructionSite, constructionSite.Position, 0).Count == 1,
+    "A 1x1 footprint does not reserve edge-touching neighbour cells");
+Check(grid.AreFootprintsAdjacent(builder, constructionSite), "Builder footprint may construct from an edge-adjacent cell");
+builder.SetPosition(new Vector3(4.5f, 0, 4.5f));
+Check(grid.AreFootprintsAdjacent(builder, constructionSite), "Builder footprint may construct from a diagonally adjacent cell");
+builder.SetPosition(new Vector3(2.5f, 0, 5.5f));
+Check(!grid.AreFootprintsAdjacent(builder, constructionSite), "A one-cell gap is outside construction range");
+
 grid.GetCell(3, 2).AllowedMovement = MovementModes.Walk;
 Check(!grid.CanPlace(Unit(width: 2), new Point(2, 2)), "All footprint cells enforce access rules");
 grid.GetCell(3, 2).MovementCost = 4;
@@ -415,7 +426,8 @@ terrain.SetHeight(3, 3, 0);
 grid = new GameGrid(12, 12, 1);
 grid.BindTerrain(terrain);
 Field(world, typeof(GameWorld), "<GameGrid>k__BackingField", grid);
-Field(game, typeof(RTSGame), "_players", new List<Player>());
+Field(game, typeof(RTSGame), "_players", new List<Player> { new(ownerId, "builder", armyId: armyId) });
+armies.Find(armyId)!.Resources = 10000;
 Globals.MeshHandler = new MeshHandler();
 var smallBox = new BoundingBox(new Vector3(-0.4f, 0, -0.4f), new Vector3(0.4f, 1, 0.4f));
 var smallVertices = smallBox.GetCorners().Select(p => new VertexPositionColorNormalTexture(p, Color.White, Vector3.Up, Vector2.Zero)).ToArray();
@@ -433,6 +445,23 @@ Check(buildCommand is { Type: NetworkMessageType.BuildCommand, Y: 0 } && units.U
 Check(BuildRequest(buildRequest with { UnitId = Guid.NewGuid() }) is null && units.Units.Count == 1, "Host rejects overlapping request in same tick");
 Deliver(buildCommand!);
 Check(units.Units.Count == 1, "Host confirmation does not duplicate building");
+Building builtSite = (Building)units.Units.Single();
+Check(builtSite.PurchasePrice == 2500 && armies.Find(armyId)!.Resources == 7500,
+    "Host charges constructor-supplied building price");
+Check(builtSite.Actions.Any(action => action.Type == UnitActionType.SellBuilding),
+    "Playable building exposes sell action while under construction");
+NetworkMessage? SellRequest(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost)
+    .GetMethod("TryCreateSellBuildingCommand", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
+var sellCommand = SellRequest(NetworkCommands.CreateSellBuildingRequest(ownerId, builtSite.UnitId));
+Check(sellCommand is { Type: NetworkMessageType.SellBuildingCommand, ResourceAmount: 8750 },
+    "Host refunds half the purchase price");
+Deliver(sellCommand!);
+Check(builtSite.IsSelling && grid.GetOccupant(grid.ToCell(builtSite.Position)) is null,
+    "Selling starts shrink animation and releases grid footprint");
+builtSite.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(1.0)));
+Check(builtSite.IsReadyForRemoval, "Sold building is removed after shrink animation");
+Check(!Empty<GenericBuilding>().Actions.Any(
+    action => action.Type == UnitActionType.SellBuilding), "Generic building cannot be sold");
 // Shared texel density must be independent of model bounds and ordinary UVs.
 var sharedRegion = new TextureHandler.TextureRegion { AtlasIndex = 0, X = 16, Y = 32, Width = 256, Height = 128, AtlasWidth = 1024, AtlasHeight = 1024 };
 SubMesh TexturedPart(string? sharedName, float length)

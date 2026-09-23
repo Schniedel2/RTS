@@ -14,10 +14,11 @@ public class Silo : Building
     public Silo(
         Vector3 position,
         Guid unitId,
-        string meshName = "silo-1"
+        string meshName = "silo-1",
+        int purchasePrice = 0
         ) : base(
             position,
-            unitId)
+            unitId, purchasePrice)
     {
         SetMesh(meshName, deriveDimensions: true);
 
@@ -54,7 +55,7 @@ public class Silo : Building
             ];
         }
         
-        return actions;
+        return WithSellAction(actions);
     }
 
 }

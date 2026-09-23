@@ -14,10 +14,11 @@ public class TiberiumRefinery : Building
     public TiberiumRefinery(
         Vector3 position,
         Guid unitId,
-        string meshName = "tiberium-refinery-1"
+        string meshName = "tiberium-refinery-1",
+        int purchasePrice = 0
         ) : base(
             position,
-            unitId)
+            unitId, purchasePrice)
     {
         SetMesh(meshName, deriveDimensions: true);
 
@@ -66,7 +67,7 @@ public class TiberiumRefinery : Building
             ];
         }
         
-        return actions;
+        return WithSellAction(actions);
     }
 
 }

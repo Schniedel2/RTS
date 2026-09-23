@@ -129,6 +129,11 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
 
+    public Task RequestSellBuildingAsync(Guid buildingId, CancellationToken cancellationToken = default) =>
+        _networkHandler.SendToHostAsync(
+            NetworkCommands.CreateSellBuildingRequest(_networkHandler.LocalPeerId, buildingId),
+            cancellationToken);
+
     public Task RequestNeutralSpawnAsync(
         string unitTypeId,
         float x,

@@ -168,6 +168,7 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.HarvestRequest &&
             message.Type != NetworkMessageType.MoveAwayRequest &&
             message.Type != NetworkMessageType.HarvesterReturnRequest &&
+            message.Type != NetworkMessageType.SellBuildingRequest &&
             message.Type != NetworkMessageType.EnterUnitRequest &&
             message.Type != NetworkMessageType.LeaveContainerRequest &&
             message.Type != NetworkMessageType.NotifyUnitsSelected &&
@@ -257,6 +258,7 @@ public sealed class NetworkHost
                     NetworkMessageType.HarvestRequest => TryCreateHarvestCommand(request),
                     NetworkMessageType.MoveAwayRequest => TryCreateMoveAwayCommand(request),
                     NetworkMessageType.HarvesterReturnRequest => TryCreateHarvesterReturnCommand(request),
+                    NetworkMessageType.SellBuildingRequest => TryCreateSellBuildingCommand(request),
                     NetworkMessageType.EnterUnitRequest => TryCreateEnterUnitCommand(request),
                     NetworkMessageType.LeaveContainerRequest => TryCreateLeaveContainerCommand(request),
                     NetworkMessageType.NotifyUnitsSelected => request,
@@ -495,8 +497,7 @@ public sealed class NetworkHost
             harvester.ApplyHarvestState(HarvestPhase.Unloading, harvester.CargoAmount - accepted);
             if (harvester.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
             {
-                army.Resources = (int)MathF.Floor(_world.Units.Units.OfType<Building>()
-                    .Where(building => building.ArmyId == armyId).Sum(building => building.StoredResources));
+                army.Resources += (int)MathF.Floor(accepted);
                 await PublishAsync(new(NetworkMessageType.ArmyResourcesCommand, _networkHandler.LocalPeerId,
                     ArmyId: armyId, ResourceAmount: army.Resources));
             }
@@ -578,6 +579,14 @@ public sealed class NetworkHost
             !float.IsFinite(request.TargetAngleY) || request.X < 0 || request.Z < 0 ||
             request.X >= _world.Terrain.Width - 1 || request.Z >= _world.Terrain.Height - 1)
             return null;
+        Player? player = Globals.Game.Players.FirstOrDefault(player => player.Id == request.SenderId);
+        if (player is null || Globals.Game.Armies.Find(player.ArmyId) is not Army army)
+            return null;
+        Guid armyId = player.ArmyId;
+        int purchasePrice = BuildingFactory.GetPurchasePrice(request.UnitTypeId);
+        if (purchasePrice > army.Resources)
+            return null;
+
         Guid unitId = request.UnitId ?? Guid.NewGuid();
         if (unitId == Guid.Empty || _world.Units.FindById(unitId) is not null)
             return null;
@@ -586,8 +595,30 @@ public sealed class NetworkHost
         // claim the same footprint before the replicated command is processed.
         Building? building = _world.Units.SpawnBuilding(request.UnitTypeId, position,
             request.TargetAngleY, unitId, request.SenderId);
-        return building is null ? null : NetworkCommands.CreateBuildCommand(_networkHandler.LocalPeerId,
-            request with { UnitId = unitId, PlayerId = request.SenderId, Y = position.Y });
+        if (building is null)
+            return null;
+        army.Resources -= building.PurchasePrice;
+        return NetworkCommands.CreateBuildCommand(_networkHandler.LocalPeerId,
+            request with { UnitId = unitId, PlayerId = request.SenderId, Y = position.Y,
+                ArmyId = armyId, ResourceAmount = army.Resources });
+    }
+
+    private NetworkMessage? TryCreateSellBuildingCommand(NetworkMessage request)
+    {
+        if (request.UnitId is not Guid buildingId ||
+            _world.Units.FindById(buildingId) is not Building building ||
+            building is GenericBuilding || building.IsDying ||
+            building.ArmyId is not Guid armyId ||
+            Globals.Game.Players.FirstOrDefault(player => player.Id == request.SenderId)?.ArmyId != armyId ||
+            building.Occupancy?.Occupants.Count > 0 ||
+            Globals.Game.Armies.Find(armyId) is not Army army)
+        {
+            return null;
+        }
+
+        army.Resources += building.SellRefund;
+        return NetworkCommands.CreateSellBuildingCommand(
+            _networkHandler.LocalPeerId, building, army.Resources);
     }
 
     private NetworkMessage? TryCreateSetRallyPointCommand(NetworkMessage request)

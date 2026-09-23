@@ -94,7 +94,9 @@ public enum NetworkMessageType
     TiberiumHarvestCommand,
     ArmyResourcesCommand,
     MoveAwayRequest,
-    HarvesterReturnRequest
+    HarvesterReturnRequest,
+    SellBuildingRequest,
+    SellBuildingCommand
 }
 
 public sealed record WorldData(
