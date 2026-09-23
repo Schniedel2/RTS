@@ -82,7 +82,8 @@ public class Helicopter : MobileUnit
             List<UnitAction> actions =
             [
                 new(UnitActionType.Goto, "Fly to", 0, 1),
-                new(UnitActionType.Scouting, "AI: Scouting", 5, 1),
+        new(UnitActionType.Scouting, "AI: Scouting", 5, 1),
+        new(UnitActionType.MoveAway, "AI: Move away", 4, 1),
                 new(UnitActionType.TakeOff, "Take off", 0, 1),
                 new(UnitActionType.Land, "Land", 5, 1),
                 new(UnitActionType.ReturnToHelipad, "Return to helipad", 5, 1),

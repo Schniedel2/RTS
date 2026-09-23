@@ -95,6 +95,7 @@ public class GDIBulldozer : Car
     [
         new(UnitActionType.Goto, "Goto", 0, 1),
         new(UnitActionType.Scouting, "AI: Scouting", 5, 1),
+        new(UnitActionType.MoveAway, "AI: Move away", 4, 1),
         new(UnitActionType.Follow, "Follow", 6, 1),
         new(UnitActionType.Build, "Build Reaktor", 1, 4, "Reaktor"),
         new(UnitActionType.Build, "Build Base", 1, 4, "GDI-Base"),

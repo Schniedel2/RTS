@@ -959,4 +959,67 @@ Field(lShaped, typeof(Unit), "<FootprintRegions>k__BackingField", new BoundingBo
 IReadOnlyList<Point> lCells = maskGrid.GetFootprintCells(lShaped, new Vector3(20.5f, 0, 20.5f), 0);
 Check(lCells.Contains(new Point(19, 20)) && lCells.Contains(new Point(20, 21)), "Authored footprint combines multiple regions");
 Check(!lCells.Contains(new Point(20, 20)), "L-shaped footprint keeps its inner corner free");
+
+// Authored building clearance remains traversable while preventing later building footprints.
+var clearanceGrid = new GameGrid(30, 30, 1);
+clearanceGrid.BindTerrain(Terrain(30, 30));
+Globals.World = World(clearanceGrid);
+Building clearanceA = Empty<Building>();
+Field(clearanceA, typeof(Unit), "<Width>k__BackingField", 1);
+Field(clearanceA, typeof(Unit), "<Length>k__BackingField", 1);
+Field(clearanceA, typeof(Unit), "<FootprintRegions>k__BackingField", new BoundingBox[]
+{
+    new(new Vector3(-0.4f, 0, -0.4f), new Vector3(0.4f, 1, 0.4f))
+});
+Field(clearanceA, typeof(Unit), "<ClearanceRegions>k__BackingField", new BoundingBox[]
+{
+    new(new Vector3(1.6f, 0, -0.4f), new Vector3(2.4f, 1, 0.4f))
+});
+clearanceA.SetPosition(new Vector3(10.5f, 0, 10.5f));
+Check(clearanceGrid.TryPlace(clearanceA, clearanceA.Position, 0), "Building registers authored clearance");
+MobileUnit clearanceWalker = Unit();
+Field(clearanceWalker, typeof(Unit), "<Width>k__BackingField", 1);
+Field(clearanceWalker, typeof(Unit), "<Length>k__BackingField", 1);
+Check(clearanceGrid.TryMove(clearanceWalker, new Point(12, 10)), "Units can traverse building clearance");
+clearanceGrid.Remove(clearanceWalker);
+Building clearanceCandidate = Empty<Building>();
+Field(clearanceCandidate, typeof(Unit), "<Width>k__BackingField", 1);
+Field(clearanceCandidate, typeof(Unit), "<Length>k__BackingField", 1);
+Check(!clearanceGrid.CanPlace(clearanceCandidate, new Vector3(12.5f, 0, 10.5f), 0), "Clearance blocks a new building footprint");
+Building clearanceB = Empty<Building>();
+Field(clearanceB, typeof(Unit), "<Width>k__BackingField", 1);
+Field(clearanceB, typeof(Unit), "<Length>k__BackingField", 1);
+Field(clearanceB, typeof(Unit), "<FootprintRegions>k__BackingField", new BoundingBox[]
+{
+    new(new Vector3(-0.4f, 0, -0.4f), new Vector3(0.4f, 1, 0.4f))
+});
+Field(clearanceB, typeof(Unit), "<ClearanceRegions>k__BackingField", new BoundingBox[]
+{
+    new(new Vector3(-2.4f, 0, -0.4f), new Vector3(-1.6f, 1, 0.4f))
+});
+clearanceB.SetPosition(new Vector3(14.5f, 0, 10.5f));
+Check(clearanceGrid.TryPlace(clearanceB, clearanceB.Position, 0), "Clearance areas may overlap");
+clearanceGrid.Remove(clearanceA);
+Check(!clearanceGrid.CanPlace(clearanceCandidate, new Vector3(12.5f, 0, 10.5f), 0), "Overlapping clearance keeps remaining owner");
+clearanceGrid.Remove(clearanceB);
+Check(clearanceGrid.CanPlace(clearanceCandidate, new Vector3(12.5f, 0, 10.5f), 0), "Removing buildings releases their clearance");
+
+var hierarchyRoot = new MeshNode("root", Vector3.Zero);
+var visibleNode = new MeshNode("body", Vector3.Zero);
+visibleNode.SubMeshes.Add(new SubMesh("body",
+    new[] { new VertexPositionColorNormalTexture(Vector3.Zero, Color.White, Vector3.Up, Vector2.Zero) },
+    new[] { 0 }, Vector3.Zero));
+hierarchyRoot.Children.Add(visibleNode);
+var clearancePivot = new MeshNode("pivot:clearance", Vector3.Zero);
+var clearanceRegion = new MeshNode("region", Vector3.Zero);
+clearanceRegion.SubMeshes.Add(new SubMesh("clearance-region", new[]
+{
+    new VertexPositionColorNormalTexture(new Vector3(-1, 0, -1), Color.White, Vector3.Up, Vector2.Zero),
+    new VertexPositionColorNormalTexture(new Vector3(1, 0, 1), Color.White, Vector3.Up, Vector2.Zero)
+}, new[] { 0, 1 }, Vector3.Zero));
+clearancePivot.Children.Add(clearanceRegion);
+hierarchyRoot.Children.Add(clearancePivot);
+var clearanceMesh = new Mesh("clearance-test", hierarchyRoot);
+Check(clearanceMesh.ClearanceBounds.Count == 1, "Mesh extracts pivot:clearance geometry");
+Check(clearanceMesh.SubMeshes.All(part => part.Name != "clearance-region"), "Clearance helper geometry is not rendered");
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");

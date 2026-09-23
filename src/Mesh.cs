@@ -323,12 +323,13 @@ public class Mesh
 
     private readonly Dictionary<string, float> parameters = [];
     private readonly List<BoundingBox> _footprintBounds = [];
+    private readonly List<BoundingBox> _clearanceBounds = [];
 
     public Mesh(string name, MeshNode root)
     {
         Name = name;
         Root = root;
-        ExtractFootprintGeometry(root, Matrix.Identity);
+        ExtractPlacementGeometry(root, Matrix.Identity);
         SubMeshes = [.. root.EnumerateSubMeshes()];
     }
 
@@ -342,6 +343,8 @@ public class Mesh
     public IReadOnlyList<SubMesh> SubMeshes { get; }
     /// <summary>Local X/Z rectangles authored below pivot:footprint and excluded from rendering.</summary>
     public IReadOnlyList<BoundingBox> FootprintBounds => _footprintBounds;
+    /// <summary>Local X/Z rectangles authored below pivot:clearance and excluded from rendering.</summary>
+    public IReadOnlyList<BoundingBox> ClearanceBounds => _clearanceBounds;
     public Dictionary<string, MeshAnimationClip> Animations { get; } = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>
     /// Permanent local correction applied before the Unit or attachment world
@@ -463,25 +466,27 @@ public class Mesh
         return pivots;
     }
 
-    private bool ExtractFootprintGeometry(MeshNode parent, Matrix parentTransform)
+    private void ExtractPlacementGeometry(MeshNode parent, Matrix parentTransform)
     {
         for (int index = parent.Children.Count - 1; index >= 0; index--)
         {
             MeshNode child = parent.Children[index];
             Matrix transform = child.GetLocalTransform(parameters) * parentTransform;
-            if (child.Name.Equals("pivot:footprint", StringComparison.OrdinalIgnoreCase))
+            List<BoundingBox>? destination = child.Name.Equals("pivot:footprint", StringComparison.OrdinalIgnoreCase)
+                ? _footprintBounds
+                : child.Name.Equals("pivot:clearance", StringComparison.OrdinalIgnoreCase) ? _clearanceBounds : null;
+            if (destination is not null)
             {
                 foreach (MeshNode region in child.Children)
                     if (TryGetNodeBounds(region, region.GetLocalTransform(parameters) * transform, out BoundingBox bounds))
-                        _footprintBounds.Add(bounds);
+                        destination.Add(bounds);
                 if (child.SubMeshes.Count > 0 && TryGetNodeBounds(child, transform, out BoundingBox ownBounds))
-                    _footprintBounds.Add(ownBounds);
+                    destination.Add(ownBounds);
                 parent.Children.RemoveAt(index);
-                return true;
+                continue;
             }
-            ExtractFootprintGeometry(child, transform);
+            ExtractPlacementGeometry(child, transform);
         }
-        return false;
     }
 
     private static bool TryGetNodeBounds(MeshNode node, Matrix transform, out BoundingBox bounds)

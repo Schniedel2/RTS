@@ -25,6 +25,7 @@ public sealed class Harvester : Car
     public override IReadOnlyList<UnitAction> Actions =>
     [
         new(UnitActionType.Harvest, "Harvest", 3, 1),
+        new(UnitActionType.MoveAway, "AI: Move away", 4, 1),
         new(UnitActionType.Goto, "Goto", 0, 1),
         new(UnitActionType.Stop, "Stop", 7, 1)
     ];

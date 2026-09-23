@@ -75,6 +75,8 @@ public abstract class Unit : WorldObject
     public Vector3 FootprintLocalCenter { get; protected set; }
     public IReadOnlyList<BoundingBox> FootprintRegions { get; private set; } = Array.Empty<BoundingBox>();
     public bool HasAuthoredFootprint => FootprintRegions?.Count > 0;
+    public IReadOnlyList<BoundingBox> ClearanceRegions { get; private set; } = Array.Empty<BoundingBox>();
+    public bool HasAuthoredClearance => ClearanceRegions?.Count > 0;
     public bool IsSelected { get; set; }
     public GotoCommand? CurrentCommand { get; protected set; }
     /// <summary>True while this unit is visually playing its death sequence.</summary>
@@ -343,6 +345,9 @@ public abstract class Unit : WorldObject
             return;
 
         FootprintRegions = meshSet.RootMesh.FootprintBounds
+            .Select(region => TransformBounds(region, meshSet.RootMesh.LocalTransform))
+            .ToArray();
+        ClearanceRegions = meshSet.RootMesh.ClearanceBounds
             .Select(region => TransformBounds(region, meshSet.RootMesh.LocalTransform))
             .ToArray();
         BoundingBox footprintBounds = FootprintRegions.Count > 0

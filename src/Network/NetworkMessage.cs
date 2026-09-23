@@ -92,7 +92,8 @@ public enum NetworkMessageType
     HarvestRequest,
     HarvestCommand,
     TiberiumHarvestCommand,
-    ArmyResourcesCommand
+    ArmyResourcesCommand,
+    MoveAwayRequest
 }
 
 public sealed record WorldData(

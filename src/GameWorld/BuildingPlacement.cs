@@ -6,9 +6,9 @@ using System.Linq;
 namespace RTS;
 
 [Flags]
-public enum PlacementIssue { None = 0, OutsideTerrain = 1, Blocked = 2, Occupied = 4, UnevenTerrain = 8 }
+public enum PlacementIssue { None = 0, OutsideTerrain = 1, Blocked = 2, Occupied = 4, UnevenTerrain = 8, Reserved = 16 }
 
-public sealed record PlacementCell(Point Cell, PlacementIssue Issues, float MinimumHeight, float MaximumHeight);
+public sealed record PlacementCell(Point Cell, PlacementIssue Issues, float MinimumHeight, float MaximumHeight, bool IsClearance = false);
 
 /// <summary>One shared result for placement, host validation and the colored preview.</summary>
 public sealed record BuildingPlacement(IReadOnlyList<PlacementCell> Cells, float HeightDifference)
@@ -28,7 +28,8 @@ public sealed record BuildingPlacement(IReadOnlyList<PlacementCell> Cells, float
         GameGrid grid = world.GameGrid;
         List<PlacementCell> cells = [];
         float minimum = float.PositiveInfinity, maximum = float.NegativeInfinity;
-        foreach (Point cell in grid.GetFootprintCells(unit, position, rotation))
+        HashSet<Point> footprint = grid.GetFootprintCells(unit, position, rotation).ToHashSet();
+        foreach (Point cell in footprint)
         {
             int left = cell.X * grid.CellSize, top = cell.Y * grid.CellSize;
             if (!grid.Contains(cell) || left < 0 || top < 0 ||
@@ -40,6 +41,8 @@ public sealed record BuildingPlacement(IReadOnlyList<PlacementCell> Cells, float
             PlacementIssue issues = grid.GetCell(cell).IsBlocked ? PlacementIssue.Blocked : PlacementIssue.None;
             if (grid.GetOccupant(cell) is Unit occupant && occupant != unit)
                 issues |= PlacementIssue.Occupied;
+            if (grid.IsReservedForBuilding(cell, unit))
+                issues |= PlacementIssue.Reserved;
             float cellMinimum = float.PositiveInfinity, cellMaximum = float.NegativeInfinity;
             // Include shared boundary vertices and every interior vertex for coarse grids.
             for (int z = top; z <= top + grid.CellSize; z++)
@@ -54,6 +57,20 @@ public sealed record BuildingPlacement(IReadOnlyList<PlacementCell> Cells, float
             minimum = Math.Min(minimum, cellMinimum);
             maximum = Math.Max(maximum, cellMaximum);
             cells.Add(new(cell, issues, cellMinimum, cellMaximum));
+        }
+        foreach (Point cell in grid.GetClearanceCells(unit, position, rotation).Where(cell => !footprint.Contains(cell)))
+        {
+            int left = cell.X * grid.CellSize, top = cell.Y * grid.CellSize;
+            if (!grid.Contains(cell) || left < 0 || top < 0 ||
+                left + grid.CellSize >= terrain.Width || top + grid.CellSize >= terrain.Height)
+            {
+                cells.Add(new(cell, PlacementIssue.OutsideTerrain, 0, 0, true));
+                continue;
+            }
+            PlacementIssue issues = grid.GetCell(cell).IsBlocked ? PlacementIssue.Blocked : PlacementIssue.None;
+            if (grid.GetOccupant(cell) is Unit occupant && occupant != unit)
+                issues |= PlacementIssue.Occupied;
+            cells.Add(new(cell, issues, 0, 0, true));
         }
         float difference = maximum >= minimum ? maximum - minimum : 0;
         if (difference > tolerance)

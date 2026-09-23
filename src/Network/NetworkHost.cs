@@ -164,6 +164,7 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.EarthworkRequest &&
             message.Type != NetworkMessageType.HelicopterOrderRequest &&
             message.Type != NetworkMessageType.HarvestRequest &&
+            message.Type != NetworkMessageType.MoveAwayRequest &&
             message.Type != NetworkMessageType.EnterUnitRequest &&
             message.Type != NetworkMessageType.LeaveContainerRequest &&
             message.Type != NetworkMessageType.NotifyUnitsSelected &&
@@ -228,6 +229,10 @@ public sealed class NetworkHost
                     request = request with { UnitIds = (request.UnitIds ?? Array.Empty<Guid>()).Where(id =>
                         _world.Units.FindById(id) is not Helicopter helicopter || Globals.Game.Armies.CanControl(request.SenderId, helicopter.ArmyId)).ToArray() };
                 _earthworks.CancelForRequest(request);
+                if (request.Type is NetworkMessageType.GotoRequest or NetworkMessageType.MoveAwayRequest && request.UnitId is Guid singleId)
+                    _harvestJobs.Remove(singleId);
+                if (request.Type == NetworkMessageType.GotoRequest)
+                    foreach (Guid id in request.UnitIds ?? []) _harvestJobs.Remove(id);
                 NetworkMessage? command = request.Type switch
                 {
                     NetworkMessageType.SpawnRequest => NetworkCommands.CreateSpawnCommand(_networkHandler.LocalPeerId, request),
@@ -247,6 +252,7 @@ public sealed class NetworkHost
                     NetworkMessageType.EarthworkRequest => _earthworks.Start(request),
                     NetworkMessageType.HelicopterOrderRequest => TryCreateHelicopterOrder(request),
                     NetworkMessageType.HarvestRequest => TryCreateHarvestCommand(request),
+                    NetworkMessageType.MoveAwayRequest => TryCreateMoveAwayCommand(request),
                     NetworkMessageType.EnterUnitRequest => TryCreateEnterUnitCommand(request),
                     NetworkMessageType.LeaveContainerRequest => TryCreateLeaveContainerCommand(request),
                     NetworkMessageType.NotifyUnitsSelected => request,
@@ -333,6 +339,36 @@ public sealed class NetworkHost
         harvester.ApplyHarvestState(HarvestPhase.DrivingToField, harvester.CargoAmount);
         _harvestJobs[id] = new HarvestJob(center);
         return CreateHarvestStateCommand(harvester, HarvestPhase.DrivingToField);
+    }
+
+    private NetworkMessage? TryCreateMoveAwayCommand(NetworkMessage request)
+    {
+        if (request.UnitId is not Guid id || _world.Units.FindMobileUnitById(id) is not MobileUnit unit ||
+            unit.IsDying || !Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId) ||
+            !float.IsFinite(request.X) || !float.IsFinite(request.Z)) return null;
+
+        Vector2 away = new(unit.Position.X - request.X, unit.Position.Z - request.Z);
+        if (away.LengthSquared() < 0.01f)
+            away = new Vector2(unit.Transform.Forward.X, unit.Transform.Forward.Z);
+        if (away.LengthSquared() < 0.01f)
+            away = Vector2.UnitX;
+        away.Normalize();
+
+        float cellSize = _world.GameGrid.CellSize;
+        float[] angleOffsets = [0, 22.5f, -22.5f, 45.0f, -45.0f, 67.5f, -67.5f, 90.0f, -90.0f];
+        for (int distanceInCells = 6; distanceInCells >= 2; distanceInCells--)
+        {
+            foreach (float offset in angleOffsets)
+            {
+                Vector2 direction = Vector2.Transform(away, Matrix.CreateRotationZ(MathHelper.ToRadians(offset)));
+                Vector2 destination = new Vector2(unit.Position.X, unit.Position.Z) + direction * distanceInCells * cellSize;
+                NetworkMessage candidate = NetworkCommands.CreateGotoRequest(request.SenderId, [id],
+                    destination.X, unit.Position.Y, destination.Y);
+                NetworkMessage? command = TryCreateGotoCommand(candidate);
+                if (command is not null) return command;
+            }
+        }
+        return null;
     }
 
     private async Task PublishHarvestersAsync(GameTime gameTime)

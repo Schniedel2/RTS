@@ -46,6 +46,7 @@ public enum UnitActionType
     ReturnToHelipad,
     Scouting,
     Harvest,
+    MoveAway,
     max
 
 }

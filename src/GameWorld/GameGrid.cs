@@ -88,6 +88,8 @@ public class GameGrid
     // their occupancy. Keep the exact set that was placed, so Remove can
     // reliably release precisely those cells later.
     private readonly Dictionary<Unit, IReadOnlyList<Point>> _occupiedCells = [];
+    private readonly Dictionary<Point, HashSet<Unit>> _clearanceOwners = [];
+    private readonly Dictionary<Unit, IReadOnlyList<Point>> _clearanceCells = [];
 
     public GameGrid(int width, int height, int cellSize)
     {
@@ -129,7 +131,20 @@ public class GameGrid
 
             _occupiedCells.Remove(unit);
         }
+
+        if (_clearanceCells.Remove(unit, out IReadOnlyList<Point>? clearance))
+            foreach (Point cell in clearance)
+                if (_clearanceOwners.TryGetValue(cell, out HashSet<Unit>? owners))
+                {
+                    owners.Remove(unit);
+                    if (owners.Count == 0) _clearanceOwners.Remove(cell);
+                }
     }
+
+    /// <summary>True when another building requires this cell to remain free of building footprints.</summary>
+    public bool IsReservedForBuilding(Point cell, Unit? prospectiveOwner = null) =>
+        _clearanceOwners.TryGetValue(cell, out HashSet<Unit>? owners) &&
+        owners.Any(owner => owner != prospectiveOwner);
 
     public bool CanPlace(Unit unit, Point centerCell)
     {
@@ -243,6 +258,19 @@ public class GameGrid
             Unit? occupant = _occupants[cell.X, cell.Y];
             if (occupant is not null && occupant != unit)
                 return false;
+            if (unit is Building && IsReservedForBuilding(cell, unit))
+                return false;
+        }
+        if (unit is Building)
+        {
+            foreach (Point cell in GetClearanceCells(unit, position, rotationDegrees))
+            {
+                if (!Contains(cell) || GetCell(cell).IsBlocked)
+                    return false;
+                Unit? occupant = _occupants[cell.X, cell.Y];
+                if (occupant is not null && occupant != unit)
+                    return false;
+            }
         }
         return true;
     }
@@ -261,6 +289,17 @@ public class GameGrid
         foreach (Point cell in cells)
             _occupants[cell.X, cell.Y] = unit;
         _occupiedCells[unit] = cells;
+        if (unit is Building)
+        {
+            IReadOnlyList<Point> clearance = GetClearanceCells(unit, position, rotationDegrees);
+            foreach (Point cell in clearance)
+            {
+                if (!_clearanceOwners.TryGetValue(cell, out HashSet<Unit>? owners))
+                    _clearanceOwners[cell] = owners = [];
+                owners.Add(unit);
+            }
+            _clearanceCells[unit] = clearance;
+        }
         return true;
     }
 
@@ -307,9 +346,24 @@ public class GameGrid
         return cells;
     }
 
+    /// <summary>Returns cells which must remain free of building footprints but remain traversable.</summary>
+    public IReadOnlyList<Point> GetClearanceCells(Unit unit, Vector3 position, float rotationDegrees) =>
+        unit.HasAuthoredClearance
+            ? GetAuthoredRegionCells(unit.ClearanceRegions, unit is MobileUnit, position, rotationDegrees)
+            : Array.Empty<Point>();
+
     private IReadOnlyList<Point> GetAuthoredFootprintCells(Unit unit, Vector3 position, float rotationDegrees)
     {
-        float yawDegrees = unit is MobileUnit
+        return GetAuthoredRegionCells(unit.FootprintRegions, unit is MobileUnit, position, rotationDegrees);
+    }
+
+    private IReadOnlyList<Point> GetAuthoredRegionCells(
+        IReadOnlyList<BoundingBox> regions,
+        bool snapRotation,
+        Vector3 position,
+        float rotationDegrees)
+    {
+        float yawDegrees = snapRotation
             ? MathF.Round(rotationDegrees / 90.0f) * 90.0f
             : rotationDegrees;
         Matrix rotation = Matrix.CreateRotationY(MathHelper.ToRadians(yawDegrees));
@@ -318,7 +372,7 @@ public class GameGrid
         Vector2 right = new(right3.X, right3.Z);
         Vector2 forward = new(forward3.X, forward3.Z);
         HashSet<Point> cells = [];
-        foreach (BoundingBox region in unit.FootprintRegions)
+        foreach (BoundingBox region in regions)
         {
             Vector3 localCenter = (region.Min + region.Max) * 0.5f;
             Vector3 worldCenter = position + Vector3.TransformNormal(localCenter, rotation);

@@ -520,6 +520,14 @@ public class PlayerHandler
                 ActiveAction = null;
                 return;
             }
+            if (action.Type == UnitActionType.MoveAway)
+            {
+                _scouting.Stop(_selectedUnits);
+                foreach (MobileUnit unit in _selectedUnits.OfType<MobileUnit>())
+                    _ = Globals.Game.NetworkClient.RequestMoveAwayAsync(unit.UnitId, targetPosition);
+                ActiveAction = null;
+                return;
+            }
             if (action.Type == UnitActionType.PlaceTiberiumSource)
             {
                 _map.Units.SpawnBuilding("tiberium-source", targetPosition, targetAngleY, Guid.NewGuid(), Guid.Empty);
@@ -785,8 +793,11 @@ public class PlayerHandler
                         graphicsDevice.DepthStencilState = DepthStencilState.None;
                         foreach (PlacementCell cell in _buildPlacementPreview.Cells)
                         {
-                            Color tint = cell.Issues == PlacementIssue.None
-                                ? new Color(40, 220, 80, 100) : new Color(255, 40, 40, 150);
+                            Color tint = cell.Issues != PlacementIssue.None
+                                ? new Color(255, 40, 40, 150)
+                                : cell.IsClearance
+                                    ? new Color(50, 150, 255, 110)
+                                    : new Color(40, 220, 80, 100);
                             int left = cell.Cell.X * _map.GameGrid.CellSize;
                             int top = cell.Cell.Y * _map.GameGrid.CellSize;
                             for (int z = top; z < top + _map.GameGrid.CellSize; z++)

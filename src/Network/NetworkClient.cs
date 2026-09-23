@@ -31,6 +31,11 @@ public sealed class NetworkClient
             _networkHandler.LocalPeerId, UnitId: unitId,
             X: target.X, Y: target.Y, Z: target.Z));
 
+    public Task RequestMoveAwayAsync(Guid unitId, Vector3 fromPosition) =>
+        _networkHandler.SendToHostAsync(new(NetworkMessageType.MoveAwayRequest,
+            _networkHandler.LocalPeerId, UnitId: unitId,
+            X: fromPosition.X, Y: fromPosition.Y, Z: fromPosition.Z));
+
     private uint _selectionRevision;
 
     public Task NotifyUnitsSelectedAsync(Guid[] unitIds, CancellationToken cancellationToken = default)

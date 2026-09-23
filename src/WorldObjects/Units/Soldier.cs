@@ -40,6 +40,7 @@ public class Soldier : MobileUnit
     [
         new(UnitActionType.Goto, "Goto", 0, 1),
         new(UnitActionType.Scouting, "AI: Scouting", 5, 1),
+        new(UnitActionType.MoveAway, "AI: Move away", 4, 1),
         new(UnitActionType.Attack, "Attack", 1, 1),
         new(UnitActionType.Follow, "Follow", 6, 1),
         new(UnitActionType.Stop, "Stop", 7, 1)
