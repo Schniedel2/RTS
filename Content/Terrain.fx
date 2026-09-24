@@ -15,6 +15,7 @@ float FogWidth;
 float FogHeight;
 float2 FogTexelSize;
 float FogEdgeSoftness;
+float FogOfWarEnabled;
 float HideUnexploredTerrain;
 int DebugMode;
 
@@ -446,11 +447,14 @@ float4 PixelShaderFunction(
         lighting;
 
     float2 fogUV = (input.WorldPosition.xz + 0.5) / float2(FogWidth, FogHeight);
-    float visibility = SampleSoftFog(fogUV);
-    float fogLighting = lerp(0.035, 1.0, visibility);
-    if (HideUnexploredTerrain > 0.5)
-        fogLighting *= smoothstep(0.01, 0.32, visibility);
-    finalColor *= fogLighting;
+    if (FogOfWarEnabled > 0.5)
+    {
+        float visibility = SampleSoftFog(fogUV);
+        float fogLighting = lerp(0.035, 1.0, visibility);
+        if (HideUnexploredTerrain > 0.5)
+            fogLighting *= smoothstep(0.01, 0.32, visibility);
+        finalColor *= fogLighting;
+    }
 
 
     // ============================================================

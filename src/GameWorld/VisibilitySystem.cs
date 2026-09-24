@@ -136,6 +136,8 @@ public sealed class VisibilitySystem
 
     public bool IsUnitVisible(Guid viewerArmyId, Unit unit, bool forMinimap = false)
     {
+        if (!Globals.FogOfWarEnabled)
+            return true;
         if (unit.ArmyId is not Guid targetArmyId)
             return !Globals.HideUnexploredWorld || _world.IsEditorActive ||
                 GetDisplayedTerrainVisibility(viewerArmyId, _world.GameGrid.ToCell(unit.Position), forMinimap) != VisibilityState.Unexplored;
@@ -159,6 +161,8 @@ public sealed class VisibilitySystem
         bool forMinimap,
         IReadOnlyList<Guid> alliedArmyIds)
     {
+        if (!Globals.FogOfWarEnabled)
+            return VisibilityState.Visible;
         CellVisibility visibility = GetVisibility(viewerArmyId, cell, alliedArmyIds);
         if (visibility.HasFlag(CellVisibility.Visible)) return VisibilityState.Visible;
         if (visibility.HasFlag(CellVisibility.Explored)) return VisibilityState.Explored;
@@ -181,7 +185,7 @@ public sealed class VisibilitySystem
 
     public bool IsTerrainExploredToLocalPlayer(Point cell)
     {
-        if (!Globals.HideUnexploredWorld || _world.IsEditorActive)
+        if (!Globals.FogOfWarEnabled || !Globals.HideUnexploredWorld || _world.IsEditorActive)
             return true;
         Player? local = Globals.Game.Players.FirstOrDefault(player => player.Id == Globals.Game.Network.LocalPeerId);
         return local is null || GetDisplayedTerrainVisibility(local.ArmyId, cell, false) != VisibilityState.Unexplored;

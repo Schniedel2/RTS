@@ -670,7 +670,9 @@ Check(matchAssignments.Select(item => item.PlayerId).ToHashSet().SetEquals([owne
 typeof(RTSGame).GetMethod("PrepareAIPlayersForMatch", BindingFlags.Instance | BindingFlags.NonPublic)!
     .Invoke(game, new object[] { matchAssignments });
 Check(game.Players.Any(player => player.Id == secondPlayerId) &&
-      game.FindAIPlayer(secondPlayerId.ToString())?.Status == AIPlayerStatus.Active,
+      game.FindAIPlayer(secondPlayerId.ToString()) is AIPlayer startedAI &&
+      startedAI.Status == AIPlayerStatus.Active &&
+      startedAI.Controller.Goal == AIGoalState.FindingBulldozer,
     "Match start restores and activates the host AI controller");
 // Shared texel density must be independent of model bounds and ordinary UVs.
 var sharedRegion = new TextureHandler.TextureRegion { AtlasIndex = 0, X = 16, Y = 32, Width = 256, Height = 128, AtlasWidth = 1024, AtlasHeight = 1024 };

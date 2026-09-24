@@ -654,7 +654,8 @@ public class ConsoleCommands
         }
 
         foreach (AIPlayer aiPlayer in _rtsGame.AIPlayers)
-            _console.Print($"AI {aiPlayer.Name} id={aiPlayer.Id.ToString("N")[..8]} team={aiPlayer.Player.TeamId} status={aiPlayer.Status}");
+            _console.Print($"AI {aiPlayer.Name} id={aiPlayer.Id.ToString("N")[..8]} team={aiPlayer.Player.TeamId} " +
+                $"status={aiPlayer.Status} goal={aiPlayer.Controller.Goal} decision=\"{aiPlayer.Controller.LastDecision}\"");
     }
 
     private void Spawn(string[] args)
@@ -801,6 +802,7 @@ public class ConsoleCommands
             _console.Print($"Path, pathfinding, pathmessages: {Globals.Debug_ShowPathfindingMessages}");
             _console.Print($"Unitcommands, commands: {Globals.Debug_ShowUnitCommands}");
             _console.Print($"Hide-unexplored: {Globals.HideUnexploredWorld}");
+            _console.Print($"Fogofwar: {Globals.FogOfWarEnabled}");
             return;
         }
 
@@ -856,6 +858,11 @@ public class ConsoleCommands
             case "hideunexplored":
                 Globals.HideUnexploredWorld = enable;
                 _console.Print($"Hiding unexplored world areas {(enable ? "enabled" : "disabled")}.");
+                break;
+            case "fogofwar":
+            case "fog":
+                Globals.FogOfWarEnabled = enable;
+                _console.Print($"Fog of war {(enable ? "enabled" : "disabled")}.");
                 break;
             default:
                 _console.Print($"Unknown flag: {name}");

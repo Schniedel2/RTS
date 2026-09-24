@@ -2,3 +2,4 @@ enable path
 enable gamegrid
 enable network
 enable unitcommands
+disable fogofwar

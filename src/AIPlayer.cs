@@ -20,6 +20,7 @@ public sealed class AIPlayer
 {
     public Player Player { get; }
     public AIPlayerStatus Status { get; private set; } = AIPlayerStatus.Idle;
+    public AIController Controller { get; } = new();
 
     public Guid Id => Player.Id;
     public string Name => Player.Name;
@@ -30,4 +31,13 @@ public sealed class AIPlayer
     }
 
     public void SetStatus(AIPlayerStatus status) => Status = status;
+
+    public void BeginMatch()
+    {
+        Status = AIPlayerStatus.Active;
+        Controller.BeginMatch();
+    }
+
+    public void Update(GameTime gameTime, GameWorld world, Network.NetworkHandler network) =>
+        Controller.Update(gameTime, this, world, network);
 }

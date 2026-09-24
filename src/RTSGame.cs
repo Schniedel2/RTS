@@ -177,7 +177,7 @@ public class RTSGame
             if (_players.All(player => player.Id != aiPlayer.Id))
                 _players.Add(aiPlayer.Player);
             Armies.EnsureArmy(assignment.ArmyId, aiPlayer.Id, GuidUtility.FromInt(aiPlayer.Player.TeamId));
-            aiPlayer.SetStatus(AIPlayerStatus.Active);
+            aiPlayer.BeginMatch();
         }
     }
 
@@ -272,6 +272,9 @@ public class RTSGame
         if (!hudConsumed)
             LocalPlayer.Update(gameTime, camera, viewport);
         World.Update(gameTime);
+        if (Network.IsHost)
+            foreach (AIPlayer aiPlayer in _aiPlayers.Values.ToArray())
+                aiPlayer.Update(gameTime, World, Network);
         _fogRefreshElapsed += deltaTime;
         if (TryGetLocalPlayer(out Player viewer))
         {
@@ -342,6 +345,8 @@ public class RTSGame
             1.0f / _fogTexture.Texture.Height));
         Globals._terrainEffect.Parameters["FogEdgeSoftness"]?.SetValue(
             Math.Max(0.0f, Globals.FogOfWarEdgeSoftness));
+        Globals._terrainEffect.Parameters["FogOfWarEnabled"]?.SetValue(
+            Globals.FogOfWarEnabled && !World.IsEditorActive ? 1.0f : 0.0f);
         Globals._terrainEffect.Parameters["HideUnexploredTerrain"]?.SetValue(
             Globals.HideUnexploredWorld && !World.IsEditorActive ? 1.0f : 0.0f);
         World.DrawTerrain(
