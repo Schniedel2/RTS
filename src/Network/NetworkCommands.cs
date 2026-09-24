@@ -86,6 +86,15 @@ public static class NetworkCommands
             PlayerSkin: (int)player.Skin);
     }
 
+    public static NetworkMessage CreatePlayerTeamUpdateRequest(Player player, int teamId) =>
+        new(
+            NetworkMessageType.RequestPlayerUpdate,
+            player.Id,
+            PlayerId: player.Id,
+            DisplayName: player.Name,
+            TeamId: teamId,
+            PlayerSkin: (int)player.Skin);
+
     public static NetworkMessage CreatePlayerUpdateCommand(Guid hostId, NetworkMessage request, PlayerSkin confirmedSkin)
     {
         return new NetworkMessage(

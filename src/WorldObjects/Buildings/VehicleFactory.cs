@@ -22,6 +22,7 @@ public class VehicleFactory : Building
     {
         TotalBuildingPointsNeeded = 2500;
         HitPoints = MaxHitPoints = 2500;
+        PowerConsumption = 30;
 
         SetMesh(meshName, deriveDimensions: true);
     }

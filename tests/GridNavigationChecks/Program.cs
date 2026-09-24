@@ -1,6 +1,7 @@
 using RTS.Network;
 using System.Text.Json;
 using Microsoft.Xna.Framework;
+using Viewport = Microsoft.Xna.Framework.Graphics.Viewport;
 using RTS;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -40,6 +41,45 @@ GameWorld World(GameGrid grid)
 }
 
 var visibilityGrid = new VisibilityGrid(9, 9);
+HudLayout gameHudLayout = HudLayout.Calculate(new Viewport(0, 0, 1280, 720), HudLayoutMode.Game);
+Check(gameHudLayout.ShowMinimap && gameHudLayout.ShowStatusPanel && gameHudLayout.ShowActionPanel &&
+      gameHudLayout.Minimap.Right == 1268 && gameHudLayout.Minimap.Bottom == 708 &&
+      gameHudLayout.StatusPanel.X == gameHudLayout.Minimap.X,
+    "Game HUD centrally lays out minimap, status and action areas");
+HudLayout editorHudLayout = HudLayout.Calculate(new Viewport(0, 0, 1280, 720), HudLayoutMode.Editor);
+Check(editorHudLayout.ShowMinimap && !editorHudLayout.ShowStatusPanel && editorHudLayout.ShowActionPanel,
+    "Editor HUD layout hides game economy status");
+Guid teamPlayerId = Guid.NewGuid();
+Player teamPlayer = new(teamPlayerId, "team-test", teamId: 1, skin: PlayerSkin.Blue);
+NetworkMessage teamRequest = NetworkCommands.CreatePlayerTeamUpdateRequest(teamPlayer, 7);
+Check(teamRequest is
+    {
+        Type: NetworkMessageType.RequestPlayerUpdate,
+        SenderId: var sender,
+        PlayerId: var playerId,
+        TeamId: 7,
+        PlayerSkin: (int)PlayerSkin.Blue
+    } && sender == teamPlayerId && playerId == teamPlayerId,
+    "Console team change uses the host-confirmed player update path");
+Guid powerArmyId = Guid.NewGuid();
+Building completedPowerPlant = Empty<Building>();
+Field(completedPowerPlant, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)powerArmyId);
+completedPowerPlant.TotalBuildingPointsNeeded = 100;
+Field(completedPowerPlant, typeof(Building), "<ConstructionProgress>k__BackingField", 100f);
+completedPowerPlant.PowerProduction = 100;
+Building completedConsumer = Empty<Building>();
+Field(completedConsumer, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)powerArmyId);
+completedConsumer.TotalBuildingPointsNeeded = 100;
+Field(completedConsumer, typeof(Building), "<ConstructionProgress>k__BackingField", 100f);
+completedConsumer.PowerConsumption = 40;
+Building unfinishedConsumer = Empty<Building>();
+Field(unfinishedConsumer, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)powerArmyId);
+unfinishedConsumer.TotalBuildingPointsNeeded = 100;
+unfinishedConsumer.PowerConsumption = 80;
+ArmyPowerStatus powerStatus = ArmyPowerStatus.Calculate(
+    [completedPowerPlant, completedConsumer, unfinishedConsumer], powerArmyId);
+Check(powerStatus == new ArmyPowerStatus(100, 40) && powerStatus.Balance == 60,
+    "Army power HUD totals only completed active buildings");
 SmokeEmissionSettings destructionSmoke = SmokeEmissionPresets.DestroyBuilding();
 Check(destructionSmoke.StartDelayVariation > 0.0f,
     "Building destruction smoke is emitted once with delayed particle starts");

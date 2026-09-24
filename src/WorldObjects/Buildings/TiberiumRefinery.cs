@@ -25,6 +25,7 @@ public class TiberiumRefinery : Building
         ProductionQueue.Capacity = 1;
         TotalBuildingPointsNeeded = 4500;
         HitPoints = MaxHitPoints = 2500;
+        PowerConsumption = 30;
     }
 
     public override void Draw(Effect effect)

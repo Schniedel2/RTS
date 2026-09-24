@@ -51,6 +51,7 @@ public class Helipad : Building
         ProductionQueue.Capacity = 1;
         TotalBuildingPointsNeeded = 1500;
         HitPoints = MaxHitPoints = 1500;
+        PowerConsumption = 15;
     }
 
     public override void Draw(Effect effect)

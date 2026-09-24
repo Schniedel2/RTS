@@ -70,6 +70,14 @@ public sealed class NetworkClient
             cancellationToken);
     }
 
+    public Task RequestPlayerTeamAsync(
+        Player player,
+        int teamId,
+        CancellationToken cancellationToken = default) =>
+        _networkHandler.SendToHostAsync(
+            NetworkCommands.CreatePlayerTeamUpdateRequest(player, teamId),
+            cancellationToken);
+
     public Task RequestSpawnAsync(
         string unitTypeId,
         float x,

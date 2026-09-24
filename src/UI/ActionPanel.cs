@@ -23,6 +23,7 @@ public sealed class ActionPanel
     private UnitAction? _hoverAction;
     private bool _isMouseOnPanel = false;
     private string _tooltipText = "";
+    private Rectangle _panelBounds;
 
     public ActionPanel(Texture2D iconSheet)
     {
@@ -31,7 +32,7 @@ public sealed class ActionPanel
         _pixel.SetData([Color.White]);
     }
 
-    public bool Update(IReadOnlyList<Unit> selectedUnits, Viewport viewport)
+    public bool Update(IReadOnlyList<Unit> selectedUnits, Rectangle availableBounds, bool inputEnabled = true)
     {
         _tooltipText = "";
         _isMouseOnPanel = false;
@@ -61,22 +62,26 @@ public sealed class ActionPanel
             if (action.ResourceCost > 0 && selectedUnits.FirstOrDefault()?.ArmyId is Guid armyId &&
                 (Globals.Game.Armies.Find(armyId)?.Resources ?? 0) < action.ResourceCost)
                 _disabledActions.Add(action);
-            int row = index / ButtonsPerRow;
-            int column = index % ButtonsPerRow;
-            _buttons.Add((new Rectangle(
-                Padding + column * ButtonSize,
-                Padding + row * ButtonSize,
-                ButtonSize,
-                ButtonSize), action));
+            _buttons.Add((Rectangle.Empty, action));
             index++;
         }
 
         MouseState mouse = Mouse.GetState();
 
         int panelHeight = Padding * 2 + ((_buttons.Count + ButtonsPerRow - 1) / ButtonsPerRow) * ButtonSize;
-        Rectangle panel = new(0, viewport.Height - panelHeight, Padding * 2 + ButtonsPerRow * ButtonSize, panelHeight);
-        if ((mouse.Position.X < panel.Left) || (mouse.Position.X > panel.Right) ||
-            (mouse.Position.Y < panel.Top) || (mouse.Position.Y > panel.Bottom))
+        _panelBounds = new(availableBounds.X, availableBounds.Bottom - panelHeight,
+            Math.Min(availableBounds.Width, Padding * 2 + ButtonsPerRow * ButtonSize), panelHeight);
+        for (int buttonIndex = 0; buttonIndex < _buttons.Count; buttonIndex++)
+        {
+            (Rectangle _, UnitAction action) = _buttons[buttonIndex];
+            int row = buttonIndex / ButtonsPerRow;
+            int column = buttonIndex % ButtonsPerRow;
+            _buttons[buttonIndex] = (new Rectangle(
+                _panelBounds.X + Padding + column * ButtonSize,
+                _panelBounds.Y + Padding + row * ButtonSize,
+                ButtonSize, ButtonSize), action);
+        }
+        if (!inputEnabled || !_panelBounds.Contains(mouse.Position))
         {
             _isMouseOnPanel = false;
             _previousMouseState = mouse;
@@ -84,14 +89,10 @@ public sealed class ActionPanel
         }
 
         _isMouseOnPanel = true;
-        Point panelPosition = new(0, viewport.Height - panelHeight);
-        
         _hoverAction = null;
         foreach ((Rectangle bounds, UnitAction action) in _buttons)
         {
-            Rectangle screenBounds = bounds;
-            screenBounds.Offset(panelPosition);
-            if (screenBounds.Contains(mouse.Position))
+            if (bounds.Contains(mouse.Position))
             {
                 _hoverAction = action;
                 _tooltipText = _hoverAction!.Name;
@@ -122,22 +123,16 @@ public sealed class ActionPanel
         return true;
     }
 
-    public void Draw(SpriteBatch spriteBatch, Viewport viewport)
+    public void Draw(SpriteBatch spriteBatch)
     {
         if (_buttons.Count == 0)
             return;
 
-        int panelHeight = Padding * 2 + ((_buttons.Count + ButtonsPerRow - 1) / ButtonsPerRow) * ButtonSize;
-        Rectangle panel = new(0, viewport.Height - panelHeight, Padding * 2 + ButtonsPerRow * ButtonSize, panelHeight);
-        spriteBatch.Draw(_pixel, panel, Color.Black * 0.75f);
+        spriteBatch.Draw(_pixel, _panelBounds, Color.Black * 0.75f);
 
         foreach ((Rectangle localBounds, UnitAction action) in _buttons)
         {
-            Rectangle bounds = new(
-                localBounds.X,
-                viewport.Height - panelHeight + localBounds.Y,
-                localBounds.Width,
-                localBounds.Height);
+            Rectangle bounds = localBounds;
             Rectangle iconBounds = new(
                 bounds.X + (ButtonSize - IconSize) / 2,
                 bounds.Y + (ButtonSize - IconSize) / 2,

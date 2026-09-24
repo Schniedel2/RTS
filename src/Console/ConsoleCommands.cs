@@ -90,6 +90,12 @@ public class ConsoleCommands
             "set-player-skin",
             SetPlayerSkinAsync);
         _console.RegisterAsyncCommand(
+            "set-player-team",
+            SetPlayerTeamAsync);
+        _console.RegisterAsyncCommand(
+            "set-player-startposition",
+            RequestStartPositionAsync);
+        _console.RegisterAsyncCommand(
             "map-publish",
             PublishMapAsync);
         _console.RegisterAsyncCommand(
@@ -101,9 +107,6 @@ public class ConsoleCommands
         _console.RegisterAsyncCommand(
             "editor-end",
             EndEditorAsync);
-        _console.RegisterAsyncCommand(
-            "player-startposition",
-            RequestStartPositionAsync);
         _console.RegisterAsyncCommand(
             "game-start",
             StartMultiplayerGameAsync);
@@ -143,6 +146,9 @@ public class ConsoleCommands
         _console.RegisterCommand(
             "ai-list",
             ListAIPlayers);
+        _console.RegisterCommand(
+            "player-list",
+            ListPlayers);
         _console.RegisterCommand(
             "army-list",
             ListArmies);
@@ -942,6 +948,33 @@ public class ConsoleCommands
         }
     }
 
+    private async System.Threading.Tasks.Task SetPlayerTeamAsync(string[] args)
+    {
+        if (args.Length != 1 || !int.TryParse(args[0], out int teamId) || teamId < 0)
+        {
+            _console.Print("Usage: set-player-team <teamId>");
+            return;
+        }
+
+        Player? localPlayer = _rtsGame.Players.FirstOrDefault(player =>
+            player.Id == _rtsGame.Network.LocalPeerId);
+        if (localPlayer is null)
+        {
+            _console.Print("Local player was not found.");
+            return;
+        }
+
+        try
+        {
+            await _rtsGame.NetworkClient.RequestPlayerTeamAsync(localPlayer, teamId);
+            _console.Print($"Requested membership in team {teamId}.");
+        }
+        catch (Exception ex)
+        {
+            _console.Print($"Player team error: {ex.Message}");
+        }
+    }
+
     private System.Threading.Tasks.Task PublishCurrentMapAsync()
     {
         NetworkMessage map = NetworkCommands.CreateWorldData(
@@ -1155,6 +1188,30 @@ public class ConsoleCommands
             _console.Print($"Player {player.Name} id={player.Id.ToString("N")[..8]} team={player.TeamId} army={player.ArmyId.ToString("N")[..8]}");
         foreach (Army army in _rtsGame.Armies.Armies)
             _console.Print($"Army {army.Id.ToString("N")[..8]} owners={string.Join(',', army.OwnerPlayerIds.Select(id => id.ToString("N")[..8]))} resources={army.Resources}");
+    }
+
+    private void ListPlayers(string[] args)
+    {
+        if (_rtsGame.Players.Count == 0)
+        {
+            _console.Print("No players known.");
+            return;
+        }
+
+        _console.Print($"Players ({_rtsGame.Players.Count}):");
+        foreach (Player player in _rtsGame.Players.OrderBy(player => player.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            AIPlayer? ai = _rtsGame.AIPlayers.FirstOrDefault(candidate => candidate.Id == player.Id);
+            List<string> flags = [];
+            if (player.Id == _rtsGame.Network.LocalPeerId)
+                flags.Add(_rtsGame.Network.IsHost ? "local, host" : "local");
+            if (ai is not null)
+                flags.Add($"AI, {ai.Status}");
+            string suffix = flags.Count > 0 ? $" [{string.Join("; ", flags)}]" : "";
+            _console.Print(
+                $"- {player.Name} id={player.Id.ToString("N")[..8]} team={player.TeamId} " +
+                $"army={player.ArmyId.ToString("N")[..8]} skin={Globals.SkinHandler.Get(player.Skin).Name}{suffix}");
+        }
     }
 
     private async System.Threading.Tasks.Task ShareArmyAsync(string[] args) =>

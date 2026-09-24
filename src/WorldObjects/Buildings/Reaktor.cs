@@ -23,6 +23,7 @@ public class Reaktor : Building
 
         TotalBuildingPointsNeeded = 500;
         HitPoints = MaxHitPoints = 500;
+        PowerProduction = 100;
 
         SetMesh("reaktor", deriveDimensions: true);
     }

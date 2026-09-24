@@ -24,6 +24,7 @@ public class GDIBase : Building
 
         TotalBuildingPointsNeeded = 2500;
         HitPoints = MaxHitPoints = 2500;
+        PowerConsumption = 40;
     }
 
     public override void Draw(Effect effect)

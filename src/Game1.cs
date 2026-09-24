@@ -162,7 +162,6 @@ public class Game1 : Game
             Color.Black);
 
         _rtsGame.Draw2D(_spriteBatch);
-        _rtsGame.ActionPanel?.Draw(_spriteBatch, GraphicsDevice.Viewport);
 
         _spriteBatch.End();
 

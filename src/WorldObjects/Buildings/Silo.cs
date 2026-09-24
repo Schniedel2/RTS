@@ -24,6 +24,7 @@ public class Silo : Building
 
         TotalBuildingPointsNeeded = 1500;
         HitPoints = MaxHitPoints = 1500;
+        PowerConsumption = 5;
     }
 
     public override void Draw(Effect effect)

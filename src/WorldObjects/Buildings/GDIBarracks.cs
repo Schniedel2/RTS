@@ -25,6 +25,7 @@ public class GDIBarracks : Building
 
         TotalBuildingPointsNeeded = 2500;
         HitPoints = MaxHitPoints = 2500;
+        PowerConsumption = 20;
 
         SetMesh("barracks-1", deriveDimensions: true);
     }

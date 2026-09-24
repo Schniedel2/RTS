@@ -55,6 +55,7 @@ public abstract class Unit : WorldObject
     public float HitPoints { get; set; }
     public float MaxHitPoints { get; protected set; }
     public int PowerConsumption { get; set; }
+    public int PowerProduction { get; set; }
     public int PowerAssigned { get; set; }
     public Guid CreatorPlayerId { get; private set; }
     /// <summary>Current owner. Null represents a neutral/capturable world unit.</summary>

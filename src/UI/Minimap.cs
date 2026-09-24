@@ -8,14 +8,12 @@ namespace RTS;
 
 public sealed class Minimap : IDisposable
 {
-    private const int Size = 220;
     private const int TextureSize = 128;
     private readonly GameWorld _world;
     private readonly VisibilitySystem _visibility;
     private readonly Texture2D _texture;
     private readonly Color[] _pixels;
     private MouseState _previousMouse;
-    private Rectangle _bounds;
 
     public Minimap(GraphicsDevice graphicsDevice, GameWorld world, VisibilitySystem visibility)
     {
@@ -30,16 +28,15 @@ public sealed class Minimap : IDisposable
         _pixels = new Color[_texture.Width * _texture.Height];
     }
 
-    public bool Update(Camera camera, Viewport viewport)
+    public bool Update(Camera camera, Rectangle bounds, bool inputEnabled = true)
     {
-        _bounds = new Rectangle(viewport.Width - Size - 12, viewport.Height - Size - 12, Size, Size);
         MouseState mouse = Mouse.GetState();
         bool pressed = mouse.LeftButton == ButtonState.Pressed && _previousMouse.LeftButton == ButtonState.Released;
-        bool consumed = _bounds.Contains(mouse.Position) && mouse.LeftButton == ButtonState.Pressed;
+        bool consumed = inputEnabled && bounds.Contains(mouse.Position) && mouse.LeftButton == ButtonState.Pressed;
         if (consumed && (pressed || mouse.LeftButton == ButtonState.Pressed))
         {
-            float normalizedX = (mouse.X - _bounds.X) / (float)_bounds.Width;
-            float normalizedY = (mouse.Y - _bounds.Y) / (float)_bounds.Height;
+            float normalizedX = (mouse.X - bounds.X) / (float)bounds.Width;
+            float normalizedY = (mouse.Y - bounds.Y) / (float)bounds.Height;
             camera.CenterOn(new Vector2(normalizedX * _world.Terrain.Width, normalizedY * _world.Terrain.Height));
         }
         _previousMouse = mouse;
@@ -91,12 +88,12 @@ public sealed class Minimap : IDisposable
         _texture.SetData(_pixels);
     }
 
-    public void Draw(SpriteBatch spriteBatch, Camera camera)
+    public void Draw(SpriteBatch spriteBatch, Camera camera, Rectangle bounds)
     {
-        spriteBatch.Draw(Globals._whiteTexture, new Rectangle(_bounds.X - 2, _bounds.Y - 2, _bounds.Width + 4, _bounds.Height + 4), Color.Black);
-        spriteBatch.Draw(_texture, _bounds, Color.White);
-        int x = _bounds.X + (int)(camera.Position.X / _world.Terrain.Width * _bounds.Width);
-        int y = _bounds.Y + (int)(camera.Position.Z / _world.Terrain.Height * _bounds.Height);
+        spriteBatch.Draw(Globals._whiteTexture, new Rectangle(bounds.X - 2, bounds.Y - 2, bounds.Width + 4, bounds.Height + 4), Color.Black);
+        spriteBatch.Draw(_texture, bounds, Color.White);
+        int x = bounds.X + (int)(camera.Position.X / _world.Terrain.Width * bounds.Width);
+        int y = bounds.Y + (int)(camera.Position.Z / _world.Terrain.Height * bounds.Height);
         spriteBatch.Draw(Globals._whiteTexture, new Rectangle(x - 5, y - 1, 11, 3), Color.White);
         spriteBatch.Draw(Globals._whiteTexture, new Rectangle(x - 1, y - 5, 3, 11), Color.White);
     }

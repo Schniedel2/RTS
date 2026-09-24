@@ -21,7 +21,7 @@ public class RTSGame
     public NetworkInput NetworkInput { get; }
     public NetworkHost NetworkHost { get; }
     public NetworkClient NetworkClient { get; }
-    public ActionPanel? ActionPanel { get; }
+    public GameHud Hud { get; }
     private readonly List<Player> _players = [];
     public IReadOnlyList<Player> Players => _players;
     private readonly Dictionary<Guid, AIPlayer> _aiPlayers = [];
@@ -30,9 +30,7 @@ public class RTSGame
     public ArmyHandler Armies { get; } = new();
     public RemoteSelectionHandler RemoteSelections { get; } = new();
     private readonly FogOfWarTexture _fogTexture;
-    private readonly Minimap _minimap;
     private float _fogRefreshElapsed;
-    private float _minimapRefreshElapsed;
 
     public RTSGame(
         int terrainWidth,
@@ -61,15 +59,13 @@ public class RTSGame
         _shadowMap = new ShadowMap(4096);
         Globals.Console = new GameConsole();
 
-        ActionPanel = new ActionPanel(Globals.ActionIcons);
-
         Network = new NetworkHandler();
         Player localPlayer = new(Network.LocalPeerId, Network.DisplayName);
         _players.Add(localPlayer);
         Teams.UpdateMembership(localPlayer.Id, localPlayer.TeamId, localPlayer.TeamId);
         Armies.EnsureArmy(localPlayer.ArmyId, localPlayer.Id, GuidUtility.FromInt(localPlayer.TeamId));
         _fogTexture = new FogOfWarTexture(Globals.GraphicsDevice, World.GameGrid, World.Visibility);
-        _minimap = new Minimap(Globals.GraphicsDevice, World, World.Visibility);
+        Hud = new GameHud(Globals.GraphicsDevice, World, Globals.ActionIcons);
         Network.SetPlayerDataProvider(() => _players.Select(player =>
             NetworkCommands.CreatePlayerUpdateCommand(
                 Network.LocalPeerId,
@@ -102,10 +98,9 @@ public class RTSGame
     {
         World.ClearTransientEffects();
         World.Visibility.Reset();
-        _minimap.Reset();
+        Hud.Reset();
         _fogTexture.Reset();
         _fogRefreshElapsed = 0.0f;
-        _minimapRefreshElapsed = 0.0f;
         if (localStartPosition is Vector3 position)
             Globals._camera.CenterForMatchStart(position, World.Center);
     }
@@ -265,30 +260,25 @@ public class RTSGame
         float deltaTime =
             (float)gameTime.ElapsedGameTime.TotalSeconds;
 
-        bool minimapConsumed = !Globals.Console.IsOpen && _minimap.Update(camera, viewport);
-        if (!minimapConsumed)
+        Army? localArmy = TryGetLocalPlayer(out Player hudPlayer)
+            ? Armies.Find(hudPlayer.ArmyId) : null;
+        bool hudConsumed = Hud.Update(gameTime, camera, viewport,
+            LocalPlayer.SelectedUnits, localArmy, World.IsEditorActive, !Globals.Console.IsOpen);
+        if (!hudConsumed)
             camera.UpdateMouse(gameTime);
-        if (!Globals.Console.IsOpen && !minimapConsumed)
+        if (!Globals.Console.IsOpen && !hudConsumed)
             camera.UpdateKeyboard(gameTime);
         camera.UpdateTerrainHeight(gameTime, World.Terrain);
-        bool actionPanelConsumed =
-            ActionPanel?.Update(LocalPlayer.SelectedUnits, viewport) == true;
-        if (!actionPanelConsumed && !minimapConsumed)
+        if (!hudConsumed)
             LocalPlayer.Update(gameTime, camera, viewport);
         World.Update(gameTime);
         _fogRefreshElapsed += deltaTime;
-        _minimapRefreshElapsed += deltaTime;
         if (TryGetLocalPlayer(out Player viewer))
         {
             if (_fogRefreshElapsed >= 0.25f)
             {
                 _fogRefreshElapsed %= 0.25f;
                 _fogTexture.Update(viewer.ArmyId);
-            }
-            if (_minimapRefreshElapsed >= 0.2f)
-            {
-                _minimapRefreshElapsed %= 0.2f;
-                _minimap.Refresh(viewer.ArmyId);
             }
         }
         Network.Update();
@@ -327,7 +317,9 @@ public class RTSGame
     public void Draw2D(SpriteBatch spriteBatch)
     {
         World.Draw2D(spriteBatch, Globals._camera, Globals.GraphicsDevice.Viewport);
-        _minimap.Draw(spriteBatch, Globals._camera);
+        Army? localArmy = TryGetLocalPlayer(out Player localPlayer)
+            ? Armies.Find(localPlayer.ArmyId) : null;
+        Hud.Draw(spriteBatch, Globals._camera, localArmy, World);
 
         if (Globals.Debug_ShadowMap_ShowPreview)
         {
