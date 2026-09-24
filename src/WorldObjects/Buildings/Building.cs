@@ -394,6 +394,8 @@ public class Building : Unit
 
     public override void Update(GameTime gameTime)
     {
+        if (Occupancy is not null)
+            Occupancy.EntryEnabled = IsCompleted && !IsDying;
         if (IsSelling)
             _sellElapsed += (float)gameTime.ElapsedGameTime.TotalSeconds;
         if (_isCollapsing)

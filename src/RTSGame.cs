@@ -337,6 +337,11 @@ public class RTSGame
         Globals._terrainEffect.Parameters["FogTexture"]?.SetValue(_fogTexture.Texture);
         Globals._terrainEffect.Parameters["FogWidth"]?.SetValue((float)World.GameGrid.Width * World.GameGrid.CellSize);
         Globals._terrainEffect.Parameters["FogHeight"]?.SetValue((float)World.GameGrid.Height * World.GameGrid.CellSize);
+        Globals._terrainEffect.Parameters["FogTexelSize"]?.SetValue(new Vector2(
+            1.0f / _fogTexture.Texture.Width,
+            1.0f / _fogTexture.Texture.Height));
+        Globals._terrainEffect.Parameters["FogEdgeSoftness"]?.SetValue(
+            Math.Max(0.0f, Globals.FogOfWarEdgeSoftness));
         Globals._terrainEffect.Parameters["HideUnexploredTerrain"]?.SetValue(
             Globals.HideUnexploredWorld && !World.IsEditorActive ? 1.0f : 0.0f);
         World.DrawTerrain(

@@ -7,7 +7,6 @@ namespace RTS;
 
 public sealed class FogOfWarTexture : IDisposable
 {
-    private const int MaximumTextureSize = 128;
     private readonly VisibilitySystem _visibility;
     private readonly GameGrid _grid;
     private readonly Texture2D _texture;
@@ -18,15 +17,15 @@ public sealed class FogOfWarTexture : IDisposable
     {
         _visibility = visibility;
         _grid = grid;
-        int width = Math.Min(MaximumTextureSize, grid.Width);
-        int height = Math.Min(MaximumTextureSize, grid.Height);
+        int width = grid.Width;
+        int height = grid.Height;
         _texture = new Texture2D(graphicsDevice, width, height, false, SurfaceFormat.Color);
         _pixels = new Color[width * height];
     }
 
     public void Reset()
     {
-        Array.Fill(_pixels, new Color(8, 8, 8, 255));
+        Array.Fill(_pixels, Color.Black);
         _texture.SetData(_pixels);
     }
 
@@ -37,14 +36,12 @@ public sealed class FogOfWarTexture : IDisposable
         for (int y = 0; y < _texture.Height; y++)
             for (int x = 0; x < width; x++)
             {
-                Point cell = new(
-                    Math.Min(_grid.Width - 1, (int)((x + 0.5f) * _grid.Width / width)),
-                    Math.Min(_grid.Height - 1, (int)((y + 0.5f) * _grid.Height / _texture.Height)));
+                Point cell = new(x, y);
                 byte value = _visibility.GetDisplayedTerrainVisibility(viewerArmyId, cell, false, alliedArmyIds) switch
                 {
                     VisibilityState.Visible => (byte)255,
                     VisibilityState.Explored => (byte)105,
-                    _ => (byte)8
+                    _ => (byte)0
                 };
                 _pixels[y * width + x] = new Color(value, value, value, (byte)255);
             }

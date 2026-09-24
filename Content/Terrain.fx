@@ -13,6 +13,8 @@ float MapWidth;
 float MapHeight;
 float FogWidth;
 float FogHeight;
+float2 FogTexelSize;
+float FogEdgeSoftness;
 float HideUnexploredTerrain;
 int DebugMode;
 
@@ -63,12 +65,23 @@ sampler ShadowSampler = sampler_state
 sampler FogSampler = sampler_state
 {
     Texture = <FogTexture>;
-    MinFilter = Point;
-    MagFilter = Point;
+    MinFilter = Linear;
+    MagFilter = Linear;
     MipFilter = None;
     AddressU = Clamp;
     AddressV = Clamp;
 };
+
+float SampleSoftFog(float2 uv)
+{
+    float2 offset = FogTexelSize * FogEdgeSoftness;
+    float visibility = tex2D(FogSampler, uv).r * 4.0;
+    visibility += tex2D(FogSampler, uv + float2(-offset.x, 0.0)).r * 2.0;
+    visibility += tex2D(FogSampler, uv + float2( offset.x, 0.0)).r * 2.0;
+    visibility += tex2D(FogSampler, uv + float2(0.0, -offset.y)).r * 2.0;
+    visibility += tex2D(FogSampler, uv + float2(0.0,  offset.y)).r * 2.0;
+    return visibility / 12.0;
+}
 
 
 struct VertexShaderInput
@@ -433,10 +446,11 @@ float4 PixelShaderFunction(
         lighting;
 
     float2 fogUV = (input.WorldPosition.xz + 0.5) / float2(FogWidth, FogHeight);
-    float visibility = tex2D(FogSampler, fogUV).r;
-    if (HideUnexploredTerrain > 0.5 && visibility < 0.2)
-        return float4(0.0, 0.0, 0.0, 1.0);
-    finalColor *= lerp(0.035, 1.0, visibility);
+    float visibility = SampleSoftFog(fogUV);
+    float fogLighting = lerp(0.035, 1.0, visibility);
+    if (HideUnexploredTerrain > 0.5)
+        fogLighting *= smoothstep(0.01, 0.32, visibility);
+    finalColor *= fogLighting;
 
 
     // ============================================================
