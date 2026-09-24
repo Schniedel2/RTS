@@ -234,8 +234,17 @@ public sealed class NetworkInput
             // A client may request a change, but may not inject its own confirmation on the host.
             if (Globals.Game.Network.IsHost && message.SenderId != Globals.Game.Network.LocalPeerId)
                 return;
-            if (message.UnitId is Guid rallyUnitId && message.RallyPoint is RallyPointState rallyPoint)
-                Globals.World.Units.FindById(rallyUnitId)?.ApplyRallyPointState(rallyPoint);
+            if (message.UnitId is Guid rallyUnitId && message.RallyPoint is RallyPointState rallyPoint &&
+                Globals.World.Units.FindById(rallyUnitId) is Unit rallyUnit)
+            {
+                rallyUnit.ApplyRallyPointState(rallyPoint);
+                UnitActionContext context = rallyPoint.HasPosition
+                    ? UnitActionContext.At(new Vector3(rallyPoint.X, rallyPoint.Y, rallyPoint.Z))
+                    : UnitActionContext.Empty;
+                rallyUnit.OnHostAction(
+                    rallyPoint.HasPosition ? UnitActionType.SetRallyPoint : UnitActionType.ClearRallyPoint,
+                    context);
+            }
             return;
         }
 
@@ -276,7 +285,17 @@ public sealed class NetworkInput
         if (message.Type == NetworkMessageType.StopCommand)
         {
             foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
-                Globals.World.Units.FindById(unitId)?.Stop();
+                Globals.World.Units.FindById(unitId)?.OnHostAction(
+                    UnitActionType.Stop, UnitActionContext.Empty);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.UnitActionCommand &&
+            message.UnitActionType is UnitActionType actionType)
+        {
+            UnitActionContext context = message.UnitActionContext ?? UnitActionContext.Empty;
+            foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
+                Globals.World.Units.FindById(unitId)?.OnHostAction(actionType, context);
             return;
         }
 

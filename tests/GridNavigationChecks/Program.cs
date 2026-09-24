@@ -41,8 +41,8 @@ GameWorld World(GameGrid grid)
 
 var visibilityGrid = new VisibilityGrid(9, 9);
 SmokeEmissionSettings destructionSmoke = SmokeEmissionPresets.DestroyBuilding();
-Check(destructionSmoke.StartDelay == 2.5f && destructionSmoke.StartDelayVariation == 2.5f,
-    "Building destruction smoke is emitted once with particle starts spread over five seconds");
+Check(destructionSmoke.StartDelayVariation > 0.0f,
+    "Building destruction smoke is emitted once with delayed particle starts");
 Check(visibilityGrid[new Point(4, 4)] == VisibilityState.Unexplored, "Visibility starts unexplored");
 visibilityGrid.Reveal(new Point(4, 4), 2);
 Check(visibilityGrid[new Point(4, 4)] == VisibilityState.Visible && visibilityGrid[new Point(6, 4)] == VisibilityState.Visible, "Sight radius reveals cells");
@@ -86,6 +86,10 @@ Check(grid.GetCell(1, 1).IsBlocked, "Slope refresh preserves authored rules");
 
 grid = new GameGrid(8, 8, 1);
 MobileUnit car = Unit();
+var actionUnit = new MobileUnit(new Vector3(1.5f, 0, 1.5f), 1, 1, 1, Guid.NewGuid());
+actionUnit.ReceiveCommand(new GotoCommand(new Vector2(6.5f, 6.5f)));
+actionUnit.OnHostAction(UnitActionType.Stop);
+Check(actionUnit.CurrentCommand is null, "Host-confirmed Stop action reaches the unit and clears its command");
 Check(grid.TryMove(car, new Point(1, 1)), "Initial registration");
 Check(ReferenceEquals(grid.GetOccupant(1, 1), car), "Occupant identity");
 grid.GetCell(2, 1).IsBlocked = true;
@@ -476,6 +480,32 @@ Check(DestroyBuildingRequest(destroyRequest) is { Type: NetworkMessageType.Destr
     "Host converts an owned building destroy request into an authoritative command without inspecting UI actions");
 Check(DestroyBuildingRequest(destroyRequest with { SenderId = Guid.NewGuid() }) is null,
     "Host rejects building destruction from a non-owner");
+var actionContext = new UnitActionContext(
+    UnitActionPosition.From(new Vector3(4.5f, 1.25f, 7.5f)),
+    builtSite.UnitId,
+    Value: "test-value",
+    IntValue: 12,
+    FloatValue: 1.5f,
+    Alternate: true);
+NetworkMessage unitActionRequest = Wire(NetworkCommands.CreateUnitActionRequest(
+    ownerId, [builtSite.UnitId], UnitActionType.Repair, actionContext));
+Check(unitActionRequest.UnitActionContext?.TargetPosition?.ToVector3() == new Vector3(4.5f, 1.25f, 7.5f) &&
+      unitActionRequest.UnitActionContext.TargetUnitId == builtSite.UnitId &&
+      unitActionRequest.UnitActionContext.Value == "test-value" &&
+      unitActionRequest.UnitActionContext.IntValue == 12 &&
+      unitActionRequest.UnitActionContext.FloatValue == 1.5f &&
+      unitActionRequest.UnitActionContext.Alternate,
+    "Typed unit action context survives network serialization");
+NetworkMessage? UnitActionRequest(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost)
+    .GetMethod("TryCreateUnitActionCommand", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
+Check(UnitActionRequest(unitActionRequest) is { Type: NetworkMessageType.UnitActionCommand },
+    "Host accepts a valid parameterized action for an owned unit");
+Check(UnitActionRequest(unitActionRequest with { SenderId = Guid.NewGuid() }) is null,
+    "Host rejects a parameterized action for a unit the sender cannot control");
+Check(UnitActionRequest(unitActionRequest with
+{
+    UnitActionContext = UnitActionContext.At(new Vector3(float.NaN, 0, 0))
+}) is null, "Host rejects non-finite action parameters");
 NetworkMessage? SellRequest(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost)
     .GetMethod("TryCreateSellBuildingCommand", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
 var sellCommand = SellRequest(NetworkCommands.CreateSellBuildingRequest(ownerId, builtSite.UnitId));

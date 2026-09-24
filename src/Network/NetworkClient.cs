@@ -119,6 +119,15 @@ public sealed class NetworkClient
             _networkHandler.LocalPeerId, units.Select(unit => unit.UnitId).ToArray()));
     }
 
+    public Task RequestUnitActionAsync(
+        IEnumerable<Unit> units,
+        UnitActionType actionType,
+        UnitActionContext? context = null,
+        CancellationToken cancellationToken = default) =>
+        _networkHandler.SendToHostAsync(NetworkCommands.CreateUnitActionRequest(
+            _networkHandler.LocalPeerId, units.Select(unit => unit.UnitId).ToArray(), actionType, context),
+            cancellationToken);
+
     public Task RequestBuildConstructionAsync(
         IEnumerable<Unit> units,
         Guid constructionSiteId,

@@ -438,6 +438,16 @@ public abstract class Unit : WorldObject
         ClearTarget();
     }
 
+    /// <summary>
+    /// Receives an action after the host has accepted and broadcast it. This is
+    /// invoked on the host and every client, so unit-specific state changes stay synchronized.
+    /// </summary>
+    public virtual void OnHostAction(UnitActionType actionType, UnitActionContext? context = null)
+    {
+        if (actionType == UnitActionType.Stop)
+            Stop();
+    }
+
     // Gameplay mutation: only the host invokes this method.
     public virtual bool OnHit(HitInfo hit)
     {

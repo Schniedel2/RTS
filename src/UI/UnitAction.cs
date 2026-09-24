@@ -61,4 +61,5 @@ public sealed record UnitAction(
     int IconRow,
     string TargetObjectName = "",
     GameplayMarkerType? MarkerType = null,
-    int ResourceCost = 0);
+    int ResourceCost = 0,
+    bool RequiresTarget = true);

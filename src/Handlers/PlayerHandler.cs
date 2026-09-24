@@ -150,6 +150,13 @@ public class PlayerHandler
                 return false;
         }
 
+        if (!action.RequiresTarget)
+        {
+            _ = Globals.Game.NetworkClient.RequestUnitActionAsync(
+                _selectedUnits, action.Type, new UnitActionContext(Alternate: alternateAction));
+            return false;
+        }
+
         ActiveAction = action;        
         return true;
     }

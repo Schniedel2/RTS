@@ -5,6 +5,19 @@ namespace RTS.Network;
 
 public static class NetworkCommands
 {
+    public static NetworkMessage CreateUnitActionRequest(
+        Guid senderId, Guid[] unitIds, UnitActionType actionType, UnitActionContext? context = null) =>
+        new(NetworkMessageType.UnitActionRequest, senderId, PlayerId: senderId,
+            UnitIds: unitIds, UnitActionType: actionType,
+            UnitActionContext: context ?? UnitActionContext.Empty);
+
+    public static NetworkMessage CreateUnitActionCommand(
+        Guid hostId, NetworkMessage request, Guid[] unitIds) =>
+        new(NetworkMessageType.UnitActionCommand, hostId,
+            PlayerId: request.PlayerId ?? request.SenderId, UnitIds: unitIds,
+            UnitActionType: request.UnitActionType,
+            UnitActionContext: request.UnitActionContext ?? UnitActionContext.Empty);
+
     public static NetworkMessage CreateStartPositionWishRequest(Guid senderId, int slot) =>
         new(NetworkMessageType.StartPositionWishRequest, senderId, StartPositionSlot: slot);
 

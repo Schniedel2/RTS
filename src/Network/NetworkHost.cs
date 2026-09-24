@@ -178,6 +178,7 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.AttackGroundRequest &&
             message.Type != NetworkMessageType.FollowRequest &&
             message.Type != NetworkMessageType.ToolActionRequest &&
+            message.Type != NetworkMessageType.UnitActionRequest &&
             message.Type != NetworkMessageType.BuildRequest &&
             message.Type != NetworkMessageType.BuildConstructionRequest &&
             message.Type != NetworkMessageType.TrainUnitRequest &&
@@ -271,6 +272,7 @@ public sealed class NetworkHost
                     NetworkMessageType.FollowRequest => NetworkCommands.CreateFollowCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.TextRequest => NetworkCommands.CreateTextCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.ToolActionRequest => NetworkCommands.CreateToolActionCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.UnitActionRequest => TryCreateUnitActionCommand(request),
                     NetworkMessageType.RequestPlayerUpdate => NetworkCommands.CreatePlayerUpdateCommand(_networkHandler.LocalPeerId, request, ConfirmPlayerSkin(request)),
                     NetworkMessageType.BuildRequest => TryCreateBuildCommand(request),
                     NetworkMessageType.BuildConstructionRequest => NetworkCommands.CreateBuildConstructionCommand(_networkHandler.LocalPeerId, request),
@@ -358,6 +360,29 @@ public sealed class NetworkHost
             _harvestJobs.Remove(id);
         }
         return NetworkCommands.CreateStopCommand(_networkHandler.LocalPeerId, request);
+    }
+
+    private NetworkMessage? TryCreateUnitActionCommand(NetworkMessage request)
+    {
+        if (request.UnitActionType is not UnitActionType actionType ||
+            actionType is UnitActionType.None or UnitActionType.max ||
+            request.UnitIds is not { Length: > 0 } requestedIds ||
+            request.UnitActionContext is not { } context ||
+            context.TargetPosition is { IsFinite: false } ||
+            (context.FloatValue is float floatValue && !float.IsFinite(floatValue)) ||
+            context.Value?.Length > 256)
+        {
+            return null;
+        }
+
+        Guid[] acceptedIds = requestedIds.Distinct().Where(id =>
+            _world.Units.FindById(id) is Unit unit && !unit.IsDying &&
+            Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId)).ToArray();
+        if (acceptedIds.Length == 0)
+            return null;
+        if (actionType == UnitActionType.Stop)
+            return CreateStopCommand(request with { UnitIds = acceptedIds });
+        return NetworkCommands.CreateUnitActionCommand(_networkHandler.LocalPeerId, request, acceptedIds);
     }
 
     private NetworkMessage? TryCreateHarvestCommand(NetworkMessage request)
