@@ -800,6 +800,7 @@ public class ConsoleCommands
             _console.Print($"Network, networkmessages: {Globals.Debug_ShowNetworkMessages}");
             _console.Print($"Path, pathfinding, pathmessages: {Globals.Debug_ShowPathfindingMessages}");
             _console.Print($"Unitcommands, commands: {Globals.Debug_ShowUnitCommands}");
+            _console.Print($"Hide-unexplored: {Globals.HideUnexploredWorld}");
             return;
         }
 
@@ -850,6 +851,11 @@ public class ConsoleCommands
             case "commands":
                 Globals.Debug_ShowUnitCommands = enable;
                 _console.Print($"Unit command debug {(enable ? "enabled" : "disabled")}.");
+                break;
+            case "hide-unexplored":
+            case "hideunexplored":
+                Globals.HideUnexploredWorld = enable;
+                _console.Print($"Hiding unexplored world areas {(enable ? "enabled" : "disabled")}.");
                 break;
             default:
                 _console.Print($"Unknown flag: {name}");

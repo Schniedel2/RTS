@@ -30,9 +30,6 @@ public class Car : MobileUnit
         IMovementProfile? movementProfile = null
         ) : base(
             position,
-            length: 4,
-            width: 2,
-            height: 1.5f,
             unitId,
             movementProfile)
     {

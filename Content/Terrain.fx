@@ -13,6 +13,7 @@ float MapWidth;
 float MapHeight;
 float FogWidth;
 float FogHeight;
+float HideUnexploredTerrain;
 int DebugMode;
 
 float Noise(float2 p)
@@ -62,8 +63,8 @@ sampler ShadowSampler = sampler_state
 sampler FogSampler = sampler_state
 {
     Texture = <FogTexture>;
-    MinFilter = Linear;
-    MagFilter = Linear;
+    MinFilter = Point;
+    MagFilter = Point;
     MipFilter = None;
     AddressU = Clamp;
     AddressV = Clamp;
@@ -433,6 +434,8 @@ float4 PixelShaderFunction(
 
     float2 fogUV = (input.WorldPosition.xz + 0.5) / float2(FogWidth, FogHeight);
     float visibility = tex2D(FogSampler, fogUV).r;
+    if (HideUnexploredTerrain > 0.5 && visibility < 0.2)
+        return float4(0.0, 0.0, 0.0, 1.0);
     finalColor *= lerp(0.035, 1.0, visibility);
 
 

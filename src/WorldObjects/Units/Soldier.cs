@@ -24,7 +24,10 @@ public class Soldier : MobileUnit
         //  minigun
         Minigun,
         //  launchers
-        RPG
+        RPG,
+        //
+        Toolkit,
+        Medikit
     }
 
     private static readonly Weapon[] AvailableWeapons = Enum.GetValues<Weapon>();
@@ -77,9 +80,6 @@ public class Soldier : MobileUnit
         IMovementProfile? movementProfile = null
         ) : base(
             position,
-            length: 1,
-            width: 1,
-            height: 1.8f,
             unitId,
             movementProfile ?? new GroundMovementProfile(MovementModes.Walk, 50.0f))
     {
@@ -94,11 +94,6 @@ public class Soldier : MobileUnit
         DeathClips = new List<string> { "die0", "die1", "die2" };        
         SetMesh("Soldier-2", deriveDimensions: true);
 
-        //turret mount point for the weapon
-        uint weaponSeed = BitConverter.ToUInt32(unitId.ToByteArray(), 0);
-        Weapon weapon = AvailableWeapons[weaponSeed % (uint)AvailableWeapons.Length];
-        SetWeapon(weapon);
-
         _animationPlayer = new AnimationPlayer(_meshSet!.RootMesh.Animations);        
         if (_meshSet.RootMesh.Animations.TryGetValue("die0", out MeshAnimationClip? deathClip))
             _deathAnimationDuration = Math.Max(0.05f, deathClip.DurationSeconds);
@@ -107,10 +102,13 @@ public class Soldier : MobileUnit
         _animationPlayer.Speed = 0.9f + Random.Shared.NextSingle() * 0.2f;
         //_animationPlayer.AddOverlay("pose:idleRifle", weight: 1.0f);        
 
-        SetRandomArmsPose();
-        SetRandomArmsPose();
+        //turret mount point for the weapon
         SetRandomHeadPose();
         SetRandomHeadPose();
+
+        uint weaponSeed = BitConverter.ToUInt32(unitId.ToByteArray(), 0);
+        Weapon weapon = AvailableWeapons[weaponSeed % (uint)AvailableWeapons.Length];
+        SetWeapon(weapon);
     }
 
     public void SetRandomArmsPose()
@@ -376,6 +374,13 @@ public class Soldier : MobileUnit
         FireClips = new List<string> { "fire:Launcher0", "fire:Launcher1"};
     }
 
+    void SetWeaponType_Toolkit()
+    {        
+        ArmsOverlayClips = new List<string> { "arms:idleToolkit0" };
+        RunArmsOverlayClips = new List<string> { "arms:idleToolkit0" };
+        FireClips = new List<string> { "arms:idleToolkit0" };
+    }
+
     public void SetWeapon(Weapon weaponType)
     {
         EquippedWeapon = weaponType;
@@ -383,6 +388,20 @@ public class Soldier : MobileUnit
         SetLauncherProjectileVisible(true);
         switch (weaponType)
         {
+            case Weapon.Toolkit:
+                SetWeaponType_Toolkit();
+                _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["toolKit"]);
+                this.AttackCooldown = 0f;
+                this.AttackDamage = 0f;
+                break;
+
+            case Weapon.Medikit:
+                SetWeaponType_Toolkit();
+                _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["medKit"]);
+                this.AttackCooldown = 0f;
+                this.AttackDamage = 0f;
+                break;
+
             case Weapon.Ak47:
                 SetWeaponType_Rifle();
                 _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["ak47"]);
@@ -451,6 +470,8 @@ public class Soldier : MobileUnit
                 this.AttackRange = 50;
                 break;
         }
+        SetRandomArmsPose();
+        SetRandomArmsPose();
     }
 
     private void SetLauncherProjectileVisible(bool visible)

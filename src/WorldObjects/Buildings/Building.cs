@@ -75,9 +75,6 @@ public class Building : Unit
         int purchasePrice = 0
         ) : base(
             position,
-            length: 1,
-            width: 1,
-            height: 1,
             unitId)
     {
         PurchasePrice = Math.Max(0, purchasePrice);

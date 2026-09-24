@@ -2,6 +2,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -18,7 +19,7 @@ public sealed class TiberiumHandler
 {
     private sealed class RenderChunk
     {
-        public HashSet<Point> Cells { get; } = [];
+        public ConcurrentDictionary<Point, byte> Cells { get; } = [];
         public BoundingBox Bounds;
         public long TerrainRevision = -1;
         public bool BoundsDirty = true;
@@ -65,8 +66,8 @@ public sealed class TiberiumHandler
         [TerrainTile.Concrete] = 0.0f,
     };
 
-    private readonly Dictionary<Point, TiberiumCell> _cells = new Dictionary<Point, TiberiumCell>();
-    private readonly Dictionary<Point, RenderChunk> _renderChunks = [];
+    private readonly ConcurrentDictionary<Point, TiberiumCell> _cells = new();
+    private readonly ConcurrentDictionary<Point, RenderChunk> _renderChunks = new();
     private float _visualTimeSeconds;
     public IReadOnlyDictionary<Point, TiberiumCell> Cells => _cells;
     public int RenderChunkCount => _renderChunks.Count;
@@ -155,7 +156,7 @@ public sealed class TiberiumHandler
         float remaining = tiberium.Amount - harvested;
         if (remaining <= 0.0f)
         {
-            _cells.Remove(cell);
+            _cells.TryRemove(cell, out _);
             RemoveFromRenderChunk(cell);
         }
         else
@@ -171,7 +172,7 @@ public sealed class TiberiumHandler
     {
         if (remainingAmount <= 0.0f)
         {
-            if (_cells.Remove(cell)) RemoveFromRenderChunk(cell);
+            if (_cells.TryRemove(cell, out _)) RemoveFromRenderChunk(cell);
             return;
         }
         if (!_cells.TryGetValue(cell, out TiberiumCell? tiberium)) return;
@@ -232,7 +233,7 @@ public sealed class TiberiumHandler
     public void Remove(IEnumerable<Point> cells)
     {
         foreach (Point point in cells)
-            if (_cells.Remove(point)) RemoveFromRenderChunk(point);
+            if (_cells.TryRemove(point, out _)) RemoveFromRenderChunk(point);
     }
 
     /// <summary>Advances only selected resource cells and sources; spreading cannot leave the selection.</summary>
@@ -355,9 +356,11 @@ public sealed class TiberiumHandler
                     continue;
 
                 LastVisibleChunkCount++;
-                foreach (Point cell in chunk.Cells)
+                foreach (Point cell in chunk.Cells.Keys)
                 {
                     if (!_cells.TryGetValue(cell, out TiberiumCell? tiberium) || tiberium.Amount <= 0.0f)
+                        continue;
+                    if (!Globals.World.Visibility.IsTerrainExploredToLocalPlayer(cell))
                         continue;
                     Vector3 position = grid.ToWorldPosition(cell, 0.0f);
                     position.Y = terrain.GetSurfaceHeight(position.X, position.Z);
@@ -378,17 +381,16 @@ public sealed class TiberiumHandler
     private void AddToRenderChunk(Point cell)
     {
         Point key = ChunkKey(cell);
-        if (!_renderChunks.TryGetValue(key, out RenderChunk? chunk))
-            _renderChunks.Add(key, chunk = new RenderChunk());
-        if (chunk.Cells.Add(cell)) chunk.BoundsDirty = true;
+        RenderChunk chunk = _renderChunks.GetOrAdd(key, _ => new RenderChunk());
+        if (chunk.Cells.TryAdd(cell, 0)) chunk.BoundsDirty = true;
     }
 
     private void RemoveFromRenderChunk(Point cell)
     {
         Point key = ChunkKey(cell);
         if (!_renderChunks.TryGetValue(key, out RenderChunk? chunk)) return;
-        chunk.Cells.Remove(cell);
-        if (chunk.Cells.Count == 0) _renderChunks.Remove(key);
+        chunk.Cells.TryRemove(cell, out _);
+        if (chunk.Cells.IsEmpty) _renderChunks.TryRemove(key, out _);
         else chunk.BoundsDirty = true;
     }
 
@@ -400,7 +402,7 @@ public sealed class TiberiumHandler
         float maximumX = float.NegativeInfinity, maximumZ = float.NegativeInfinity;
         float minimumY = float.PositiveInfinity, maximumY = float.NegativeInfinity;
         float maximumScale = 1.0f;
-        foreach (Point cell in chunk.Cells)
+        foreach (Point cell in chunk.Cells.Keys)
         {
             Vector3 center = grid.ToWorldPosition(cell, 0);
             minimumX = Math.Min(minimumX, center.X);

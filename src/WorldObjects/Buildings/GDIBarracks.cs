@@ -43,6 +43,7 @@ public class GDIBarracks : Building
             "grunt" => 5.0f,
             "flamer" => 6.0f,
             "invasor" => 8.0f,
+            "engineer" => 5.0f,
             _ => 0.0f
         };
         return durationSeconds > 0.0f;
@@ -64,7 +65,7 @@ public class GDIBarracks : Building
                 new(UnitActionType.TrainUnit, "Rak Zero", 6, 1, "rak-zero"),
                 new(UnitActionType.TrainUnit, "Grunt", 6, 1, "grunt"),
                 new(UnitActionType.TrainUnit, "Flamer", 6, 1, "flamer"),
-                new(UnitActionType.TrainUnit, "Invasor", 6, 1, "invasor"),
+                new(UnitActionType.TrainUnit, "Engineer", 6, 1, "engineer"),
                 new(UnitActionType.SetRallyPoint, "Set rally point", 0, 1),
                 new(UnitActionType.ClearRallyPoint, "Clear rally point", 7, 1),
                 new(UnitActionType.Goto, "Cancel", 0, 1),

@@ -99,7 +99,7 @@ public class Helicopter : MobileUnit
 
     // Passenger slots are optional, ready for a later transport variant. This model has an integrated pilot.
     public Helicopter(Vector3 position, Guid unitId, int passengerCapacity = 0, string meshName = "heli-1")
-        : base(position, 5, 3, 2, unitId, new GroundMovementProfile(MovementModes.All, 30))
+        : base(position, unitId, new GroundMovementProfile(MovementModes.All, 30))
     {
         MoveSpeed = 10;
         RotationSpeed = MathHelper.Pi;

@@ -297,18 +297,12 @@ public abstract class Unit : WorldObject
 
     public Unit(
         Vector3 position,
-        int length,
-        int width,
-        float height,
         Guid unitId
         ) : base(position)
     {
         IsNetworkObject = true;
         HitPoints = MaxHitPoints = 100.0f;
         UnitId = unitId;
-        Length = length;
-        Width = width;
-        Height = height;
     }
 
     internal void SetCreatorPlayer(Guid creatorPlayerId)

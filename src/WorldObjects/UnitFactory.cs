@@ -22,6 +22,9 @@ public static class UnitFactory
             case "invasor":
                 unit = new Soldier(position, unitId);
                 break;
+            case "engineer":
+                unit = new Engineer(position, unitId);
+                break;
             case "car":
                 unit = new Car(position, unitId);
                 break;

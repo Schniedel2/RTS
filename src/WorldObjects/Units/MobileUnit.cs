@@ -114,16 +114,10 @@ public class MobileUnit : Unit
 
     public MobileUnit(
         Vector3 position,
-        int length,
-        int width,
-        float height,
         Guid unitId,
         IMovementProfile? movementProfile = null
         ) : base(
             position,
-            length,
-            width,
-            height,
             unitId)
     {
         MovementProfile = movementProfile ?? new GroundMovementProfile();

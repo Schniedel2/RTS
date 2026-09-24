@@ -9,8 +9,12 @@ namespace RTS;
 public class UnitHandler
 {
     private readonly List<Unit> _units = new List<Unit>();
+    private readonly object _unitsSync = new();
 
-    public IReadOnlyList<Unit> Units => _units;
+    public IReadOnlyList<Unit> Units
+    {
+        get { lock (_unitsSync) return _units.ToArray(); }
+    }
 
     public UnitHandler()
     {
@@ -35,7 +39,7 @@ public class UnitHandler
         AssignCurrentArmy(unit, creatorPlayerId);
         if (SetFootprints(unit, RotateYDegrees))
         {
-            _units.Add(unit);
+            lock (_unitsSync) _units.Add(unit);
             if (unit.Occupancy?.Slots.Any(slot => slot.Role == OccupantRole.Driver) == true &&
                 creatorPlayerId != Guid.Empty &&
                 driverUnitId is Guid initialDriverId)
@@ -80,7 +84,7 @@ public class UnitHandler
         }
         else
             unit.BeginLeavingBuilding(sourceBuildingId, exitPosition);
-        _units.Add(unit);
+        lock (_unitsSync) _units.Add(unit);
         if (unit.Occupancy?.Slots.Any(slot => slot.Role == OccupantRole.Driver) == true &&
             creatorPlayerId != Guid.Empty &&
             driverUnitId is Guid initialDriverId)
@@ -106,7 +110,7 @@ public class UnitHandler
         AssignCurrentArmy(unit, creatorPlayerId);
         if (SetFootprints(unit, RotateYDegrees))
         {
-            _units.Add(unit);
+            lock (_unitsSync) _units.Add(unit);
             return unit;
         }
         return null;
@@ -114,28 +118,28 @@ public class UnitHandler
 
     public Unit? FindById(Guid unitId)
     {
-        return _units.FirstOrDefault(unit => unit.UnitId == unitId);
+        return Units.FirstOrDefault(unit => unit.UnitId == unitId);
     }
 
     public void RemoveMapObjects<T>() where T : Unit
     {
-        foreach (T unit in _units.OfType<T>().ToArray())
+        foreach (T unit in Units.OfType<T>())
             RemoveImmediately(unit);
     }
 
     public void RemoveMapObject(Unit unit)
     {
-        if (_units.Contains(unit)) RemoveImmediately(unit);
+        if (Units.Contains(unit)) RemoveImmediately(unit);
     }
 
     public MobileUnit? FindMobileUnitById(Guid unitId)
     {
-        return _units.FirstOrDefault(unit => unit.UnitId == unitId) as MobileUnit;
+        return Units.FirstOrDefault(unit => unit.UnitId == unitId) as MobileUnit;
     }
 
     public void Update(GameTime gameTime)
     {
-        foreach (Unit unit in _units)
+        foreach (Unit unit in Units)
         {
             if (unit.IsEmbarked &&
                 unit.ContainerUnitId is Guid containerId &&
@@ -147,21 +151,21 @@ public class UnitHandler
                 unit.Update(gameTime);
         }
 
-        for (int index = _units.Count - 1; index >= 0; index--)
-            if (_units[index].IsReadyForRemoval)
-                RemoveImmediately(_units[index]);
+        foreach (Unit unit in Units)
+            if (unit.IsReadyForRemoval)
+                RemoveImmediately(unit);
     }
 
     public void DrawShadow(Effect effect)
     {
-        foreach (Unit unit in _units)
+        foreach (Unit unit in Units)
             if (!unit.IsEmbarked && Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
                 unit.DrawShadow(effect);
     }
 
     public void DrawBuildings(Effect effect)
     {
-        foreach (Building unit in _units.OfType<Building>())
+        foreach (Building unit in Units.OfType<Building>())
         {
             if (unit.IsEmbarked || !Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
                 continue;
@@ -195,7 +199,7 @@ public class UnitHandler
 
     public void DrawMobileUnits(Effect effect)
     {
-        foreach (MobileUnit unit in _units.OfType<MobileUnit>())
+        foreach (MobileUnit unit in Units.OfType<MobileUnit>())
         {
             if (unit.IsEmbarked || !Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
                 continue;
@@ -235,7 +239,7 @@ public class UnitHandler
 
         // An attack target may disappear before the next host simulation
         // tick. Clear every reference immediately, on host and clients alike.
-        foreach (Unit other in _units)
+        foreach (Unit other in Units)
             if (other != unit)
             {
                 other.ClearReferencesToDestroyedUnit(unitId);
@@ -245,21 +249,21 @@ public class UnitHandler
 
         Globals.World.GameGrid.Remove(unit);
         if (!unit.BeginDeathSequence())
-            _units.Remove(unit);
+            lock (_unitsSync) _units.Remove(unit);
         return true;
     }
 
     public void ClearAll()
     {
-        foreach (Unit unit in _units.ToArray())
+        foreach (Unit unit in Units)
             RemoveImmediately(unit);
     }
 
     /// <summary>Removes the previous match while retaining authored map objects.</summary>
     public void ClearForMatchStart()
     {
-        foreach (Unit unit in _units.Where(unit =>
-            unit is not GenericBuilding && unit is not TiberiumSource).ToArray())
+        foreach (Unit unit in Units.Where(unit =>
+            unit is not GenericBuilding && unit is not TiberiumSource))
             RemoveImmediately(unit);
     }
 
@@ -269,7 +273,7 @@ public class UnitHandler
             building.IsDying || building.Occupancy?.Occupants.Count > 0)
             return false;
 
-        foreach (Unit other in _units)
+        foreach (Unit other in Units)
             if (other != building)
                 other.ClearReferencesToDestroyedUnit(unitId);
 
@@ -333,7 +337,7 @@ public class UnitHandler
             return;
 
         driver.Embark(container.UnitId);
-        _units.Add(driver);
+        lock (_unitsSync) _units.Add(driver);
     }
 
     private void RemoveEmbarkedImmediately(Guid unitId)
@@ -342,10 +346,10 @@ public class UnitHandler
         if (occupant is null)
             return;
 
-        foreach (Unit other in _units)
+        foreach (Unit other in Units)
             if (other != occupant)
                 other.ClearReferencesToDestroyedUnit(unitId);
-        _units.Remove(occupant);
+        lock (_unitsSync) _units.Remove(occupant);
     }
 
     private static Player? ResolveArmyOwner(Unit unit)
@@ -372,12 +376,12 @@ public class UnitHandler
     private void RemoveImmediately(Unit unit)
     {
         Globals.World.GameGrid.Remove(unit);
-        _units.Remove(unit);
+        lock (_unitsSync) _units.Remove(unit);
     }
 
     public void Draw2D(SpriteBatch spriteBatch, Camera camera, Viewport viewport)
     {
-        foreach (Unit unit in _units)
+        foreach (Unit unit in Units)
             if ((unit is Building or Helicopter or Harvester) && Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
                 unit.Draw2D(spriteBatch, camera, viewport);
     }

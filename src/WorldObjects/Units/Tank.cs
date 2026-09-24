@@ -36,7 +36,7 @@ public class Tank : MobileUnit
     ];
 
     public Tank(Vector3 position, Guid unitId, IMovementProfile? movementProfile = null)
-        : base(position, length: 4, width: 2, height: 2.2f, unitId, movementProfile)
+        : base(position, unitId, movementProfile)
     {
         Occupancy = new OccupancyComponent(
             this,

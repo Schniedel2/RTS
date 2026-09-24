@@ -16,6 +16,8 @@ void Check(bool condition, string message)
 void Field(object target, Type owner, string name, object value) =>
     owner.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(target, value);
 T Empty<T>() => (T)RuntimeHelpers.GetUninitializedObject(typeof(T));
+List<Unit> UnitList(UnitHandler handler) =>
+    (List<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(handler)!;
 MobileUnit Unit(GroundMovementProfile? profile = null, int width = 1, int length = 1)
 {
     MobileUnit unit = Empty<MobileUnit>();
@@ -23,6 +25,14 @@ MobileUnit Unit(GroundMovementProfile? profile = null, int width = 1, int length
     Field(unit, typeof(Unit), "<Length>k__BackingField", length);
     Field(unit, typeof(MobileUnit), "<MovementProfile>k__BackingField", profile ?? new GroundMovementProfile());
     unit.SetTransform(Matrix.CreateTranslation(1.5f, 0, 1.5f));
+    return unit;
+}
+MobileUnit Mobile(Vector3 position)
+{
+    MobileUnit unit = new(position, Guid.NewGuid());
+    Field(unit, typeof(Unit), "<Length>k__BackingField", 1);
+    Field(unit, typeof(Unit), "<Width>k__BackingField", 1);
+    Field(unit, typeof(Unit), "<Height>k__BackingField", 1f);
     return unit;
 }
 Terrain Terrain(int width, int height)
@@ -41,6 +51,12 @@ GameWorld World(GameGrid grid)
 }
 
 var visibilityGrid = new VisibilityGrid(9, 9);
+var snapshotHandler = new UnitHandler();
+UnitList(snapshotHandler).Add(Unit());
+IReadOnlyList<Unit> stableUnitSnapshot = snapshotHandler.Units;
+UnitList(snapshotHandler).Add(Unit());
+Check(stableUnitSnapshot.Count == 1 && snapshotHandler.Units.Count == 2,
+    "Unit rendering uses a stable snapshot while the live collection changes");
 HudLayout gameHudLayout = HudLayout.Calculate(new Viewport(0, 0, 1280, 720), HudLayoutMode.Game);
 Check(gameHudLayout.ShowMinimap && gameHudLayout.ShowStatusPanel && gameHudLayout.ShowActionPanel &&
       gameHudLayout.Minimap.Right == 1268 && gameHudLayout.Minimap.Bottom == 708 &&
@@ -161,7 +177,7 @@ Check(grid.GetCell(1, 1).IsBlocked, "Slope refresh preserves authored rules");
 
 grid = new GameGrid(8, 8, 1);
 MobileUnit car = Unit();
-var actionUnit = new MobileUnit(new Vector3(1.5f, 0, 1.5f), 1, 1, 1, Guid.NewGuid());
+var actionUnit = Mobile(new Vector3(1.5f, 0, 1.5f));
 actionUnit.ReceiveCommand(new GotoCommand(new Vector2(6.5f, 6.5f)));
 actionUnit.OnHostAction(UnitActionType.Stop);
 Check(actionUnit.CurrentCommand is null, "Host-confirmed Stop action reaches the unit and clears its command");
@@ -189,7 +205,7 @@ grid.Remove(car);
 Check(grid.GetOccupant(4, 3) is null, "Remove clears occupancy");
 
 var constructionSite = new Building(new Vector3(5.5f, 0, 5.5f), Guid.NewGuid());
-var builder = new MobileUnit(new Vector3(4.5f, 0, 5.5f), 1, 1, 1, Guid.NewGuid());
+var builder = Mobile(new Vector3(4.5f, 0, 5.5f));
 Check(grid.GetFootprintCells(constructionSite, constructionSite.Position, 0).Count == 1,
     "A 1x1 footprint does not reserve edge-touching neighbour cells");
 Check(grid.AreFootprintsAdjacent(builder, constructionSite), "Builder footprint may construct from an edge-adjacent cell");
@@ -329,7 +345,7 @@ GDIBarracks Barracks(Guid id)
     return result;
 }
 var barracks = Barracks(Guid.NewGuid());
-((List<Unit>)units.Units).Add(barracks);
+UnitList(units).Add(barracks);
 var input = new NetworkInput(transport);
 var host = new NetworkHost(transport, input, world);
 NetworkMessage? Request(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost)
@@ -385,9 +401,9 @@ try
 }
 finally { if (Directory.Exists(tiberiumDirectory)) Directory.Delete(tiberiumDirectory, true); }
 var editor = Empty<TerrainEditorTool>();
-((List<Unit>)units.Units).Add(editor);
+UnitList(units).Add(editor);
 Check(world.IsEditorActive, "Terrain editor presence activates editor mode");
-((List<Unit>)units.Units).Remove(editor);
+UnitList(units).Remove(editor);
 Check(!world.IsEditorActive, "Removing the terrain editor leaves editor mode");
 var publishedTiberium = new WorldData(1, 1, [0], [0.0f],
     TiberiumCells: tiberium.GetStates(),
@@ -415,7 +431,7 @@ Check(barracks.RallyPoint == new Vector3(8.5f, 0, 7.5f) && barracks.RallyPointRe
 Check(barracks.Actions.Any(action => action.Type == UnitActionType.SetRallyPoint), "Barracks exposes rally action");
 Check(!Unit().SupportsRallyPoint, "Ordinary units opt out");
 var replica = Barracks(barracks.UnitId);
-((List<Unit>)units.Units)[0] = replica;
+UnitList(units)[0] = replica;
 Field(transport, typeof(NetworkHandler), "<IsHost>k__BackingField", false);
 Deliver(confirmed);
 Check(replica.RallyPoint == barracks.RallyPoint && replica.RallyPointRevision == barracks.RallyPointRevision, "Client applies serialized host confirmation");
@@ -424,7 +440,7 @@ Check(replica.RallyPoint is not null, "Old rally update cannot overwrite confirm
 var lateReplica = Barracks(barracks.UnitId);
 lateReplica.ApplyState(barracks.GetState());
 Check(lateReplica.RallyPoint == barracks.RallyPoint, "Building state restores rally point");
-((List<Unit>)units.Units)[0] = barracks;
+UnitList(units)[0] = barracks;
 Field(transport, typeof(NetworkHandler), "<IsHost>k__BackingField", true);
 Deliver(confirmed with { SenderId = ownerId, RallyPoint = new RallyPointState(100, false) });
 Check(barracks.RallyPoint is not null && barracks.RallyPointRevision == 1, "Host rejects forged client confirmation");
@@ -439,7 +455,7 @@ replica.ApplyState(barracks.GetState());
 Check(replica.RallyPoint is null, "Clear survives state synchronization");
 
 // Run the actual building-exit transition without graphics or model loading.
-var produced = new MobileUnit(new Vector3(2.5f, 0, 2.5f), 1, 1, 1, Guid.NewGuid());
+var produced = Mobile(new Vector3(2.5f, 0, 2.5f));
 void SetSpawnRally(MobileUnit unit) => typeof(MobileUnit)
     .GetMethod("SetProductionRallyPoint", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(unit, new object?[] { spawn.RallyPoint });
 void FinishExit(MobileUnit unit) => typeof(MobileUnit)
@@ -450,7 +466,7 @@ Check(produced.CurrentCommand is null && world.PathfindingManager.PendingRequest
 FinishExit(produced);
 Check(!produced.IsLeavingBuilding && produced.CurrentCommand?.Target == new Vector2(8.5f, 7.5f) && world.PathfindingManager.PendingRequests == 1, "After exit unit requests normal rally path");
 grid.Remove(produced);
-produced = new MobileUnit(new Vector3(2.5f, 0, 2.5f), 1, 1, 1, Guid.NewGuid());
+produced = Mobile(new Vector3(2.5f, 0, 2.5f));
 produced.BeginLeavingBuilding(barracks.UnitId, produced.Position);
 SetSpawnRally(produced);
 produced.Stop();
@@ -460,7 +476,7 @@ grid.Remove(produced);
 var waitingSoldier = Unit();
 waitingSoldier.SetPosition(new Vector3(8.5f, 0, 7.5f));
 Check(grid.TryMove(waitingSoldier, new Point(8, 7)), "First recruit occupies rally cell");
-produced = new MobileUnit(new Vector3(2.5f, 0, 2.5f), 1, 1, 1, Guid.NewGuid());
+produced = Mobile(new Vector3(2.5f, 0, 2.5f));
 produced.BeginLeavingBuilding(barracks.UnitId, produced.Position);
 SetSpawnRally(produced);
 FinishExit(produced);
@@ -476,6 +492,9 @@ units = new UnitHandler();
 Field(world, typeof(GameWorld), "<Units>k__BackingField", units);
 Globals.World = world;
 building = new Building(new Vector3(3.25f, 0, 3.25f), Guid.NewGuid());
+Field(building, typeof(Unit), "<Length>k__BackingField", 1);
+Field(building, typeof(Unit), "<Width>k__BackingField", 1);
+Field(building, typeof(Unit), "<Height>k__BackingField", 1f);
 var placement = building.EvaluatePlacement(world, building.Position, 0);
 Check(placement.IsAllowed && placement.HeightDifference == 0, "Flat build site allowed");
 Point far = new(placement.Cells.Max(c => c.Cell.X) + 1, placement.Cells.Max(c => c.Cell.Y) + 1);
@@ -756,7 +775,7 @@ GDIBulldozer SetupEarthwork()
     Field(driver, typeof(Unit), "<UnitId>k__BackingField", Guid.NewGuid());
     Field(driver, typeof(Unit), "<ArmyId>k__BackingField", armyId);
     if (!dozer.Occupancy!.TryAdd(driver, OccupantRole.Driver, out _)) throw new Exception("Driver fixture failed");
-    ((List<Unit>)units.Units).Add(dozer);
+    UnitList(units).Add(dozer);
     grid.TryMove(dozer, grid.ToCell(dozer.Position));
     return dozer;
 }
@@ -875,10 +894,10 @@ Helicopter SetupHelicopter(int passengers = 0)
 {
     var old = SetupEarthwork();
     grid.Remove(old);
-    ((List<Unit>)units.Units).Clear();
+    UnitList(units).Clear();
     var helicopter = new Helicopter(new(10.5f, 0, 10.5f), Guid.NewGuid(), passengers);
     Field(helicopter, typeof(Unit), "<ArmyId>k__BackingField", armyId);
-    ((List<Unit>)units.Units).Add(helicopter);
+    UnitList(units).Add(helicopter);
     if (!helicopter.InitializeOnGround(world)) throw new Exception("Helicopter fixture could not land");
     return helicopter;
 }
@@ -891,7 +910,7 @@ Helipad AddPad(Vector3 position)
     var pad = new Helipad(position, Guid.NewGuid()) { LandingLocalPosition = new(0, 0.1f, 0) };
     Field(pad, typeof(Unit), "<ArmyId>k__BackingField", armyId);
     pad.AdvanceConstruction(pad.TotalBuildingPointsNeeded);
-    ((List<Unit>)units.Units).Add(pad);
+    UnitList(units).Add(pad);
     if (!grid.TryPlace(pad, position, 0)) throw new Exception("Helipad fixture placement failed");
     return pad;
 }
@@ -930,7 +949,7 @@ var pad = AddPad(new(30.5f, 0, 30.5f));
 Check(pad.CanAccept(world, heli) && heli.ReturnToHelipad(world), "Completed allied helipad accepts return");
 var rivalHeli = new Helicopter(new(6.5f, 0, 30.5f), Guid.NewGuid());
 Field(rivalHeli, typeof(Unit), "<ArmyId>k__BackingField", armyId);
-((List<Unit>)units.Units).Add(rivalHeli);
+UnitList(units).Add(rivalHeli);
 Check(!pad.CanAccept(world, rivalHeli), "Approaching helicopter reserves helipad against a second aircraft");
 Check(rivalHeli.ReturnToHelipad(world) && rivalHeli.AssignedHelipadId is null, "Occupied pad falls back to a ground landing");
 FlyTicks(heli, 200);
@@ -970,7 +989,7 @@ FlyTicks(heli, 40);
 Field(heli, typeof(Helicopter), "<Fuel>k__BackingField", 23f);
 heli.SimulateFlight(world, 0.1f);
 Check(heli.AssignedHelipadId == pad.UnitId, "Low fuel automatically selects a free allied pad");
-((List<Unit>)units.Units).Remove(pad);
+UnitList(units).Remove(pad);
 grid.Remove(pad);
 heli.SimulateFlight(world, 0.1f);
 Check(heli.AssignedHelipadId is null, "Destroyed helipad invalidates reservation");
@@ -1052,7 +1071,7 @@ var belowAircraft = Unit();
 Field(belowAircraft, typeof(Unit), "<UnitId>k__BackingField", Guid.NewGuid());
 Field(belowAircraft, typeof(Unit), "<Height>k__BackingField", 1f);
 belowAircraft.SetPosition(new(heli.Position.X, 0, heli.Position.Z));
-((List<Unit>)units.Units).Insert(0, belowAircraft);
+UnitList(units).Insert(0, belowAircraft);
 host = new NetworkHost(transport, input, world);
 Unit? ImpactTarget(Guid attacker, Vector3 point) => (Unit?)typeof(NetworkHost).GetMethod("FindImpactTarget", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { attacker, point });
 Check(ImpactTarget(Guid.NewGuid(), heli.Position + Vector3.Up * (heli.Height * 0.5f)) == heli, "Aerial hit selects helicopter rather than unit below");
