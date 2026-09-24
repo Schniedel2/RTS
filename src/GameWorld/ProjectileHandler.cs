@@ -9,6 +9,13 @@ public sealed class ProjectileHandler
 {
     private readonly List<Projectile> _projectiles = [];
     private readonly List<PendingVisualImpact> _pendingImpacts = [];
+    public int ActiveProjectileCount => _projectiles.Count + _pendingImpacts.Count;
+
+    public void Clear()
+    {
+        _projectiles.Clear();
+        _pendingImpacts.Clear();
+    }
 
     private sealed class PendingVisualImpact(Guid projectileId, Vector3 position)
     {

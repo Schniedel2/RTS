@@ -24,6 +24,12 @@ public sealed class FogOfWarTexture : IDisposable
         _pixels = new Color[width * height];
     }
 
+    public void Reset()
+    {
+        Array.Fill(_pixels, new Color(8, 8, 8, 255));
+        _texture.SetData(_pixels);
+    }
+
     public void Update(Guid viewerArmyId)
     {
         int width = _texture.Width;

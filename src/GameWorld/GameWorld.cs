@@ -177,6 +177,16 @@ public class GameWorld
         Particles.Update(gameTime);
     }
 
+    public void ClearTransientEffects()
+    {
+        Particles.Clear();
+        Decals.Clear();
+        SmokeEmitters.Clear();
+        Projectiles.Clear();
+        Markers.Clear();
+        Weather.ClearTransientEffects();
+    }
+
     public bool CanMove(int x, int y, MobileUnit unit)
     {
            return GameGrid.CanPlace(unit, new Point(x, y));

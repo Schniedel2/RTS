@@ -98,6 +98,18 @@ public class RTSGame
         _ = _consoleCommands.CallBatch(new[] { "autorun.batch" });
     }
 
+    public void ResetMatchPresentation(Vector3? localStartPosition)
+    {
+        World.ClearTransientEffects();
+        World.Visibility.Reset();
+        _minimap.Reset();
+        _fogTexture.Reset();
+        _fogRefreshElapsed = 0.0f;
+        _minimapRefreshElapsed = 0.0f;
+        if (localStartPosition is Vector3 position)
+            Globals._camera.CenterForMatchStart(position, World.Center);
+    }
+
     public void UpdatePlayer(Guid playerId, string name, int teamId, PlayerSkin skin)
     {
         Player? player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
@@ -155,6 +167,23 @@ public class RTSGame
 
         return _aiPlayers.Values.FirstOrDefault(ai =>
             string.Equals(ai.Name, idOrName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    internal void PrepareAIPlayersForMatch(IEnumerable<MatchStartAssignment> assignments)
+    {
+        if (!Network.IsHost)
+            return;
+
+        foreach (MatchStartAssignment assignment in assignments.Where(item => item.IsAI))
+        {
+            if (!_aiPlayers.TryGetValue(assignment.PlayerId, out AIPlayer? aiPlayer))
+                continue;
+
+            if (_players.All(player => player.Id != aiPlayer.Id))
+                _players.Add(aiPlayer.Player);
+            Armies.EnsureArmy(assignment.ArmyId, aiPlayer.Id, GuidUtility.FromInt(aiPlayer.Player.TeamId));
+            aiPlayer.SetStatus(AIPlayerStatus.Active);
+        }
     }
 
     private void UpdateConsole(GameTime gameTime)
@@ -241,6 +270,7 @@ public class RTSGame
             camera.UpdateMouse(gameTime);
         if (!Globals.Console.IsOpen && !minimapConsumed)
             camera.UpdateKeyboard(gameTime);
+        camera.UpdateTerrainHeight(gameTime, World.Terrain);
         bool actionPanelConsumed =
             ActionPanel?.Update(LocalPlayer.SelectedUnits, viewport) == true;
         if (!actionPanelConsumed && !minimapConsumed)

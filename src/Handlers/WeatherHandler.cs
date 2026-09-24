@@ -67,6 +67,13 @@ public sealed class WeatherHandler
         return effect;
     }
 
+    public void ClearTransientEffects()
+    {
+        _windEffects.Clear();
+        _windMapUpdateElapsed = 0.0f;
+        Array.Clear(_localWindMap);
+    }
+
     public void Update(GameTime gameTime)
     {
         float deltaSeconds = (float)gameTime.ElapsedGameTime.TotalSeconds;

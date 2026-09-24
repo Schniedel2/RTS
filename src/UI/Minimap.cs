@@ -46,6 +46,13 @@ public sealed class Minimap : IDisposable
         return consumed;
     }
 
+    public void Reset()
+    {
+        Array.Fill(_pixels, Color.Black);
+        _texture.SetData(_pixels);
+        _previousMouse = Mouse.GetState();
+    }
+
     public void Refresh(Guid viewerArmyId)
     {
         int width = _texture.Width;

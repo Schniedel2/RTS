@@ -706,7 +706,14 @@ public sealed class NetworkHost
         if (request.SenderId != _networkHandler.LocalPeerId)
             return null;
 
-        Player[] players = Globals.Game.Players.OrderBy(player => player.Id).ToArray();
+        // AI controllers live only on the host. Include their player identities
+        // explicitly so a map publish or player-list rebuild cannot drop them
+        // from the following match.
+        Player[] players = Globals.Game.Players
+            .Concat(Globals.Game.AIPlayers.Select(ai => ai.Player))
+            .DistinctBy(player => player.Id)
+            .OrderBy(player => player.Id)
+            .ToArray();
         List<GameplayMarker> starts = _world.GameplayMarkers.Markers
             .Where(marker => marker.Type == GameplayMarkerType.PlayerStart && marker.PlayerSlot is not null)
             .OrderBy(marker => marker.PlayerSlot)
@@ -750,7 +757,8 @@ public sealed class NetworkHost
             float y = _world.Terrain.GetHeight((int)marker.Position.X, (int)marker.Position.Z);
             return new MatchStartAssignment(
                 player.Id, player.ArmyId, marker.PlayerSlot!.Value,
-                marker.Position.X, y, marker.Position.Z, marker.RotationDegrees, Guid.NewGuid());
+                marker.Position.X, y, marker.Position.Z, marker.RotationDegrees, Guid.NewGuid(),
+                Globals.Game.AIPlayers.Any(ai => ai.Id == player.Id));
         }).ToArray();
         _startPositionWishes.Clear();
         return NetworkCommands.CreateStartMultiplayerGameCommand(

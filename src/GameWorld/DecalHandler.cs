@@ -75,6 +75,14 @@ public sealed class DecalHandler
     public int MaximumRubbleMarks { get; set; } = 1024;
     private readonly List<ScorchDecal> _rubbleMarks = [];
 
+    public int ActiveDecalCount => _scorchMarks.Count + _rubbleMarks.Count;
+
+    public void Clear()
+    {
+        _scorchMarks.Clear();
+        _rubbleMarks.Clear();
+    }
+
     public void AddScorchMark(Vector3 impactPosition, float size = 1.8f, float lifetimeSeconds = 180.0f)
     {
         if (!Globals.TilemapHandler.TryGet("Scorch", out TilemapHandler.Tilemap tilemap))

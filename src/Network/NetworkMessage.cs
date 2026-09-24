@@ -124,7 +124,8 @@ public sealed record MatchStartAssignment(
     float Y,
     float Z,
     float RotationDegrees,
-    Guid BulldozerId);
+    Guid BulldozerId,
+    bool IsAI = false);
 
 public sealed record NetworkMessage(
     NetworkMessageType Type,

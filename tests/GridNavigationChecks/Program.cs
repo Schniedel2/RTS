@@ -43,6 +43,21 @@ var visibilityGrid = new VisibilityGrid(9, 9);
 SmokeEmissionSettings destructionSmoke = SmokeEmissionPresets.DestroyBuilding();
 Check(destructionSmoke.StartDelayVariation > 0.0f,
     "Building destruction smoke is emitted once with delayed particle starts");
+var transientWeather = new WeatherHandler(8, 8);
+transientWeather.AddExplosionWind(new Vector3(2, 0, 2));
+transientWeather.ClearTransientEffects();
+Check(transientWeather.WindEffects.Count == 0,
+    "Match reset clears transient explosion wind effects");
+var transientProjectiles = new ProjectileHandler();
+transientProjectiles.Fire(Vector3.Zero, Vector3.One);
+transientProjectiles.Clear();
+Check(transientProjectiles.ActiveProjectileCount == 0,
+    "Match reset clears projectiles that could recreate old particle effects");
+var transientEmitters = new SmokeEmitterHandler();
+transientEmitters.Create(Vector3.Zero, new SmokeEmissionSettings());
+transientEmitters.Clear();
+Check(transientEmitters.Emitters.Count == 0,
+    "Match reset clears persistent smoke emitters");
 Check(visibilityGrid[new Point(4, 4)] == VisibilityState.Unexplored, "Visibility starts unexplored");
 visibilityGrid.Reveal(new Point(4, 4), 2);
 Check(visibilityGrid[new Point(4, 4)] == VisibilityState.Visible && visibilityGrid[new Point(6, 4)] == VisibilityState.Visible, "Sight radius reveals cells");
@@ -51,6 +66,26 @@ visibilityGrid.BeginUpdate();
 Check(visibilityGrid[new Point(4, 4)] == VisibilityState.Explored, "Previous sight remains explored");
 visibilityGrid.Reveal(new Point(0, 0), 2);
 Check(visibilityGrid[new Point(0, 0)] == VisibilityState.Visible && visibilityGrid[new Point(-1, 0)] == VisibilityState.Unexplored, "Sight reveal clips to map bounds");
+visibilityGrid.Reset();
+Check(visibilityGrid[new Point(0, 0)] == VisibilityState.Unexplored &&
+      visibilityGrid[new Point(4, 4)] == VisibilityState.Unexplored,
+    "Match start reset clears visible and explored minimap cells");
+
+var startCamera = new Camera();
+float initialCameraHeight = startCamera.Position.Y;
+startCamera.CenterForMatchStart(new Vector3(10, 2, 20), new Vector3(30, 0, 40));
+Check(startCamera.Position == new Vector3(10, 2 + startCamera.HeightAboveTerrain, 20) &&
+      startCamera.HeightAboveTerrain == initialCameraHeight,
+    "Match start camera centers on the local bulldozer at its terrain-relative height");
+Check(Math.Abs(startCamera.YawAngle - (-135.0f)) < 0.001f,
+    "Match start camera faces from the bulldozer toward the map center");
+Terrain cameraTerrain = Terrain(32, 32);
+cameraTerrain.SetHeight(10, 20, 8);
+float cameraYBeforeFollow = startCamera.Position.Y;
+startCamera.UpdateTerrainHeight(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.1)), cameraTerrain);
+Check(startCamera.Position.Y > cameraYBeforeFollow &&
+      startCamera.Position.Y < 8 + startCamera.HeightAboveTerrain,
+    "Camera follows changing terrain height smoothly while preserving relative zoom");
 
 var terrain = Terrain(6, 6);
 var grid = new GameGrid(6, 6, 1);
@@ -520,10 +555,14 @@ Check(!Empty<GenericBuilding>().Actions.Any(
     action => action.Type == UnitActionType.SellBuilding), "Generic building cannot be sold");
 
 Guid secondPlayerId = Guid.NewGuid(), secondArmyId = Guid.NewGuid();
+Player aiIdentity = new(secondPlayerId, "second", armyId: secondArmyId);
 Field(game, typeof(RTSGame), "_players", new List<Player>
 {
-    new(ownerId, "first", armyId: armyId),
-    new(secondPlayerId, "second", armyId: secondArmyId)
+    new(ownerId, "first", armyId: armyId)
+});
+Field(game, typeof(RTSGame), "_aiPlayers", new Dictionary<Guid, AIPlayer>
+{
+    [secondPlayerId] = new AIPlayer(aiIdentity)
 });
 armies.EnsureArmy(secondArmyId, secondPlayerId);
 var startMarkers = new GameplayMarkerHandler();
@@ -541,6 +580,16 @@ MatchStartAssignment[] matchAssignments = startCommand!.MatchStartAssignments!;
 Check(matchAssignments.Single(item => item.PlayerId == ownerId).StartPositionSlot == 2 &&
     matchAssignments.Select(item => item.StartPositionSlot).Distinct().Count() == 2,
     "Host honors a free requested start and assigns every start only once");
+Check(matchAssignments.Single(item => item.PlayerId == secondPlayerId).IsAI,
+    "Host preserves AI armies in multiplayer match assignments");
+Check(matchAssignments.Select(item => item.PlayerId).ToHashSet().SetEquals([ownerId, secondPlayerId]) &&
+      matchAssignments.Select(item => item.BulldozerId).Distinct().Count() == 2,
+    "Every human and AI player receives one distinct new match-start bulldozer");
+typeof(RTSGame).GetMethod("PrepareAIPlayersForMatch", BindingFlags.Instance | BindingFlags.NonPublic)!
+    .Invoke(game, new object[] { matchAssignments });
+Check(game.Players.Any(player => player.Id == secondPlayerId) &&
+      game.FindAIPlayer(secondPlayerId.ToString())?.Status == AIPlayerStatus.Active,
+    "Match start restores and activates the host AI controller");
 // Shared texel density must be independent of model bounds and ordinary UVs.
 var sharedRegion = new TextureHandler.TextureRegion { AtlasIndex = 0, X = 16, Y = 32, Width = 256, Height = 128, AtlasWidth = 1024, AtlasHeight = 1024 };
 SubMesh TexturedPart(string? sharedName, float length)

@@ -1125,7 +1125,10 @@ public class ConsoleCommands
             return;
         }
 
-        int players = _rtsGame.Players.Count;
+        int players = _rtsGame.Players.Select(player => player.Id)
+            .Concat(_rtsGame.AIPlayers.Select(ai => ai.Id))
+            .Distinct()
+            .Count();
         int starts = _world.GameplayMarkers.Markers.Count(marker => marker.Type == GameplayMarkerType.PlayerStart);
         if (players == 0 || starts < players)
         {

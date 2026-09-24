@@ -213,6 +213,8 @@ public sealed class NetworkInput
         if (message.Type == NetworkMessageType.StartMultiplayerGameCommand)
         {
             Globals.World.Units.ClearForMatchStart();
+            Globals.Game.PrepareAIPlayersForMatch(message.MatchStartAssignments ?? []);
+            Vector3? localStartPosition = null;
             foreach (MatchStartAssignment assignment in message.MatchStartAssignments ?? [])
             {
                 if (Globals.Game.Armies.Find(assignment.ArmyId) is Army army)
@@ -224,7 +226,11 @@ public sealed class NetworkInput
                     assignment.BulldozerId,
                     assignment.PlayerId);
                 bulldozer?.SetArmy(assignment.ArmyId);
+                if (assignment.PlayerId == Globals.Game.Network.LocalPeerId)
+                    localStartPosition = bulldozer?.Position ??
+                        new Vector3(assignment.X, assignment.Y, assignment.Z);
             }
+            Globals.Game.ResetMatchPresentation(localStartPosition);
             Globals.Console.Print($"Multiplayer game started with {message.MatchStartAssignments?.Length ?? 0} player(s).");
             return;
         }

@@ -77,6 +77,12 @@ public sealed class VisibilityGrid
                 }
     }
 
+    public void Reset()
+    {
+        Array.Clear(_cells);
+        _visibleCells.Clear();
+    }
+
     private bool Contains(Point cell) => cell.X >= 0 && cell.Y >= 0 && cell.X < Width && cell.Y < Height;
 }
 
@@ -94,6 +100,12 @@ public sealed class VisibilitySystem
         if (!_grids.TryGetValue(armyId, out VisibilityGrid? grid))
             _grids.Add(armyId, grid = new VisibilityGrid(_world.GameGrid.Width, _world.GameGrid.Height));
         return grid;
+    }
+
+    public void Reset()
+    {
+        _grids.Clear();
+        _alliedArmyIds.Clear();
     }
 
     public void Update()

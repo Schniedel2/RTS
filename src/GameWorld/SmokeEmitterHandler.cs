@@ -25,6 +25,8 @@ public sealed class SmokeEmitterHandler
 
     public bool Remove(SmokeEmitter emitter) => _emitters.Remove(emitter);
 
+    public void Clear() => _emitters.Clear();
+
     public void Update(GameTime gameTime)
     {
         for (int index = _emitters.Count - 1; index >= 0; index--)

@@ -1,5 +1,6 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
+using System;
 
 namespace RTS;
 
@@ -11,6 +12,10 @@ public class Camera
     public float ScrollZoomSpeed { get; set; } = 0.05f;
     public int EdgeScrollMargin { get; set; } = 20;
     public Vector3 Position { get; private set; }
+    public float HeightAboveTerrain { get; private set; } = 22.0f;
+    public float MinimumHeightAboveTerrain { get; set; } = 5.0f;
+    public float MaximumHeightAboveTerrain { get; set; } = 100.0f;
+    public float TerrainFollowSpeed { get; set; } = 8.0f;
     public float YawAngle { get; private set; }
     public float PitchAngle { get; private set; }
 
@@ -46,7 +51,7 @@ public class Camera
 
     public Camera()
     {
-        Position = new Vector3(128, 60, 128);
+        Position = new Vector3(128, HeightAboveTerrain, 128);
 
         // Blick schräg nach unten
         PitchAngle = -35;
@@ -56,6 +61,18 @@ public class Camera
     public void CenterOn(Vector2 worldPosition)
     {
         Position = new Vector3(worldPosition.X, Position.Y, worldPosition.Y);
+    }
+
+    /// <summary>Centers the camera above a start unit while facing into the map.</summary>
+    public void CenterForMatchStart(Vector3 focus, Vector3 mapCenter)
+    {
+        Position = new Vector3(focus.X, focus.Y + HeightAboveTerrain, focus.Z);
+        Vector2 direction = new(mapCenter.X - focus.X, mapCenter.Z - focus.Z);
+        if (direction.LengthSquared() > 0.0001f)
+        {
+            direction.Normalize();
+            YawAngle = MathHelper.ToDegrees(MathF.Atan2(-direction.X, -direction.Y));
+        }
     }
 
     public void UpdateMouse(GameTime gameTime)
@@ -84,7 +101,10 @@ public class Camera
             mouse.ScrollWheelValue -
             _previousMouseState.ScrollWheelValue;
 
-        Position += Vector3.Up * scrollDelta * ScrollZoomSpeed;
+        HeightAboveTerrain = MathHelper.Clamp(
+            HeightAboveTerrain + scrollDelta * ScrollZoomSpeed,
+            MinimumHeightAboveTerrain,
+            MaximumHeightAboveTerrain);
 
         if (mouse.RightButton == ButtonState.Pressed)
         {
@@ -94,9 +114,6 @@ public class Camera
 
         _previousMouseState = mouse;
 
-        // Nicht in den Boden fliegen
-        if (Position.Y < 5)
-            Position = new Vector3(Position.X, 5, Position.Z);
     }
 
     public void UpdateKeyboard(GameTime gameTime)
@@ -162,19 +179,32 @@ public class Camera
         // -------------------------------------------------
 
         if (keyboard.IsKeyDown(Keys.R))
-            Position += Vector3.Up * speed * dt;
+            HeightAboveTerrain += speed * dt;
 
         if (keyboard.IsKeyDown(Keys.F))
-            Position -= Vector3.Up * speed * dt;
+            HeightAboveTerrain -= speed * dt;
+
+        HeightAboveTerrain = MathHelper.Clamp(
+            HeightAboveTerrain,
+            MinimumHeightAboveTerrain,
+            MaximumHeightAboveTerrain);
 
         if (keyboard.IsKeyDown(Keys.PageUp))
             PitchAngle += 1;
         if (keyboard.IsKeyDown(Keys.PageDown))
             PitchAngle -= 1;
 
-        // Nicht in den Boden fliegen
-        if (Position.Y < 5)
-            Position = new Vector3(Position.X, 5, Position.Z);
+    }
+
+    /// <summary>Keeps the current zoom distance while smoothly following terrain elevation.</summary>
+    public void UpdateTerrainHeight(GameTime gameTime, Terrain terrain)
+    {
+        int terrainX = Math.Clamp((int)MathF.Floor(Position.X), 0, terrain.Width - 1);
+        int terrainZ = Math.Clamp((int)MathF.Floor(Position.Z), 0, terrain.Height - 1);
+        float targetY = terrain.GetHeight(terrainX, terrainZ) + HeightAboveTerrain;
+        float seconds = Math.Max(0.0f, (float)gameTime.ElapsedGameTime.TotalSeconds);
+        float blend = 1.0f - MathF.Exp(-TerrainFollowSpeed * seconds);
+        Position = new Vector3(Position.X, MathHelper.Lerp(Position.Y, targetY, blend), Position.Z);
     }
 
     private Vector3 GetForward()

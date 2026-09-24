@@ -30,6 +30,13 @@ public sealed class ParticleSystem
 
     private bool HasParticleCapacity => ActiveParticleCount < MaximumParticles;
 
+    public void Clear()
+    {
+        _particles.Clear();
+        _smokeParticles.Clear();
+        _debrisParticles.Clear();
+    }
+
     public void EmitRocketTrail(
         Vector3 position,
         Vector3 direction,

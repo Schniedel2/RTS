@@ -17,6 +17,8 @@ public class MarkerHandler
         _markers.Add(new Marker(position, lifetime: 1.0f));
     }
 
+    public void Clear() => _markers.Clear();
+
     public void Update(GameTime gameTime)
     {
         for (int index = _markers.Count - 1; index >= 0; index--)
