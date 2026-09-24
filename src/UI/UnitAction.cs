@@ -5,6 +5,7 @@ public enum UnitActionType
     None,
     Goto,
     Stop,
+    Destroy,
     Attack,
     Build,
     BuildConstruction,

@@ -142,6 +142,12 @@ public class PlayerHandler
                         Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, building.ArmyId)))
                     _ = RequestSellBuildingAsync(building);
                 return false;
+            case UnitActionType.Destroy:
+                foreach (Building building in _selectedUnits.OfType<Building>().Where(
+                    building => Globals.Game.Armies.CanControl(
+                        Globals.Game.Network.LocalPeerId, building.ArmyId)))
+                    _ = Globals.Game.NetworkClient.RequestDestroyBuildingAsync(building.UnitId);
+                return false;
         }
 
         ActiveAction = action;        
@@ -187,7 +193,9 @@ public class PlayerHandler
         //  update mouse-world position
         Point screenPosition = mouse.Position;
         Ray ray = CreatePickRay(camera, viewport, screenPosition);
-        if (_map.Terrain.TryGetIntersection(ray, out Vector3 target))
+        IsMouseOnTerrain = false;
+        if (_map.Terrain.TryGetIntersection(ray, out Vector3 target) &&
+            float.IsFinite(target.X) && float.IsFinite(target.Y) && float.IsFinite(target.Z))
         {
             MouseWorldPosition = new Vector3(target.X, target.Y, target.Z);
             IsMouseOnTerrain = true;

@@ -210,6 +210,25 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type == NetworkMessageType.StartMultiplayerGameCommand)
+        {
+            Globals.World.Units.ClearForMatchStart();
+            foreach (MatchStartAssignment assignment in message.MatchStartAssignments ?? [])
+            {
+                if (Globals.Game.Armies.Find(assignment.ArmyId) is Army army)
+                    army.Resources = message.ResourceAmount;
+                Unit? bulldozer = Globals.World.Units.SpawnUnit(
+                    "gdi-bulldozer",
+                    new Vector3(assignment.X, assignment.Y, assignment.Z),
+                    assignment.RotationDegrees,
+                    assignment.BulldozerId,
+                    assignment.PlayerId);
+                bulldozer?.SetArmy(assignment.ArmyId);
+            }
+            Globals.Console.Print($"Multiplayer game started with {message.MatchStartAssignments?.Length ?? 0} player(s).");
+            return;
+        }
+
         if (message.Type == NetworkMessageType.SetRallyPointCommand)
         {
             // A client may request a change, but may not inject its own confirmation on the host.
@@ -622,12 +641,21 @@ public sealed class NetworkInput
             Globals.World.Units.FindById(unitId) is not Unit unit)
             return;
 
+        if (unit is Building destroyedBuilding && unit.HasDeathExplosion)
+            Globals.World.Decals.AddBuildingRubble(destroyedBuilding);
+
         if (unit.HasDeathExplosion)
-            Globals.World.Particles.EmitExplosion(
-                unit.Position + Vector3.Up * Math.Max(1.0f, unit.Height * 0.5f),
-                unit.UsesVehicleDeathSequence
-                    ? ExplosionEmissionPresets.VehicleDestruction()
-                    : ExplosionEmissionPresets.TankShell());
+        {
+            if (unit is not Building)
+            {
+                Vector3 pos = unit.Position + Vector3.Up * Math.Max(1.0f, unit.Height * 0.5f);
+                Globals.World.Particles.EmitExplosion(
+                    pos,
+                    unit.UsesVehicleDeathSequence
+                        ? ExplosionEmissionPresets.VehicleDestruction()
+                        : ExplosionEmissionPresets.TankShell());
+            }
+        }
         Globals.World.Units.Destroy(unitId);
     }
 
@@ -652,7 +680,9 @@ public sealed class NetworkInput
             return;
 
         Unit? unit = Globals.World.Units.FindById(state.UnitId);
-        if (unit is Helicopter && Globals.Game.Network.IsHost) return;
+        // The host owns movement simulation. Its own broadcast must never
+        // rewind a unit after the host has already advanced another frame.
+        if (unit is MobileUnit && Globals.Game.Network.IsHost) return;
         unit?.ApplyState(state);
     }
 

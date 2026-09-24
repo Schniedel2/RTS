@@ -5,6 +5,17 @@ namespace RTS.Network;
 
 public static class NetworkCommands
 {
+    public static NetworkMessage CreateStartPositionWishRequest(Guid senderId, int slot) =>
+        new(NetworkMessageType.StartPositionWishRequest, senderId, StartPositionSlot: slot);
+
+    public static NetworkMessage CreateStartMultiplayerGameRequest(Guid senderId) =>
+        new(NetworkMessageType.StartMultiplayerGameRequest, senderId);
+
+    public static NetworkMessage CreateStartMultiplayerGameCommand(
+        Guid hostId, MatchStartAssignment[] assignments) =>
+        new(NetworkMessageType.StartMultiplayerGameCommand, hostId,
+            MatchStartAssignments: assignments, ResourceAmount: 10000);
+
     public static NetworkMessage CreateNotifyUnitsSelected(Guid senderId, Guid[] unitIds, uint revision) =>
         new(NetworkMessageType.NotifyUnitsSelected, senderId, PlayerId: senderId,
             UnitIds: unitIds, SelectionRevision: revision);
@@ -554,6 +565,9 @@ public static class NetworkCommands
 
     public static NetworkMessage CreateSellBuildingRequest(Guid senderId, Guid buildingId) =>
         new(NetworkMessageType.SellBuildingRequest, senderId, UnitId: buildingId);
+
+    public static NetworkMessage CreateDestroyBuildingRequest(Guid senderId, Guid buildingId) =>
+        new(NetworkMessageType.DestroyBuildingRequest, senderId, UnitId: buildingId);
 
     public static NetworkMessage CreateSellBuildingCommand(
         Guid hostId, Building building, int armyResources) =>

@@ -249,6 +249,20 @@ public class UnitHandler
         return true;
     }
 
+    public void ClearAll()
+    {
+        foreach (Unit unit in _units.ToArray())
+            RemoveImmediately(unit);
+    }
+
+    /// <summary>Removes the previous match while retaining authored map objects.</summary>
+    public void ClearForMatchStart()
+    {
+        foreach (Unit unit in _units.Where(unit =>
+            unit is not GenericBuilding && unit is not TiberiumSource).ToArray())
+            RemoveImmediately(unit);
+    }
+
     public bool SellBuilding(Guid unitId)
     {
         if (FindById(unitId) is not Building building || building is GenericBuilding ||
@@ -310,7 +324,7 @@ public class UnitHandler
         Soldier driver = new(container.Position, driverUnitId);
         // Crew must be identical on every peer; the normal Soldier constructor
         // currently chooses a random weapon locally.
-        driver.SetWeapon(Soldier.Weapon.M16);
+        driver.SetWeapon(Soldier.Weapon.Brok17); // drivers only have a pistol (Brok17)
         driver.SetCreatorPlayer(creatorPlayerId);
         driver.SetArmy(container.ArmyId);
         if (container.Occupancy is not OccupancyComponent occupancy ||

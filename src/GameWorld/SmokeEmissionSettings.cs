@@ -22,6 +22,10 @@ public sealed record SmokeEmissionSettings
     public float EndSizeVariation { get; init; } = 0.35f;
     public float Lifetime { get; init; } = 0.70f;
     public float LifetimeVariation { get; init; } = 0.20f;
+    /// <summary>Seconds before a newly allocated particle becomes visible and starts moving.</summary>
+    public float StartDelay { get; init; }
+    /// <summary>Random variation around <see cref="StartDelay"/>; negative results are clamped to zero.</summary>
+    public float StartDelayVariation { get; init; }
     public Color Color { get; init; } = new(184, 184, 184);
     public float Opacity { get; init; } = 0.62f;
     /// <summary>0 ignores wind; 1 drifts with the complete world wind velocity.</summary>
@@ -241,5 +245,20 @@ public static class SmokeEmissionPresets
         Lifetime = 4.0f,
         Opacity = 0.65f
     };
-    
+
+    public static SmokeEmissionSettings DestroyBuilding()
+    {
+        return SmokeEmissionPresets.VehicleWreck() with
+        {
+            ParticleCount = 3,
+            Intensity = 2.2f,
+            StartSize = 0.75f,
+            EndSize = 3.4f,
+            Lifetime = 4.5f,
+            StartDelay = 0f,
+            StartDelayVariation = 3.0f,
+            Opacity = 0.92f,
+            Color = new(150, 150, 150)
+        };
+    }
 }

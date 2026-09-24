@@ -72,6 +72,8 @@ public sealed class DecalHandler
 
     private readonly List<ScorchDecal> _scorchMarks = [];
     public int MaximumScorchMarks { get; set; } = 384;
+    public int MaximumRubbleMarks { get; set; } = 1024;
+    private readonly List<ScorchDecal> _rubbleMarks = [];
 
     public void AddScorchMark(Vector3 impactPosition, float size = 1.8f, float lifetimeSeconds = 180.0f)
     {
@@ -99,6 +101,71 @@ public sealed class DecalHandler
             _scorchMarks.RemoveAt(0);
     }
 
+    /// <summary>Places one compact, persistent rubble decal on every cell covered by a building.</summary>
+    public void AddBuildingRubble(Building building)
+    {
+        if (!Globals.TilemapHandler.TryGet("Rubble", out TilemapHandler.Tilemap tilemap))
+            return;
+
+        Vector3 forward = building.Transform.Forward;
+        float yawDegrees = MathHelper.ToDegrees(MathF.Atan2(-forward.X, -forward.Z));
+        float cellSize = Globals.World.GameGrid.CellSize;
+
+
+        var cells = Globals.World.GameGrid.GetFootprintCells(building, building.Position, yawDegrees);
+
+        //  determine center
+        float minX = float.MaxValue;
+        float minZ = float.MaxValue;
+        float maxX = float.MinValue;
+        float maxZ = float.MinValue;
+        foreach (Point cell in cells)
+        {
+            minX = Math.Min(minX, cell.X);
+            minZ = Math.Min(minZ, cell.Y);
+            maxX = Math.Max(maxX, cell.X);
+            maxZ = Math.Max(maxZ, cell.Y);
+        }
+
+        Vector3 center = new((minX + maxX + 1) * 0.5f * cellSize, 0, (minZ + maxZ + 1) * 0.5f * cellSize);
+        // determin max distance
+        float maxDistance = 0;
+        foreach (Point cell in cells)
+        {
+            Vector3 cellPosition = new((cell.X + 0.5f) * cellSize, 0, (cell.Y + 0.5f) * cellSize);
+            maxDistance = Math.Max(maxDistance, (cellPosition - center).Length());
+        }
+
+        foreach (Point cell in cells)
+        {
+            if (!Globals.World.GameGrid.Contains(cell))
+                continue;
+
+
+            var smokeSettings = SmokeEmissionPresets.DestroyBuilding();
+            Vector3 pos = new Vector3(cell.X, Globals.World.Terrain.GetHeight(cell.X, cell.Y) + 0.012f, cell.Y);
+            Vector3 direction = pos - center;
+            Globals.World.Particles.EmitSmoke(pos, direction, smokeSettings);
+
+            float rndX = Random.Shared.NextSingle() *0.5f - 0.25f;
+            float rndZ = Random.Shared.NextSingle() *0.5f - 0.25f;
+            float x = (cell.X + 0.5f + rndX) * cellSize;
+            float z = (cell.Y + 0.5f + rndZ) * cellSize;
+            int terrainX = Math.Clamp((int)MathF.Floor(x), 0, Globals.World.Terrain.Width - 1);
+            int terrainZ = Math.Clamp((int)MathF.Floor(z), 0, Globals.World.Terrain.Height - 1);
+
+            //  determine offsetY by distance to center (to pile debris)
+            float offsetY = (maxDistance - (new Vector3(x, 0, z) - center).Length()) * 0.1f;
+            Vector3 position = new(x, Globals.World.Terrain.GetHeight(terrainX, terrainZ) + 0.014f + offsetY, z);
+            float size = cellSize * (1.50f + Random.Shared.NextSingle() * 1.5f);
+            _rubbleMarks.Add(new ScorchDecal(position, tilemap, Random.Shared.Next(tilemap.TileCount),
+                size, Random.Shared.NextSingle() * MathHelper.TwoPi, lifetime: 0.0f));
+        }
+
+        while (_rubbleMarks.Count > MaximumRubbleMarks)
+            _rubbleMarks.RemoveAt(0);
+    }
+
     public void Update(GameTime gameTime)
     {
         for (int index = _scorchMarks.Count - 1; index >= 0; index--)
@@ -107,11 +174,17 @@ public sealed class DecalHandler
             if (_scorchMarks[index].IsExpired)
                 _scorchMarks.RemoveAt(index);
         }
+        for (int index = _rubbleMarks.Count - 1; index >= 0; index--)
+        {
+            _rubbleMarks[index].Update(gameTime);
+            if (_rubbleMarks[index].IsExpired)
+                _rubbleMarks.RemoveAt(index);
+        }
     }
 
     public void Draw(Effect effect)
     {
-        if (_scorchMarks.Count == 0)
+        if (_scorchMarks.Count == 0 && _rubbleMarks.Count == 0)
             return;
 
         GraphicsDevice graphicsDevice = Globals.GraphicsDevice;
@@ -126,6 +199,8 @@ public sealed class DecalHandler
         try
         {
             foreach (ScorchDecal decal in _scorchMarks)
+                decal.Draw(effect);
+            foreach (ScorchDecal decal in _rubbleMarks)
                 decal.Draw(effect);
         }
         finally

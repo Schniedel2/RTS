@@ -9,4 +9,5 @@ public sealed record TiberiumSeedState(
     float RotationYRadians,
     int SubType,
     float GrowthFactor,
-    float MaxSize);
+    float MaxSize,
+    float RenderSizeFactor);

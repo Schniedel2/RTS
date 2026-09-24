@@ -65,7 +65,8 @@ public sealed class ParticleSystem
     public void EmitExplosion(Vector3 position, ExplosionEmissionSettings? settings = null)
     {
         settings ??= ExplosionEmissionPresets.TankShell();
-        Globals.World.Decals.AddScorchMark(position, 1.9f * settings.Intensity);
+        if (settings.CreateScorchMark)
+            Globals.World.Decals.AddScorchMark(position, 1.9f * settings.Intensity);
         Globals.World.Weather.AddExplosionWind(
             position,
             settings.ShockwaveRadius,
@@ -343,7 +344,9 @@ public sealed class ParticleSystem
                 (Random.Shared.NextSingle() - 0.5f) * 1.8f,
                 settings.Color,
                 settings.Opacity * settings.Intensity,
-                settings.WindInfluence));
+                settings.WindInfluence,
+                startDelay: MathF.Max(0.0f,
+                    RandomRange(settings.StartDelay, settings.StartDelayVariation))));
         }
     }
 

@@ -40,6 +40,9 @@ GameWorld World(GameGrid grid)
 }
 
 var visibilityGrid = new VisibilityGrid(9, 9);
+SmokeEmissionSettings destructionSmoke = SmokeEmissionPresets.DestroyBuilding();
+Check(destructionSmoke.StartDelay == 2.5f && destructionSmoke.StartDelayVariation == 2.5f,
+    "Building destruction smoke is emitted once with particle starts spread over five seconds");
 Check(visibilityGrid[new Point(4, 4)] == VisibilityState.Unexplored, "Visibility starts unexplored");
 visibilityGrid.Reveal(new Point(4, 4), 2);
 Check(visibilityGrid[new Point(4, 4)] == VisibilityState.Visible && visibilityGrid[new Point(6, 4)] == VisibilityState.Visible, "Sight radius reveals cells");
@@ -92,8 +95,19 @@ grid.GetCell(2, 1).IsBlocked = false;
 grid.GetCell(2, 1).ExcludeFromPathfinding = true;
 Check(grid.TryMove(car, new Point(2, 1)), "Planning exclusion allows explicit movement");
 Check(grid.GetOccupant(1, 1) is null && ReferenceEquals(grid.GetOccupant(2, 1), car), "Move updates occupancy");
+Matrix authoritativeTransform = Matrix.CreateTranslation(4.5f, 0, 3.5f);
+Check(grid.TryApplyAuthoritativeTransform(car, authoritativeTransform), "Authoritative movement correction succeeds");
+Check(grid.GetOccupant(2, 1) is null && ReferenceEquals(grid.GetOccupant(4, 3), car) &&
+      car.Position == authoritativeTransform.Translation,
+    "Authoritative movement correction keeps transform and footprint together");
+grid.GetCell(5, 3).IsBlocked = true;
+Matrix rejectedTransform = Matrix.CreateTranslation(5.5f, 0, 3.5f);
+Check(!grid.TryApplyAuthoritativeTransform(car, rejectedTransform), "Invalid authoritative movement correction is rejected");
+Check(ReferenceEquals(grid.GetOccupant(4, 3), car) && grid.GetOccupant(5, 3) is null &&
+      car.Position == authoritativeTransform.Translation,
+    "Rejected authoritative correction restores transform and footprint together");
 grid.Remove(car);
-Check(grid.GetOccupant(2, 1) is null, "Remove clears occupancy");
+Check(grid.GetOccupant(4, 3) is null, "Remove clears occupancy");
 
 var constructionSite = new Building(new Vector3(5.5f, 0, 5.5f), Guid.NewGuid());
 var builder = new MobileUnit(new Vector3(4.5f, 0, 5.5f), 1, 1, 1, Guid.NewGuid());
@@ -450,6 +464,18 @@ Check(builtSite.PurchasePrice == 2500 && armies.Find(armyId)!.Resources == 7500,
     "Host charges constructor-supplied building price");
 Check(builtSite.Actions.Any(action => action.Type == UnitActionType.SellBuilding),
     "Playable building exposes sell action while under construction");
+Check(builtSite.Actions.Any(action => action.Type == UnitActionType.Destroy),
+    "Playable building exposes destroy action while under construction");
+NetworkMessage destroyRequest = Wire(NetworkCommands.CreateDestroyBuildingRequest(ownerId, builtSite.UnitId));
+Check(destroyRequest.Type == NetworkMessageType.DestroyBuildingRequest &&
+      destroyRequest.UnitId == builtSite.UnitId,
+    "Destroy building request survives network serialization");
+NetworkMessage? DestroyBuildingRequest(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost)
+    .GetMethod("TryCreateDestroyBuildingCommand", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
+Check(DestroyBuildingRequest(destroyRequest) is { Type: NetworkMessageType.DestroyUnitCommand },
+    "Host converts an owned building destroy request into an authoritative command without inspecting UI actions");
+Check(DestroyBuildingRequest(destroyRequest with { SenderId = Guid.NewGuid() }) is null,
+    "Host rejects building destruction from a non-owner");
 NetworkMessage? SellRequest(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost)
     .GetMethod("TryCreateSellBuildingCommand", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
 var sellCommand = SellRequest(NetworkCommands.CreateSellBuildingRequest(ownerId, builtSite.UnitId));
@@ -462,6 +488,29 @@ builtSite.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(1.0)));
 Check(builtSite.IsReadyForRemoval, "Sold building is removed after shrink animation");
 Check(!Empty<GenericBuilding>().Actions.Any(
     action => action.Type == UnitActionType.SellBuilding), "Generic building cannot be sold");
+
+Guid secondPlayerId = Guid.NewGuid(), secondArmyId = Guid.NewGuid();
+Field(game, typeof(RTSGame), "_players", new List<Player>
+{
+    new(ownerId, "first", armyId: armyId),
+    new(secondPlayerId, "second", armyId: secondArmyId)
+});
+armies.EnsureArmy(secondArmyId, secondPlayerId);
+var startMarkers = new GameplayMarkerHandler();
+startMarkers.Add(GameplayMarkerType.PlayerStart, new Vector3(2.5f, 0, 2.5f), 45);
+startMarkers.Add(GameplayMarkerType.PlayerStart, new Vector3(9.5f, 0, 9.5f), 225);
+Field(world, typeof(GameWorld), "<GameplayMarkers>k__BackingField", startMarkers);
+typeof(NetworkHost).GetMethod("RememberStartPositionWish", BindingFlags.Instance | BindingFlags.NonPublic)!
+    .Invoke(host, new object[] { NetworkCommands.CreateStartPositionWishRequest(ownerId, 2) });
+var startCommand = (NetworkMessage?)typeof(NetworkHost)
+    .GetMethod("TryCreateStartMultiplayerGameCommand", BindingFlags.Instance | BindingFlags.NonPublic)!
+    .Invoke(host, new object[] { NetworkCommands.CreateStartMultiplayerGameRequest(hostId) });
+Check(startCommand is { Type: NetworkMessageType.StartMultiplayerGameCommand, ResourceAmount: 10000 } &&
+    startCommand.MatchStartAssignments?.Length == 2, "Host creates one multiplayer start assignment per player");
+MatchStartAssignment[] matchAssignments = startCommand!.MatchStartAssignments!;
+Check(matchAssignments.Single(item => item.PlayerId == ownerId).StartPositionSlot == 2 &&
+    matchAssignments.Select(item => item.StartPositionSlot).Distinct().Count() == 2,
+    "Host honors a free requested start and assigns every start only once");
 // Shared texel density must be independent of model bounds and ordinary UVs.
 var sharedRegion = new TextureHandler.TextureRegion { AtlasIndex = 0, X = 16, Y = 32, Width = 256, Height = 128, AtlasWidth = 1024, AtlasHeight = 1024 };
 SubMesh TexturedPart(string? sharedName, float length)

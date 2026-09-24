@@ -101,6 +101,12 @@ public class ConsoleCommands
         _console.RegisterAsyncCommand(
             "editor-end",
             EndEditorAsync);
+        _console.RegisterAsyncCommand(
+            "player-startposition",
+            RequestStartPositionAsync);
+        _console.RegisterAsyncCommand(
+            "game-start",
+            StartMultiplayerGameAsync);
         _console.RegisterCommand(
             "terrain-hills",
             AddHills);
@@ -927,15 +933,20 @@ public class ConsoleCommands
 
         try
         {
-            NetworkMessage map = NetworkCommands.CreateWorldData(
-                _rtsGame.Network.LocalPeerId, _world.GetWorldData());
-            await _rtsGame.Network.BroadcastAsync(map);
+            await PublishCurrentMapAsync();
             _console.Print("Map published to all connected clients.");
         }
         catch (Exception ex)
         {
             _console.Print($"Map publish error: {ex.Message}");
         }
+    }
+
+    private System.Threading.Tasks.Task PublishCurrentMapAsync()
+    {
+        NetworkMessage map = NetworkCommands.CreateWorldData(
+            _rtsGame.Network.LocalPeerId, _world.GetWorldData());
+        return _rtsGame.Network.BroadcastAsync(map);
     }
 
     private async System.Threading.Tasks.Task PullMapAsync(string[] args)
@@ -1084,6 +1095,55 @@ public class ConsoleCommands
             await _rtsGame.Network.BroadcastAsync(destroy);
         }
         _console.Print($"Editor mode ended; removed {editors.Length} editor unit(s).");
+    }
+
+    private async System.Threading.Tasks.Task RequestStartPositionAsync(string[] args)
+    {
+        if (args.Length != 1 || !TryParseInt(args[0], out int slot) || slot < 1)
+        {
+            string available = string.Join(", ", _world.GameplayMarkers.Markers
+                .Where(marker => marker.Type == GameplayMarkerType.PlayerStart && marker.PlayerSlot is not null)
+                .Select(marker => marker.PlayerSlot!.Value).OrderBy(value => value));
+            _console.Print($"Usage: start-position <slot>. Available: {available}");
+            return;
+        }
+
+        await _rtsGame.NetworkClient.RequestStartPositionAsync(slot);
+        _console.Print($"Requested start position {slot}; the host makes the final assignment.");
+    }
+
+    private async System.Threading.Tasks.Task StartMultiplayerGameAsync(string[] args)
+    {
+        if (!_rtsGame.Network.IsHost)
+        {
+            _console.Print("Only the session host can start the multiplayer game.");
+            return;
+        }
+        if (args.Length != 0)
+        {
+            _console.Print("Usage: game-start");
+            return;
+        }
+
+        int players = _rtsGame.Players.Count;
+        int starts = _world.GameplayMarkers.Markers.Count(marker => marker.Type == GameplayMarkerType.PlayerStart);
+        if (players == 0 || starts < players)
+        {
+            _console.Print($"Cannot start game: {players} player(s), but only {starts} start position(s).");
+            return;
+        }
+
+        try
+        {
+            await PublishCurrentMapAsync();
+            _console.Print("Map published to all connected clients.");
+            await _rtsGame.NetworkClient.RequestStartMultiplayerGameAsync();
+            _console.Print("Multiplayer game start requested.");
+        }
+        catch (Exception ex)
+        {
+            _console.Print($"Game start aborted because map publish failed: {ex.Message}");
+        }
     }
 
     private void ListArmies(string[] args)

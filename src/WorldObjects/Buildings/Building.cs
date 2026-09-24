@@ -3,6 +3,7 @@ using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json;
 
 namespace RTS;
@@ -10,6 +11,9 @@ namespace RTS;
 public class Building : Unit
 {
     private const float SellDurationSeconds = 1.0f;
+    private const float CollapsePauseSeconds = 0.65f;
+    private const float CollapseDurationSeconds = 1.35f;
+    private const float CollapseSinkSeconds = 1.5f;
     private sealed record BuildingState(
         float ConstructionProgress,
         ProductionQueueState ProductionQueue,
@@ -18,6 +22,11 @@ public class Building : Unit
         bool IncludedUnitGranted = false);
     private readonly BuildingFlag _ownerFlag = new();
     private float _sellElapsed;
+    private bool _isCollapsing;
+    private float _collapseElapsed;
+    private float _collapseSmokeElapsed;
+    private float _collapseJitterElapsed;
+    private Vector3 _collapseJitter;
 
     public float ConstructionProgress { get; private set; }
     // Buildings without construction costs are immediately complete; avoid 0 / 0 in their world matrix.
@@ -40,11 +49,14 @@ public class Building : Unit
     public bool IncludedUnitGranted { get; protected set; }
     public int PurchasePrice { get; }
     public int SellRefund => PurchasePrice / 2;
+    public int CancelRefund => PurchasePrice;
     public bool IsSelling { get; private set; }
-    public override bool IsDying => IsSelling || base.IsDying;
+    public override bool IsDying => IsSelling || _isCollapsing || base.IsDying;
     public override bool HasDeathExplosion => !IsSelling && base.HasDeathExplosion;
     public override bool IsReadyForRemoval =>
-        IsSelling && _sellElapsed >= SellDurationSeconds || base.IsReadyForRemoval;
+        IsSelling && _sellElapsed >= SellDurationSeconds ||
+        _isCollapsing && _collapseElapsed >= CollapsePauseSeconds + CollapseDurationSeconds + CollapseSinkSeconds ||
+        base.IsReadyForRemoval;
     /// <summary>Optional production bonus for each embarked Crew unit (0.25 = +25%).</summary>
     public float CrewProductionBonusPerOccupant { get; set; }
     public override string StateTypeId => "building-state";
@@ -82,8 +94,21 @@ public class Building : Unit
 
     public bool IsCompleted => ConstructionProgress >= TotalBuildingPointsNeeded;
 
-    protected IReadOnlyList<UnitAction> WithSellAction(IEnumerable<UnitAction> actions) =>
-        [.. actions, new(UnitActionType.SellBuilding, $"Sell (+{SellRefund})", 6, 1)];
+    protected IReadOnlyList<UnitAction> WithDestroyAction(IEnumerable<UnitAction> actions)
+    {
+        List<UnitAction> result = [.. actions];
+        if (!result.Any(action => action.Type == UnitActionType.Destroy))
+            result.Add(new(UnitActionType.Destroy, "Destroy", 7, 1));
+        return result;
+    }
+
+    protected IReadOnlyList<UnitAction> WithSellAction(IEnumerable<UnitAction> actions)
+    {
+        List<UnitAction> result = [.. WithDestroyAction(actions)];
+        if (!result.Any(action => action.Type == UnitActionType.SellBuilding))
+            result.Add(new(UnitActionType.SellBuilding, $"Sell (+{SellRefund})", 6, 1));
+        return result;
+    }
 
     public void BeginSelling()
     {
@@ -93,6 +118,21 @@ public class Building : Unit
         IsSelected = false;
         ProductionQueue.ApplyState(null);
         MarkStateDirty();
+    }
+
+    public override bool BeginDeathSequence()
+    {
+        if (IsSelling || _isCollapsing)
+            return true;
+
+        _isCollapsing = true;
+        _collapseElapsed = 0.0f;
+        _collapseSmokeElapsed = 0.0f;
+        _collapseJitterElapsed = 0.0f;
+        _collapseJitter = Vector3.Zero;
+        IsSelected = false;
+        ProductionQueue.ApplyState(null);
+        return true;
     }
 
     public override int GetSightRange()
@@ -283,7 +323,31 @@ public class Building : Unit
         float sellScale = IsSelling
             ? Math.Max(0.0f, 1.0f - _sellElapsed / SellDurationSeconds)
             : 1.0f;
-        return Matrix.CreateScale(1.0f, GetConstructionScaleFactor() * sellScale, 1.0f) * base.GetWorldMatrix();
+        float collapseProgress = _isCollapsing
+            ? MathHelper.Clamp((_collapseElapsed - CollapsePauseSeconds) / CollapseDurationSeconds, 0.0f, 1.0f)
+            : 0.0f;
+        float collapseScale = MathHelper.Lerp(1.0f, 0.75f, collapseProgress);
+        float sinkProgress = _isCollapsing
+            ? MathHelper.Clamp(
+                (_collapseElapsed - CollapsePauseSeconds - CollapseDurationSeconds) / CollapseSinkSeconds,
+                0.0f, 1.0f)
+            : 0.0f;
+
+        Matrix world = Matrix.Identity;
+
+        float collapseRotateYDegree = MathHelper.Lerp(0, 25.0f, collapseProgress);
+        float collapseRotateXDegree = MathHelper.Lerp(0, 15.0f, collapseProgress);
+        world *= Matrix.CreateRotationX(MathHelper.ToRadians(collapseRotateXDegree));
+        world *= Matrix.CreateRotationY(MathHelper.ToRadians(collapseRotateYDegree));
+
+        world *= Matrix.CreateScale(
+            1.0f,
+            GetConstructionScaleFactor() * sellScale * collapseScale,
+            1.0f) * base.GetWorldMatrix();
+
+        return world * Matrix.CreateTranslation(
+            _collapseJitter * (1.0f - sinkProgress) +
+            Vector3.Down * Math.Max(2.0f, Height * 0.75f) * sinkProgress);
     }
     public float GetConstructionScaleFactor()
     {
@@ -335,8 +399,54 @@ public class Building : Unit
     {
         if (IsSelling)
             _sellElapsed += (float)gameTime.ElapsedGameTime.TotalSeconds;
+        if (_isCollapsing)
+        {
+            float seconds = (float)gameTime.ElapsedGameTime.TotalSeconds;
+            _collapseElapsed += seconds;
+            _collapseJitterElapsed += seconds;
+            if (_collapseJitterElapsed >= 0.05f)
+            {
+                _collapseJitterElapsed %= 0.05f;
+                _collapseJitter = new Vector3(
+                    MathHelper.Lerp(-0.2f, 0.2f, Random.Shared.NextSingle()),
+                    0.0f,
+                    MathHelper.Lerp(-0.2f, 0.2f, Random.Shared.NextSingle()));
+            }
+            UpdateCollapseSmoke(seconds);
+            return;
+        }
         base.Update(gameTime);
         if (ShowOwnerFlag && ArmyId is not null)
             _ownerFlag.Update(this, gameTime);
+    }
+
+    private void UpdateCollapseSmoke(float seconds)
+    {
+        const float interval = 0.075f;
+        _collapseSmokeElapsed += seconds;
+        int emissions = Math.Min(8, (int)(_collapseSmokeElapsed / interval));
+        if (emissions == 0)
+            return;
+        _collapseSmokeElapsed -= emissions * interval;
+
+        SmokeEmissionSettings smoke = SmokeEmissionPresets.VehicleWreck() with
+        {
+            ParticleCount = 2,
+            Intensity = 1.9f,
+            StartSize = 0.55f,
+            EndSize = 2.7f,
+            Lifetime = 4.0f,
+            Opacity = 0.9f
+        };
+        float extentX = Math.Max(0.5f, Width * Globals.World.GameGrid.CellSize * 0.42f);
+        float extentZ = Math.Max(0.5f, Length * Globals.World.GameGrid.CellSize * 0.42f);
+        for (int index = 0; index < emissions; index++)
+        {
+            Vector3 position = Position + new Vector3(
+                (Random.Shared.NextSingle() * 2.0f - 1.0f) * extentX,
+                Math.Max(0.4f, Height * (0.15f + Random.Shared.NextSingle() * 0.55f)),
+                (Random.Shared.NextSingle() * 2.0f - 1.0f) * extentZ);
+            Globals.World.Particles.EmitSmoke(position, Vector3.Up, smoke);
+        }
     }
 }

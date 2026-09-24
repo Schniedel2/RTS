@@ -96,7 +96,11 @@ public enum NetworkMessageType
     MoveAwayRequest,
     HarvesterReturnRequest,
     SellBuildingRequest,
-    SellBuildingCommand
+    DestroyBuildingRequest,
+    SellBuildingCommand,
+    StartPositionWishRequest,
+    StartMultiplayerGameRequest,
+    StartMultiplayerGameCommand
 }
 
 public sealed record WorldData(
@@ -109,6 +113,16 @@ public sealed record WorldData(
     MapObjectState[]? MapObjects = null);
 
 public sealed record UnitRoute(Guid UnitId, Point[] Cells);
+
+public sealed record MatchStartAssignment(
+    Guid PlayerId,
+    Guid ArmyId,
+    int StartPositionSlot,
+    float X,
+    float Y,
+    float Z,
+    float RotationDegrees,
+    Guid BulldozerId);
 
 public sealed record NetworkMessage(
     NetworkMessageType Type,
@@ -174,4 +188,6 @@ public sealed record NetworkMessage(
     HarvestPhase? HarvestPhase = null,
     float CargoAmount = 0.0f,
     float TiberiumAmount = 0.0f,
-    int ResourceAmount = 0);
+    int ResourceAmount = 0,
+    int? StartPositionSlot = null,
+    MatchStartAssignment[]? MatchStartAssignments = null);

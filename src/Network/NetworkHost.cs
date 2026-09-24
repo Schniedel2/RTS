@@ -18,6 +18,7 @@ public sealed class NetworkHost
     private readonly SemaphoreSlim _updateGate = new(1, 1);
     private readonly Dictionary<Guid, Vector2> _gotoQueueEnds = [];
     private readonly Dictionary<Guid, HarvestJob> _harvestJobs = [];
+    private readonly Dictionary<Guid, int> _startPositionWishes = [];
     private const int MaximumQueuedRequests = 1024;
     private const int MaximumRequestsPerUpdate = 32;
     private const int MaximumStateUpdatesPerTick = 32;
@@ -112,6 +113,24 @@ public sealed class NetworkHost
         }
     }
 
+    private async Task PublishGroundMobileUnitsAsync()
+    {
+        int sentUpdates = 0;
+        foreach (MobileUnit unit in _world.Units.Units.OfType<MobileUnit>().ToArray())
+        {
+            if (sentUpdates >= MaximumStateUpdatesPerTick)
+                break;
+            if (unit is Helicopter || unit.IsEmbarked || unit.IsDying || unit.IsLeavingBuilding ||
+                _hostTime < unit.NextNetworkUpdateTime)
+                continue;
+
+            await _networkHandler.BroadcastAsync(
+                NetworkCommands.CreateUnitStateCommand(_networkHandler.LocalPeerId, unit.GetState()));
+            unit.NextNetworkUpdateTime = _hostTime + HostSimulationInterval;
+            sentUpdates++;
+        }
+    }
+
     private NetworkMessage? TryCreateHelicopterOrder(NetworkMessage request)
     {
         if (request.UnitId is not Guid id || _world.Units.FindById(id) is not Helicopter helicopter ||
@@ -169,6 +188,9 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.MoveAwayRequest &&
             message.Type != NetworkMessageType.HarvesterReturnRequest &&
             message.Type != NetworkMessageType.SellBuildingRequest &&
+            message.Type != NetworkMessageType.DestroyBuildingRequest &&
+            message.Type != NetworkMessageType.StartPositionWishRequest &&
+            message.Type != NetworkMessageType.StartMultiplayerGameRequest &&
             message.Type != NetworkMessageType.EnterUnitRequest &&
             message.Type != NetworkMessageType.LeaveContainerRequest &&
             message.Type != NetworkMessageType.NotifyUnitsSelected &&
@@ -220,6 +242,7 @@ public sealed class NetworkHost
             UpdateHostSimulation(gameTime);
             await PublishEarthworkAsync();
             await PublishHelicoptersAsync();
+            await PublishGroundMobileUnitsAsync();
             await PublishHarvestersAsync(gameTime);
             await PublishProjectileImpactsAsync();
 
@@ -259,6 +282,9 @@ public sealed class NetworkHost
                     NetworkMessageType.MoveAwayRequest => TryCreateMoveAwayCommand(request),
                     NetworkMessageType.HarvesterReturnRequest => TryCreateHarvesterReturnCommand(request),
                     NetworkMessageType.SellBuildingRequest => TryCreateSellBuildingCommand(request),
+                    NetworkMessageType.DestroyBuildingRequest => TryCreateDestroyBuildingCommand(request),
+                    NetworkMessageType.StartPositionWishRequest => RememberStartPositionWish(request),
+                    NetworkMessageType.StartMultiplayerGameRequest => TryCreateStartMultiplayerGameCommand(request),
                     NetworkMessageType.EnterUnitRequest => TryCreateEnterUnitCommand(request),
                     NetworkMessageType.LeaveContainerRequest => TryCreateLeaveContainerCommand(request),
                     NetworkMessageType.NotifyUnitsSelected => request,
@@ -619,6 +645,91 @@ public sealed class NetworkHost
         army.Resources += building.SellRefund;
         return NetworkCommands.CreateSellBuildingCommand(
             _networkHandler.LocalPeerId, building, army.Resources);
+    }
+
+    private NetworkMessage? TryCreateDestroyBuildingCommand(NetworkMessage request)
+    {
+        if (request.UnitId is not Guid buildingId ||
+            _world.Units.FindById(buildingId) is not Building building ||
+            building.IsDying ||
+            building.ArmyId is not Guid armyId ||
+            Globals.Game.Players.FirstOrDefault(player => player.Id == request.SenderId)?.ArmyId != armyId)
+        {
+            return null;
+        }
+
+        return NetworkCommands.CreateDestroyUnitCommand(_networkHandler.LocalPeerId, buildingId);
+    }
+
+    private NetworkMessage? RememberStartPositionWish(NetworkMessage request)
+    {
+        if (request.StartPositionSlot is not int slot ||
+            !Globals.Game.Players.Any(player => player.Id == request.SenderId) ||
+            !_world.GameplayMarkers.Markers.Any(marker =>
+                marker.Type == GameplayMarkerType.PlayerStart && marker.PlayerSlot == slot))
+        {
+            return null;
+        }
+
+        _startPositionWishes[request.SenderId] = slot;
+        Globals.Console?.Print($"Player {request.SenderId.ToString("N")[..8]} requested start position {slot}.");
+        return null;
+    }
+
+    private NetworkMessage? TryCreateStartMultiplayerGameCommand(NetworkMessage request)
+    {
+        if (request.SenderId != _networkHandler.LocalPeerId)
+            return null;
+
+        Player[] players = Globals.Game.Players.OrderBy(player => player.Id).ToArray();
+        List<GameplayMarker> starts = _world.GameplayMarkers.Markers
+            .Where(marker => marker.Type == GameplayMarkerType.PlayerStart && marker.PlayerSlot is not null)
+            .OrderBy(marker => marker.PlayerSlot)
+            .ThenBy(marker => marker.Id)
+            .ToList();
+        if (players.Length == 0 || starts.Count < players.Length)
+        {
+            Globals.Console?.Print($"Cannot start game: {players.Length} player(s), but only {starts.Count} start position(s).");
+            return null;
+        }
+
+        List<GameplayMarker> free = [.. starts];
+        Dictionary<Guid, GameplayMarker> assigned = [];
+        foreach (Player player in players)
+        {
+            if (!_startPositionWishes.TryGetValue(player.Id, out int slot))
+                continue;
+            GameplayMarker? wished = free.FirstOrDefault(marker => marker.PlayerSlot == slot);
+            if (wished is null)
+                continue;
+            assigned[player.Id] = wished;
+            free.Remove(wished);
+        }
+
+        for (int index = free.Count - 1; index > 0; index--)
+        {
+            int swap = Random.Shared.Next(index + 1);
+            (free[index], free[swap]) = (free[swap], free[index]);
+        }
+
+        foreach (Player player in players)
+            if (!assigned.ContainsKey(player.Id))
+            {
+                assigned[player.Id] = free[0];
+                free.RemoveAt(0);
+            }
+
+        MatchStartAssignment[] assignments = players.Select(player =>
+        {
+            GameplayMarker marker = assigned[player.Id];
+            float y = _world.Terrain.GetHeight((int)marker.Position.X, (int)marker.Position.Z);
+            return new MatchStartAssignment(
+                player.Id, player.ArmyId, marker.PlayerSlot!.Value,
+                marker.Position.X, y, marker.Position.Z, marker.RotationDegrees, Guid.NewGuid());
+        }).ToArray();
+        _startPositionWishes.Clear();
+        return NetworkCommands.CreateStartMultiplayerGameCommand(
+            _networkHandler.LocalPeerId, assignments);
     }
 
     private NetworkMessage? TryCreateSetRallyPointCommand(NetworkMessage request)

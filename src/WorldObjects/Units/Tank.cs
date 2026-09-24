@@ -44,6 +44,9 @@ public class Tank : MobileUnit
             OccupancyOwnershipMode.ControllerDefinesOwnership,
             OccupantRole.Driver,
             becomeNeutralWithoutController: true);
+            
+        TargetAngleMinimumDegrees = -360.0f;
+        TargetAngleMaximumDegrees = 360.0f;
         Behavior = UnitBehavior.Passive;
         MoveSpeed = 3.0f;
         RotationSpeed = 1.0f;

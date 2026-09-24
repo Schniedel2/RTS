@@ -105,11 +105,12 @@ public sealed class TiberiumHandler
         if (_cells.ContainsKey(cell) || !grid.Contains(cell) || grid.GetCell(cell).IsBlocked)
             return false;
 
+        Random random = new Random((int)gameTimeSeconds);
+
         TerrainTile tile = GetTileAt(cell);
-        if (Random.Shared.NextDouble() > SeedChanceByTile.GetValueOrDefault(tile, 0.5f))
+        if (random.NextDouble() > SeedChanceByTile.GetValueOrDefault(tile, 0.5f))
             return false;
 
-        Random random = new Random((int)gameTimeSeconds);
         state = new TiberiumSeedState(
             cell.X,
             cell.Y,
@@ -118,7 +119,8 @@ public sealed class TiberiumHandler
             (float)(random.NextDouble() * Math.PI * 2.0),
             random.Next(3),
             growthFactor * GrowthFactorByTile.GetValueOrDefault(tile, 1.0f),
-            maxSize);
+            maxSize,
+            0.3f + 0.7f * (float)random.NextDouble());
         ApplySeed(state);
         return true;
     }
@@ -137,7 +139,8 @@ public sealed class TiberiumHandler
             RotationYRadians = state.RotationYRadians,
             SubType = state.SubType,
             GrowthFactor = state.GrowthFactor,
-            MaxSize = state.MaxSize
+            MaxSize = state.MaxSize,
+            RenderSizeFactor = state.RenderSizeFactor,
         };
         AddToRenderChunk(cell);
     }
@@ -275,7 +278,7 @@ public sealed class TiberiumHandler
         return _cells.Select(pair => new TiberiumSeedState(pair.Key.X, pair.Key.Y,
             now - pair.Value.Amount / (GrowthPerSecond * Math.Max(0.0001f, pair.Value.GrowthFactor)),
             pair.Value.Amount, pair.Value.RotationYRadians, pair.Value.SubType,
-            pair.Value.GrowthFactor, pair.Value.MaxSize)).ToArray();
+            pair.Value.GrowthFactor, pair.Value.MaxSize, pair.Value.RenderSizeFactor)).ToArray();
     }
 
     public void ApplyMapStates(IEnumerable<TiberiumSeedState>? states)

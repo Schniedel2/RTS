@@ -162,5 +162,6 @@ public sealed class TilemapHandler
         Globals.TilemapHandler.Register("Sparks", Globals.TextureHandler.AddTexture(Path.Combine(directory, "sparks-256x256.png")), new Point(256, 256));
         Globals.TilemapHandler.Register("Explosion", Globals.TextureHandler.AddTexture(Path.Combine(directory, "explosions-256x256.png")), new Point(256, 256));
         Globals.TilemapHandler.Register("Scorch", Globals.TextureHandler.AddTexture(Path.Combine(directory, "scorch-256x256.png")), new Point(256, 256));
+        Globals.TilemapHandler.Register("Rubble", Globals.TextureHandler.AddTexture(Path.Combine(directory, "rubble-256x256.png")), new Point(256, 256));
     }
 }

@@ -504,6 +504,30 @@ public class GameGrid
         return true;
     }
 
+    /// <summary>Applies a host position and keeps the client's registered footprint with it.</summary>
+    public bool TryApplyAuthoritativeTransform(MobileUnit unit, Matrix authoritativeTransform)
+    {
+        Matrix previousTransform = unit.Transform;
+        Point previousCell = ToCell(unit.Position);
+        bool wasRegistered = _occupiedFootprints.ContainsKey(unit) || _occupiedCells.ContainsKey(unit);
+        Clear(unit);
+        unit.SetTransform(authoritativeTransform);
+        if (!wasRegistered)
+            return true;
+
+        Point authoritativeCell = ToCell(unit.Position);
+        if (CanPlace(unit, authoritativeCell))
+        {
+            Occupy(unit, authoritativeCell);
+            return true;
+        }
+
+        unit.SetTransform(previousTransform);
+        if (wasRegistered && CanPlace(unit, previousCell))
+            Occupy(unit, previousCell);
+        return false;
+    }
+
     public bool IsOccupied(int x, int y)
     {
         return _occupants[x, y] != null;

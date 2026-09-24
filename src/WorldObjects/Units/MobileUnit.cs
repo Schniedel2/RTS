@@ -3,11 +3,15 @@ using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 
 namespace RTS;
 
+public sealed record MobileUnitState(float X, float Y, float Z, float YawDegrees, bool IsMoving);
+
 public class MobileUnit : Unit
 {
+    public override string StateTypeId => "mobile-unit-state";
     public int _pathRequestId;
     public float MoveSpeed { get; set; } = 8.0f;
     public float RotationSpeed { get; set; } = MathHelper.Pi;
@@ -585,6 +589,32 @@ public class MobileUnit : Unit
         MoveAlongPath(gameTime);
         AlignToTerrain(gameTime);
         base.Update(gameTime);
+    }
+
+    public override UnitState GetState()
+    {
+        float yaw = GetYawDegrees(Transform);
+        bool isMoving = CurrentCommand is not null || _plannedPath.Count > 0 || IsLeavingBuilding;
+        return new UnitState(UnitId, StateRevision, StateTypeId, StateVersion,
+            JsonSerializer.SerializeToUtf8Bytes(new MobileUnitState(
+                Position.X, Position.Y, Position.Z, yaw, isMoving)));
+    }
+
+    public override void ApplyState(UnitState state)
+    {
+        if (state.UnitId != UnitId || state.TypeId != StateTypeId ||
+            state.Version != StateVersion || state.Revision < StateRevision)
+            return;
+        MobileUnitState? data = JsonSerializer.Deserialize<MobileUnitState>(state.Payload);
+        if (data is null || !float.IsFinite(data.X) || !float.IsFinite(data.Y) ||
+            !float.IsFinite(data.Z) || !float.IsFinite(data.YawDegrees))
+            return;
+
+        Matrix transform = Matrix.CreateRotationY(MathHelper.ToRadians(data.YawDegrees));
+        transform.Translation = new Vector3(data.X, data.Y, data.Z);
+        if (Globals.World.GameGrid.TryApplyAuthoritativeTransform(this, transform) && !data.IsMoving)
+            ClearCommand();
+        StateRevision = state.Revision;
     }
 
     private void UpdateConstructionMovement()

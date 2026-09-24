@@ -15,4 +15,5 @@ public sealed class TiberiumCell
     public float GrowthFactor { get; set; }
     public float MaxSize { get; set; }
     public float CurrentSize { get; set; }
+    public float RenderSizeFactor { get; set; }
 }

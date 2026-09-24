@@ -40,7 +40,7 @@ public class CommunicationsTower : Building
         {
             actions = 
             [
-                new(UnitActionType.Stop, "Destroy", 7, 1)
+                new(UnitActionType.Destroy, "Destroy", 7, 1)
             ];
         }
         

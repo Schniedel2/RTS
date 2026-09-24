@@ -18,16 +18,18 @@ public sealed class SmokeParticle : WorldObject
     private readonly Color _color;
     private readonly float _opacity;
     private readonly float _buoyancy;
+    private readonly float _startDelay;
     private float _elapsed;
 
     public Vector3 Velocity { get; private set; }
     public float WindInfluence { get; }
-    public bool IsExpired => _elapsed >= _lifetime;
+    public bool HasStarted => _elapsed >= _startDelay;
+    public bool IsExpired => _elapsed >= _startDelay + _lifetime;
 
     public SmokeParticle(Vector3 position, Vector3 velocity, TilemapHandler.Tilemap tilemap,
         int tileIndex, float startSize, float endSize, float lifetime,
         float rotationRadians, float rotationSpeedRadians, Color color, float opacity,
-        float windInfluence, float buoyancy = 0.35f) : base(position)
+        float windInfluence, float buoyancy = 0.35f, float startDelay = 0.0f) : base(position)
     {
         (Vector2 uvOffset, Vector2 uvScale) = tilemap.GetAtlasUV(tileIndex);
         _atlasIndex = tilemap.AtlasIndex;
@@ -40,6 +42,7 @@ public sealed class SmokeParticle : WorldObject
         _color = color;
         _opacity = opacity;
         _buoyancy = buoyancy;
+        _startDelay = MathF.Max(0.0f, startDelay);
         WindInfluence = windInfluence;
         _vertices =
         [
@@ -53,15 +56,25 @@ public sealed class SmokeParticle : WorldObject
     public override void Update(GameTime gameTime)
     {
         float deltaSeconds = (float)gameTime.ElapsedGameTime.TotalSeconds;
+        float previousElapsed = _elapsed;
         _elapsed += deltaSeconds;
-        Velocity += Vector3.Up * _buoyancy * deltaSeconds;
+        float activeDeltaSeconds = MathF.Max(0.0f, _elapsed - _startDelay) -
+            MathF.Max(0.0f, previousElapsed - _startDelay);
+        if (activeDeltaSeconds <= 0.0f)
+            return;
+
+        Velocity += Vector3.Up * _buoyancy * activeDeltaSeconds;
         Vector3 wind = Globals.World.Weather.GetWind(Position);
-        SetPosition(Position + (Velocity + wind * WindInfluence) * deltaSeconds);
+        SetPosition(Position + (Velocity + wind * WindInfluence) * activeDeltaSeconds);
     }
 
     public override void Draw(Effect effect)
     {
-        float progress = MathHelper.Clamp(_elapsed / _lifetime, 0.0f, 1.0f);
+        if (!HasStarted)
+            return;
+
+        float activeElapsed = _elapsed - _startDelay;
+        float progress = MathHelper.Clamp(activeElapsed / _lifetime, 0.0f, 1.0f);
         Color color = new Color(new Vector4(
             _color.ToVector3(),
             MathHelper.Clamp(MathF.Pow(1.0f - progress, 1.35f) * _opacity, 0.0f, 1.0f)));
@@ -70,7 +83,7 @@ public sealed class SmokeParticle : WorldObject
 
         float size = MathHelper.Lerp(_startSize, _endSize, progress);
         Matrix world = Matrix.CreateScale(size) *
-            Matrix.CreateRotationZ(_rotationRadians + _rotationSpeedRadians * _elapsed) *
+            Matrix.CreateRotationZ(_rotationRadians + _rotationSpeedRadians * activeElapsed) *
             Matrix.CreateBillboard(Position, Globals._camera.Position, Vector3.Up, Vector3.Forward);
         effect.Parameters["UnitTexture"]?.SetValue(Globals.TextureHandler.GetAtlas(_atlasIndex));
         effect.Parameters["UnitTextureUVOffset"]?.SetValue(Vector2.Zero);

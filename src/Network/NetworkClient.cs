@@ -95,6 +95,9 @@ public sealed class NetworkClient
 
     public Task RequestGotoAsync(Guid[] unitIds, float x, float y, float z, CancellationToken cancellationToken = default, bool appendToQueue = false, UnitRoute[]? routes = null)
     {
+        if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z))
+            return Task.CompletedTask;
+
         NetworkMessage request = NetworkCommands.CreateGotoRequest( _networkHandler.LocalPeerId, unitIds, x, y, z, appendToQueue, routes);
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
@@ -129,9 +132,22 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
 
+    public Task RequestStartPositionAsync(int slot, CancellationToken cancellationToken = default) =>
+        _networkHandler.SendToHostAsync(
+            NetworkCommands.CreateStartPositionWishRequest(_networkHandler.LocalPeerId, slot), cancellationToken);
+
+    public Task RequestStartMultiplayerGameAsync(CancellationToken cancellationToken = default) =>
+        _networkHandler.SendToHostAsync(
+            NetworkCommands.CreateStartMultiplayerGameRequest(_networkHandler.LocalPeerId), cancellationToken);
+
     public Task RequestSellBuildingAsync(Guid buildingId, CancellationToken cancellationToken = default) =>
         _networkHandler.SendToHostAsync(
             NetworkCommands.CreateSellBuildingRequest(_networkHandler.LocalPeerId, buildingId),
+            cancellationToken);
+
+    public Task RequestDestroyBuildingAsync(Guid buildingId, CancellationToken cancellationToken = default) =>
+        _networkHandler.SendToHostAsync(
+            NetworkCommands.CreateDestroyBuildingRequest(_networkHandler.LocalPeerId, buildingId),
             cancellationToken);
 
     public Task RequestNeutralSpawnAsync(

@@ -369,12 +369,19 @@ public class Terrain
         float stepSize = 0.25f;
         float previousDistance = 0.0f;
         float previousHeightDifference = GetHeightDifference(ray, previousDistance);
+        bool hasPreviousSample = float.IsFinite(previousHeightDifference);
 
         for (float distance = stepSize; distance <= 2000.0f; distance += stepSize)
         {
             float heightDifference = GetHeightDifference(ray, distance);
 
-            if (previousHeightDifference > 0.0f && heightDifference <= 0.0f)
+            if (!float.IsFinite(heightDifference))
+            {
+                hasPreviousSample = false;
+                continue;
+            }
+
+            if (hasPreviousSample && previousHeightDifference > 0.0f && heightDifference <= 0.0f)
             {
                 float fraction = previousHeightDifference /
                     (previousHeightDifference - heightDifference);
@@ -389,6 +396,7 @@ public class Terrain
 
             previousDistance = distance;
             previousHeightDifference = heightDifference;
+            hasPreviousSample = true;
         }
 
         intersection = Vector3.Zero;

@@ -11,6 +11,7 @@ public sealed record ExplosionEmissionSettings
     public int FireParticleCount { get; init; } = 28;
     public int DebrisCount { get; init; } = 8;
     public int SmokeBurstCount { get; init; }
+    public bool CreateScorchMark { get; init; } = true;
     public float Intensity { get; init; } = 1.0f;
     public float DebrisSpeed { get; init; } = 5.5f;
     public float DebrisSpeedVariation { get; init; } = 2.5f;
