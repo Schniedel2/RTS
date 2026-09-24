@@ -7,7 +7,10 @@ namespace RTS;
 
 public class Reaktor : Building
 {
+    private const int EngineerPowerBonus = 30;
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
+    public override int EffectivePowerProduction =>
+        PowerProduction + (Occupancy?.Count(OccupantRole.Crew) ?? 0) * EngineerPowerBonus;
 
     public Reaktor(
         Vector3 position,
@@ -30,6 +33,8 @@ public class Reaktor : Building
 
     public override void Update(GameTime gameTime)
     {
+        if (Occupancy is not null)
+            Occupancy.EntryEnabled = IsCompleted && !IsDying;
         if (IsCompleted)
         {
             UpdateExhaust(gameTime, 0.1f, SmokeEmissionPresets.ReactorExhaust());

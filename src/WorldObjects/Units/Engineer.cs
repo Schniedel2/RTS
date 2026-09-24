@@ -17,6 +17,8 @@ public class Engineer : Soldier
     {
         SetMesh("Soldier-2", deriveDimensions: true);
         SetWeapon(Weapon.Toolkit);
+        
+        IsCrewMember = true;
     }    
 
     public override IReadOnlyList<UnitAction> Actions =>

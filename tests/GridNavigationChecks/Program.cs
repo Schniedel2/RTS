@@ -96,6 +96,29 @@ ArmyPowerStatus powerStatus = ArmyPowerStatus.Calculate(
     [completedPowerPlant, completedConsumer, unfinishedConsumer], powerArmyId);
 Check(powerStatus == new ArmyPowerStatus(100, 40) && powerStatus.Balance == 60,
     "Army power HUD totals only completed active buildings");
+var staffedReactor = Empty<Reaktor>();
+Field(staffedReactor, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)powerArmyId);
+staffedReactor.TotalBuildingPointsNeeded = 0;
+staffedReactor.PowerProduction = 100;
+var reactorOccupancy = new OccupancyComponent(staffedReactor,
+    [new OccupantSlot(OccupantRole.Crew, 2, CanOccupy: unit => unit is Engineer),
+     new OccupantSlot(OccupantRole.Garrison, 2)],
+    OccupancyOwnershipMode.PreserveOwnership);
+reactorOccupancy.EntryEnabled = true;
+Field(staffedReactor, typeof(Unit), "<Occupancy>k__BackingField", reactorOccupancy);
+var engineerWorker = Empty<Engineer>();
+Field(engineerWorker, typeof(Unit), "<UnitId>k__BackingField", Guid.NewGuid());
+Field(engineerWorker, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)powerArmyId);
+var ordinarySoldier = Empty<Soldier>();
+Field(ordinarySoldier, typeof(Unit), "<UnitId>k__BackingField", Guid.NewGuid());
+Field(ordinarySoldier, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)powerArmyId);
+Check(reactorOccupancy.TryAdd(engineerWorker, null, out OccupantRole engineerRole) &&
+      engineerRole == OccupantRole.Crew && staffedReactor.EffectivePowerProduction == 130,
+    "Engineer automatically occupies a reactor crew workplace and adds 30 power");
+Check(!reactorOccupancy.CanEnter(ordinarySoldier, OccupantRole.Crew) &&
+      reactorOccupancy.TryAdd(ordinarySoldier, null, out OccupantRole soldierRole) &&
+      soldierRole == OccupantRole.Garrison,
+    "Ordinary soldiers may enter a reactor but cannot occupy engineer workplaces");
 SmokeEmissionSettings destructionSmoke = SmokeEmissionPresets.DestroyBuilding();
 Check(destructionSmoke.StartDelayVariation > 0.0f,
     "Building destruction smoke is emitted once with delayed particle starts");

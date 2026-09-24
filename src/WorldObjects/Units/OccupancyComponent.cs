@@ -19,7 +19,11 @@ public enum OccupancyOwnershipMode
     CaptureOnEntry
 }
 
-public sealed record OccupantSlot(OccupantRole Role, int Capacity, int MinimumRequired = 0);
+public sealed record OccupantSlot(
+    OccupantRole Role,
+    int Capacity,
+    int MinimumRequired = 0,
+    Func<Unit, bool>? CanOccupy = null);
 public sealed record OccupantAssignment(Guid UnitId, OccupantRole Role);
 
 /// <summary>
@@ -162,6 +166,8 @@ public sealed class OccupancyComponent
             : _slots;
         foreach (OccupantSlot slot in candidates)
         {
+            if (slot.CanOccupy is not null && !slot.CanOccupy(unit))
+                continue;
             int used = _occupants.Count(item => item.Role == slot.Role);
             if (includeReservations)
                 used += _reservations.Count(item => item.Key != unit.UnitId && item.Value == slot.Role);

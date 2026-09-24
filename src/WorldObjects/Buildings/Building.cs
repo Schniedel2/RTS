@@ -81,7 +81,7 @@ public class Building : Unit
         Occupancy = new OccupancyComponent(
             this,
             [
-                new OccupantSlot(OccupantRole.Crew, 4),
+                new OccupantSlot(OccupantRole.Crew, 4, CanOccupy: unit => unit.IsCrewMember),
                 new OccupantSlot(OccupantRole.Garrison, 4)
             ],
             OccupancyOwnershipMode.CaptureOnEntry);
