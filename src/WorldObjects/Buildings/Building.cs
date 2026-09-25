@@ -25,7 +25,8 @@ public class Building : Unit
         ProductionQueueState ProductionQueue,
         RallyPointState? RallyPoint = null,
         float StoredResources = 0.0f,
-        bool IncludedUnitGranted = false);
+        bool IncludedUnitGranted = false,
+        bool IsEnabled = true);
     private readonly BuildingFlag _ownerFlag = new();
     private float _sellElapsed;
     private bool _isCollapsing;
@@ -53,6 +54,8 @@ public class Building : Unit
     public float StoredResources { get; private set; }
     public float AvailableResourceCapacity => Math.Max(0.0f, ResourceCapacity - StoredResources);
     public bool IncludedUnitGranted { get; protected set; }
+    public bool IsEnabled { get; private set; } = true;
+    public virtual bool IsOperational => IsCompleted && !IsDying && IsEnabled;
     public int PurchasePrice { get; }
     public int SellRefund => PurchasePrice / 2;
     public int CancelRefund => PurchasePrice;
@@ -96,6 +99,16 @@ public class Building : Unit
     }
 
     public bool IsCompleted => ConstructionProgress >= TotalBuildingPointsNeeded;
+
+    public override void OnHostAction(UnitActionType actionType, UnitActionContext? context = null)
+    {
+        base.OnHostAction(actionType, context);
+        if (actionType != UnitActionType.ToggleEnabled || !IsCompleted || IsDying)
+            return;
+
+        IsEnabled = !IsEnabled;
+        MarkStateDirty();
+    }
 
     protected IReadOnlyList<UnitAction> WithDestroyAction(IEnumerable<UnitAction> actions)
     {
@@ -269,7 +282,7 @@ public class Building : Unit
     {
         byte[] payload = JsonSerializer.SerializeToUtf8Bytes(
             new BuildingState(ConstructionProgress, ProductionQueue.GetState(), GetRallyPointState(),
-                StoredResources, IncludedUnitGranted));
+                StoredResources, IncludedUnitGranted, IsEnabled));
         return new UnitState(
             UnitId,
             StateRevision,
@@ -301,6 +314,7 @@ public class Building : Unit
             ApplyRallyPointState(rallyPoint);
         StoredResources = Math.Clamp(payload.StoredResources, 0.0f, ResourceCapacity);
         IncludedUnitGranted = payload.IncludedUnitGranted;
+        IsEnabled = payload.IsEnabled;
         StateRevision = state.Revision;
         NetworkStateDirty = false;
     }

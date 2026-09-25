@@ -63,6 +63,12 @@ public class Camera
         Position = new Vector3(worldPosition.X, Position.Y, worldPosition.Y);
     }
 
+    public void CenterOn(Vector3 worldPosition, Terrain terrain)
+    {
+        float terrainHeight = terrain.GetSurfaceHeight(worldPosition.X, worldPosition.Z);
+        Position = new Vector3(worldPosition.X, terrainHeight + HeightAboveTerrain, worldPosition.Z);
+    }
+
     /// <summary>Centers the camera above a start unit while facing into the map.</summary>
     public void CenterForMatchStart(Vector3 focus, Vector3 mapCenter)
     {

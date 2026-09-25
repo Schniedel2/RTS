@@ -15,7 +15,7 @@ public sealed record MuzzleFlashEmissionSettings
     public float SecondaryDistance { get; init; } = 0.20f;
     public float SecondarySpeed { get; init; } = 3.2f;
     public Color Color { get; init; } = new(255, 238, 170);
-    public SmokeEmissionSettings SmokeSettings { get; init; } = SmokeEmissionPresets.RifleSmoke();
+    public SmokeEmissionSettings SmokeSettings { get; init; } = SmokeEmissionPresets.TurretSmoke();
 }
 
 public static class MuzzleFlashEmissionPresets
@@ -35,5 +35,31 @@ public static class MuzzleFlashEmissionPresets
         SecondarySpeed = 5.5f,
         Color = new Color(255, 220, 115),
         SmokeSettings = SmokeEmissionPresets.TankCannon()
+    };
+
+    public static MuzzleFlashEmissionSettings Turret() => new()
+    {
+        TilemapName = "MuzzleFlash",
+        MainStartSize = 1.08f,
+        MainEndSize = 0.35f,
+        SecondaryFlashCount = 10,
+        SecondaryStartSize = 0.8f,        
+        SecondaryEndSize = 0.02f,
+        SecondaryDistance = 0.85f,
+        SecondarySpeed = 5.5f,
+        SmokeSettings = SmokeEmissionPresets.TurretSmoke()
+        /*
+        TilemapName = "MuzzleFlash",
+        MainStartSize = 0.72f,
+        MainEndSize = 0.18f,
+        SecondaryFlashCount = 1,
+        SecondaryStartSize = 0.30f,
+        SecondaryEndSize = 0.04f,
+        Lifetime = 0.065f,
+        SecondaryDistance = 0.18f,
+        SecondarySpeed = 2.2f,
+        Color = Color.White,
+        SmokeSettings = SmokeEmissionPresets.TurretSmoke()
+        */
     };
 }

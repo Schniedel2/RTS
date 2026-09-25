@@ -50,6 +50,7 @@ public enum UnitActionType
     ReturnToStorage,
     MoveAway,
     SellBuilding,
+    ToggleEnabled,
     max
 
 }

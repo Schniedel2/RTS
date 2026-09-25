@@ -96,6 +96,21 @@ Field(completedTower, typeof(Building), "<ConstructionProgress>k__BackingField",
 Check(completedTower.GetProvidedPerks().Single() is
     { Perk: PerkType.DetailedHealth, Scope: PerkScope.Radius, Radius: CommunicationsTower.DetailedHealthRadius },
     "Completed communications tower provides local detailed-health coverage");
+var completedBase = Empty<GDIBase>();
+completedBase.SetTransform(Matrix.CreateTranslation(30, 0, 40));
+completedBase.TotalBuildingPointsNeeded = 100;
+Field(completedBase, typeof(Building), "<ConstructionProgress>k__BackingField", 100f);
+Check(completedBase.GetProvidedPerks().Single() is
+    { Perk: PerkType.Home, Scope: PerkScope.Global },
+    "Completed GDI base provides the army home location");
+Guid homeSource = Guid.NewGuid();
+basicHealthArmy.Perks.SetSource(homeSource,
+    [new PerkGrant(PerkType.Home, PerkLifetime.WhileProviderOperational,
+        PerkScope.Global, new Vector3(30, 0, 40))]);
+Check(basicHealthArmy.Perks.TryGetNearestSourcePosition(
+        PerkType.Home, Vector3.Zero, out Vector3 homePosition) &&
+      homePosition == new Vector3(30, 0, 40),
+    "Home perk resolves its provider position for the HUD hotkey");
 HudLayout gameHudLayout = HudLayout.Calculate(new Viewport(0, 0, 1280, 720), HudLayoutMode.Game);
 Check(gameHudLayout.ShowMinimap && gameHudLayout.ShowStatusPanel && gameHudLayout.ShowActionPanel &&
       gameHudLayout.Minimap.Right == 1268 && gameHudLayout.Minimap.Bottom == 708 &&
@@ -121,20 +136,38 @@ Building completedPowerPlant = Empty<Building>();
 Field(completedPowerPlant, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)powerArmyId);
 completedPowerPlant.TotalBuildingPointsNeeded = 100;
 Field(completedPowerPlant, typeof(Building), "<ConstructionProgress>k__BackingField", 100f);
+Field(completedPowerPlant, typeof(Building), "<IsEnabled>k__BackingField", true);
 completedPowerPlant.PowerProduction = 100;
 Building completedConsumer = Empty<Building>();
 Field(completedConsumer, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)powerArmyId);
 completedConsumer.TotalBuildingPointsNeeded = 100;
 Field(completedConsumer, typeof(Building), "<ConstructionProgress>k__BackingField", 100f);
+Field(completedConsumer, typeof(Building), "<IsEnabled>k__BackingField", true);
 completedConsumer.PowerConsumption = 40;
 Building unfinishedConsumer = Empty<Building>();
 Field(unfinishedConsumer, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)powerArmyId);
 unfinishedConsumer.TotalBuildingPointsNeeded = 100;
+Field(unfinishedConsumer, typeof(Building), "<IsEnabled>k__BackingField", true);
 unfinishedConsumer.PowerConsumption = 80;
 ArmyPowerStatus powerStatus = ArmyPowerStatus.Calculate(
     [completedPowerPlant, completedConsumer, unfinishedConsumer], powerArmyId);
 Check(powerStatus == new ArmyPowerStatus(100, 40) && powerStatus.Balance == 60,
     "Army power HUD totals only completed active buildings");
+Field(completedConsumer, typeof(Building), "<IsEnabled>k__BackingField", false);
+powerStatus = ArmyPowerStatus.Calculate(
+    [completedPowerPlant, completedConsumer, unfinishedConsumer], powerArmyId);
+Check(powerStatus == new ArmyPowerStatus(100, 0),
+    "Disabled buildings no longer consume army power");
+
+Building switchableBuilding = Empty<Building>();
+switchableBuilding.TotalBuildingPointsNeeded = 0;
+Field(switchableBuilding, typeof(Building), "<IsEnabled>k__BackingField", true);
+switchableBuilding.OnHostAction(UnitActionType.ToggleEnabled);
+Check(!switchableBuilding.IsEnabled,
+    "Host-confirmed toggle actions disable buildings");
+switchableBuilding.OnHostAction(UnitActionType.ToggleEnabled);
+Check(switchableBuilding.IsEnabled,
+    "Host-confirmed toggle actions re-enable buildings");
 var staffedReactor = Empty<Reaktor>();
 Check(!staffedReactor.CanFireWeapon &&
       !Empty<TiberiumRefinery>().CanFireWeapon &&
@@ -208,6 +241,9 @@ startCamera.UpdateTerrainHeight(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds
 Check(startCamera.Position.Y > cameraYBeforeFollow &&
       startCamera.Position.Y < 8 + startCamera.HeightAboveTerrain,
     "Camera follows changing terrain height smoothly while preserving relative zoom");
+startCamera.CenterOn(new Vector3(10, 0, 20), cameraTerrain);
+Check(startCamera.Position == new Vector3(10, 8 + startCamera.HeightAboveTerrain, 20),
+    "Home camera hotkey preserves terrain-relative camera height");
 
 var terrain = Terrain(6, 6);
 var grid = new GameGrid(6, 6, 1);

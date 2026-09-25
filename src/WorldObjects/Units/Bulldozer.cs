@@ -97,6 +97,7 @@ public class GDIBulldozer : Car
         new(UnitActionType.Scouting, "AI: Scouting", 5, 1),
         new(UnitActionType.MoveAway, "AI: Move away", 4, 1),
         new(UnitActionType.Follow, "Follow", 6, 1),
+        new(UnitActionType.Build, "Turret", 1, 4, "Turret-Minigun", ResourceCost: BuildingFactory.GetPurchasePrice("Turret-Minigun")),
         new(UnitActionType.Build, "Build Reaktor", 1, 4, "Reaktor", ResourceCost: BuildingFactory.GetPurchasePrice("Reaktor")),
         new(UnitActionType.Build, "Build Base", 1, 4, "GDI-Base", ResourceCost: BuildingFactory.GetPurchasePrice("GDI-Base")),
         new(UnitActionType.Build, "Build Barracks", 2, 4, "GDI-Barracks", ResourceCost: BuildingFactory.GetPurchasePrice("GDI-Barracks")),

@@ -5,7 +5,7 @@ using System.Collections.Generic;
 
 namespace RTS;
 
-public class GDIBase : Building
+public class GDIBase : Building, IPerkProvider
 {
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
     private float RadarAngleDegree = 0.0f;
@@ -32,6 +32,14 @@ public class GDIBase : Building
         _meshSet?.SetParameter("pivot:radar", MathHelper.ToRadians(RadarAngleDegree));
         base.Draw(effect);
     }
+
+    public IReadOnlyList<PerkGrant> GetProvidedPerks() =>
+        IsCompleted && !IsDying && Occupancy?.IsOperational != false
+            ? [new PerkGrant(PerkType.Home,
+                PerkLifetime.WhileProviderOperational,
+                PerkScope.Global,
+                Position)]
+            : Array.Empty<PerkGrant>();
 
     public IReadOnlyList<UnitAction> GetUnitActions()
     {

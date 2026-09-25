@@ -177,6 +177,15 @@ public sealed class ParticleSystem
         EmitMuzzleFlash(position, barrelDirection, settings);
     }
 
+    public void EmitTurretMuzzleFlash(
+        Vector3 position,
+        Vector3 barrelDirection,
+        MuzzleFlashEmissionSettings? settings = null)
+    {
+        settings ??= MuzzleFlashEmissionPresets.Turret();
+        EmitMuzzleFlash(position, barrelDirection, settings);
+    }
+
     /// <summary>Creates a large, short-lived cannon flash and its smoke plume.</summary>
     public void EmitCannonMuzzleFlash(
         Vector3 position,

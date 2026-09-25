@@ -35,11 +35,14 @@ public sealed class MeshSet
     private readonly Dictionary<string, float> _parameters = [];
     private readonly List<CachedPivot> _cachedPivots = [];
     private readonly List<MeshSetPivot> _pivots = [];
-    private CachedPivot? _exhaustPivot;
-    private CachedPivot? _turretPivot;
-    private CachedPivot? _barrelPivot;
+    private CachedPivot? _pivotExhaust;
+    private CachedPivot? _pivotExhaust2;
+    private CachedPivot? _pivotTurretYaw;
+    private CachedPivot? _pivotTurretPitch;
+    private CachedPivot? _pivotBarrel;
     private CachedPivot? _pivotMuzzle;
-    private CachedPivot? _gunPivot;
+    private CachedPivot? _pivotMuzzle2;
+    private CachedPivot? _pivotGun;
     private bool _isDirty = true;
 
     public Mesh RootMesh { get; }
@@ -258,22 +261,22 @@ public sealed class MeshSet
     public bool TryGetExhaustWorldPosition(Matrix world, out Vector3 position)
     {
         EnsurePivotCache();
-        if (_exhaustPivot is null)
+        if (_pivotExhaust is null)
         {
             position = Vector3.Zero;
             return false;
         }
 
         Matrix currentWorld = world;
-        foreach (AttachmentStep step in _exhaustPivot.Steps)
+        foreach (AttachmentStep step in _pivotExhaust.Steps)
         {
             Matrix attachmentWorld = step.Owner.RootMesh.GetPivotWorldTransform(
                 step.Pivot, currentWorld, step.Owner._parameters);
             currentWorld = step.Attachment.LocalTransform * attachmentWorld;
         }
 
-        position = _exhaustPivot.Owner.RootMesh.GetPivotWorldTransform(
-            _exhaustPivot.Pivot, currentWorld, _exhaustPivot.Owner._parameters).Translation;
+        position = _pivotExhaust.Owner.RootMesh.GetPivotWorldTransform(
+            _pivotExhaust.Pivot, currentWorld, _pivotExhaust.Owner._parameters).Translation;
         return true;
     }
 
@@ -332,7 +335,7 @@ public sealed class MeshSet
 
         _cachedPivots.Clear();
         _pivots.Clear();
-        _exhaustPivot = null;
+        _pivotExhaust = null;
         CollectPivots(this, [], "");
 
         foreach (var pivot in _cachedPivots)
@@ -340,15 +343,23 @@ public sealed class MeshSet
             if (pivot.Description.Name.StartsWith("pivot:", StringComparison.OrdinalIgnoreCase))
             {
                 if (pivot.Description.Name.Equals("pivot:exhaust", StringComparison.OrdinalIgnoreCase))
-                    _exhaustPivot = pivot;
+                    _pivotExhaust = pivot;
+                if (pivot.Description.Name.Equals("pivot:exhaust-2", StringComparison.OrdinalIgnoreCase))
+                    _pivotExhaust2 = pivot;
                 if (pivot.Description.Name.Equals("pivot:turret", StringComparison.OrdinalIgnoreCase))
-                    _turretPivot = pivot;
+                    _pivotTurretYaw = pivot;
+                if (pivot.Description.Name.Equals("pivot:turret-yaw", StringComparison.OrdinalIgnoreCase))
+                    _pivotTurretYaw = pivot;
+                if (pivot.Description.Name.Equals("pivot:turret-pitch", StringComparison.OrdinalIgnoreCase))
+                    _pivotTurretPitch = pivot;
                 if (pivot.Description.Name.Equals("pivot:barrel", StringComparison.OrdinalIgnoreCase))
-                    _barrelPivot = pivot;
+                    _pivotBarrel = pivot;
                 if (pivot.Description.Name.Equals("pivot:gun", StringComparison.OrdinalIgnoreCase))
-                    _gunPivot = pivot;
+                    _pivotGun = pivot;
                 if (pivot.Description.Name.Equals("pivot:muzzle", StringComparison.OrdinalIgnoreCase))
                     _pivotMuzzle = pivot;
+                if (pivot.Description.Name.Equals("pivot:muzzle-2", StringComparison.OrdinalIgnoreCase))
+                    _pivotMuzzle2 = pivot;
             }
         }
 

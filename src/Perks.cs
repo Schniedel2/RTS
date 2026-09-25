@@ -7,7 +7,8 @@ namespace RTS;
 
 public enum PerkType
 {
-    DetailedHealth
+    DetailedHealth,
+    Home
 }
 
 public enum PerkLifetime
@@ -92,6 +93,22 @@ public sealed class ArmyPerkState
     public bool HasAt(PerkType perk, Vector3 position) =>
         _sources.Values.SelectMany(grants => grants)
             .Any(grant => grant.Perk == perk && grant.AppliesAt(position));
+
+    public bool TryGetNearestSourcePosition(PerkType perk, Vector3 referencePosition,
+        out Vector3 position)
+    {
+        (Guid SourceId, PerkGrant Grant)? nearest = _sources
+            .SelectMany(source => source.Value
+                .Where(grant => grant.Perk == perk)
+                .Select(grant => (SourceId: source.Key, Grant: grant)))
+            .OrderBy(candidate => Vector3.DistanceSquared(
+                candidate.Grant.Position, referencePosition))
+            .ThenBy(candidate => candidate.SourceId)
+            .Select(candidate => ((Guid SourceId, PerkGrant Grant)?)candidate)
+            .FirstOrDefault();
+        position = nearest?.Grant.Position ?? default;
+        return nearest is not null;
+    }
 
     public void Clear() => _sources.Clear();
 

@@ -38,6 +38,9 @@ public class ConsoleCommands
         _console.RegisterCommand(
             "spawn-neutral",
             SpawnNeutral);
+        _console.RegisterAsyncCommand(
+            "spawn-enemy-turret",
+            SpawnEnemyTurretAsync);
         _console.RegisterCommand(
             "WhoAmI",
             WhoAmI);
@@ -627,6 +630,49 @@ public class ConsoleCommands
         {
             _console.Print($"Network error: {ex.Message}");
         }
+    }
+
+    private async System.Threading.Tasks.Task SpawnEnemyTurretAsync(string[] args)
+    {
+        if (!_rtsGame.Network.IsHost)
+        {
+            _console.Print("Enemy test units can only be spawned by the host.");
+            return;
+        }
+        if (args.Length > 3)
+        {
+            _console.Print("Usage: spawn-enemy-turret [x [z [y]]]");
+            return;
+        }
+
+        Player? local = _rtsGame.Players.FirstOrDefault(
+            player => player.Id == _rtsGame.Network.LocalPeerId);
+        Player? enemy = _rtsGame.Players
+            .Concat(_rtsGame.AIPlayers.Select(ai => ai.Player))
+            .DistinctBy(player => player.Id)
+            .FirstOrDefault(player => player.Id != local?.Id &&
+                (local is null || player.TeamId != local.TeamId));
+        if (enemy is null)
+        {
+            _console.Print("No enemy player found. Create one first with: ai-create enemy");
+            return;
+        }
+
+        Vector3 target = _localPlayer.MouseWorldPosition;
+        float x = target.X;
+        float y = target.Y;
+        float z = target.Z;
+        if (args.Length > 0 && !float.TryParse(args[0], out x) ||
+            args.Length > 1 && !float.TryParse(args[1], out z) ||
+            args.Length > 2 && !float.TryParse(args[2], out y))
+        {
+            _console.Print("Coordinates must be numbers.");
+            return;
+        }
+
+        await _rtsGame.NetworkClient.RequestSpawnForPlayerAsync(
+            enemy.Id, "turret-minigun", x, y, z);
+        _console.Print($"Enemy turret spawn requested for '{enemy.Name}'.");
     }
 
     private void SetAIPlayerStatus(string[] args)

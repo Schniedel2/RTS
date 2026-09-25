@@ -15,6 +15,7 @@ public static class BuildingFactory
         "silo" => 1500,
         "tiberium-refinery" => 4500,
         "vehicle-factory" => 5000,
+        "turret-minigun" => 50,
         _ => 0
     };
 
@@ -36,6 +37,9 @@ public static class BuildingFactory
                 break;
             case "reaktor":
                 building = new Reaktor(position, unitId, GetPurchasePrice(buildingTypeName));
+                break;
+            case "turret-minigun":
+                building = new Turret(position, unitId, "gatling-tower-1", GetPurchasePrice(buildingTypeName));
                 break;
             case "building-4x3x4":
             case "building-1":

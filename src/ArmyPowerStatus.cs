@@ -13,7 +13,7 @@ public readonly record struct ArmyPowerStatus(int Produced, int Required)
     {
         Unit[] active = units.Where(unit =>
             unit.ArmyId == armyId && !unit.IsDying &&
-            (unit is not Building building || building.IsCompleted)).ToArray();
+            (unit is not Building building || building.IsCompleted && building.IsEnabled)).ToArray();
         return new ArmyPowerStatus(
             active.Sum(unit => Math.Max(0, unit.EffectivePowerProduction)),
             active.Sum(unit => Math.Max(0, unit.PowerConsumption)));

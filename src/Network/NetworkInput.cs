@@ -421,13 +421,17 @@ public sealed class NetworkInput
         Guid? driverUnitId)
     {
         Vector3 target = new(x, y, z);
-        Globals.World.Units.SpawnUnit(
+        Unit? spawned = Globals.World.Units.SpawnUnit(
             unitTypeId,
             target,
             targetAngleY,
             unitId,
             playerId,
             driverUnitId);
+        // SpawnCommand is the console/debug spawn path. Buildings constructed
+        // through gameplay use BuildCommand and retain their normal build time.
+        if (spawned is Building building)
+            building.AdvanceConstruction(building.RemainingBuildingPoints);
 
         string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);
         Globals.Console.Print($"Spawned {unitTypeId} for player {playerName}.");

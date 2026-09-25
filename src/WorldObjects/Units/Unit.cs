@@ -794,7 +794,7 @@ public abstract class Unit : WorldObject
             toleranceDegrees;
     }
 
-    public bool IsReadyToShoot(double hostTime) // this is a host function
+    public virtual bool IsReadyToShoot(double hostTime) // this is a host function
     {
         if (IsDying || !CanFireWeapon)
             return false;
@@ -832,6 +832,14 @@ public abstract class Unit : WorldObject
         }
 
         return _targetTerrainPosition;
+    }
+
+    /// <summary>Exposes the current visual aim point to specialized weapon mounts.</summary>
+    protected bool TryGetTargetPosition(out Vector3 position)
+    {
+        Vector3? target = GetTargetPosition();
+        position = target ?? default;
+        return target.HasValue;
     }
 
     private void SetTargetTerrain(Vector3 target, Point targetCell)
@@ -1179,9 +1187,14 @@ public abstract class Unit : WorldObject
     }
 
     /// <summary>Returns the projectile spawn position at an empty pivot:muzzle group.</summary>
-    public bool TryGetMuzzleWorldPosition(out Vector3 position)
+    public virtual bool TryGetMuzzleWorldPosition(out Vector3 position)
     {
-        if (TryGetAnimatedPivotWorldTransform("pivot:muzzle", out Matrix pivotWorld))
+        return TryGetMuzzleWorldPosition("pivot:muzzle", out position);
+    }
+
+    protected bool TryGetMuzzleWorldPosition(string pivotName, out Vector3 position)
+    {
+        if (TryGetAnimatedPivotWorldTransform(pivotName, out Matrix pivotWorld))
         {
             position = pivotWorld.Translation;
             return true;

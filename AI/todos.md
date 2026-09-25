@@ -7,7 +7,7 @@ Dies soll zuerst nur eine einfache RTS-Multiplayer-Engine werden.
 2.  Spielfeld / Grid -> done
 3.  Kamera + Scrollen -> done
 3.1 Tilemap -> done
-4.  Maussteuerung -> done (muss noch verbessert werden))
+4.  Maussteuerung -> done (muss noch verbessert werden)
 5.  Terrain -> done
 6.  Einheiten -> done
 6.1. Einheiten spawnen -> done
@@ -17,7 +17,7 @@ Dies soll zuerst nur eine einfache RTS-Multiplayer-Engine werden.
 8.  Move-Befehl (über Actionlist) -> done
 9.  Pathfinding -> done
 10. Gebäude -> done
-11. Ressourcen
+11. Ressourcen -> done (buggy)
 12. Gegner / KI
 13. Combat -> done
 14. UI -> done
@@ -28,6 +28,18 @@ Dies soll zuerst nur eine einfache RTS-Multiplayer-Engine werden.
 Ideen:
 Ressource: wie Tiberium (C&C) + Man kann Tiberumpflanzen ausgraben und woanders wieder eingraben
 
-Beim Bauen: Gebäude drehen und Vorschau (trasnparent) anzeigen
-Gebäude müssen den Boden/Zellen blocken
-zerstörte Gebäude müssen den Boden/Zellen freigeben
+Beim Bauen: Gebäude drehen und Vorschau (transparent) anzeigen -> done
+Gebäude müssen den Boden/Zellen blocken -> done
+zerstörte Gebäude müssen den Boden/Zellen freigeben -> done
+beim Platzieren: pivot:exit anzeigen - evtl. Pfeil von "pivot:spawn" -> "pivot:exit"
+Soldiers: AutoAngriff nur auf sichtbare Ziele
+Soldiers: Medic -> heilt verwundete Soldaten automatisch im Bereich -> bewegt sich zu den Patienten
+Soldiers: Truppenführer einbauen mit Truppbefehlen wie "verteilen", "antreten" + Formationen
+Truppenführer hat nur Pistole und steht auch hinten bei Formationen
+Truppenführer: allokiert "ungeführte Soldaten" im Umkreis per Action
+Truppenführer: Formationen z.B. MG vorne und Sniper/RPG/Medic hinten 
+Truppenführer: bei Goto muss eine Ausrichtung angegeben werden (für die Formation)
+Geschütztürme
+  - begrenz Munition (?) -> Updates mehr Ammo
+  - auto reload - speed über Upgrades
+  - update: can target sky-units (?)

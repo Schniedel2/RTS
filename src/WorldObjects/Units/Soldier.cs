@@ -157,9 +157,7 @@ public class Soldier : MobileUnit
                 _minigunRotationSpeed - _minigunRotationAcceleration * elapsedSeconds);
         }
 
-        _minigunRotationDegrees = MathHelper.WrapAngle(MathHelper.ToRadians(
-            _minigunRotationDegrees + _minigunRotationSpeed * elapsedSeconds));
-        _minigunRotationDegrees = MathHelper.ToDegrees(_minigunRotationDegrees);
+        _minigunRotationDegrees = myMathHelper.WrapAngleDegrees(_minigunRotationDegrees + _minigunRotationSpeed * elapsedSeconds);
     }
 
     public override void Update(GameTime gameTime)

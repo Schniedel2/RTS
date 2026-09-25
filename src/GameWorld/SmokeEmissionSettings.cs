@@ -177,6 +177,27 @@ public static class SmokeEmissionPresets
         WindInfluence = 0.95f
     };
 
+    public static SmokeEmissionSettings TurretSmoke() => new()
+    {
+        ParticleCount = 1,
+        Intensity = 0.85f,
+        EmissionLength = 0.08f,
+        ForwardSpeed = 0.22f,
+        ForwardSpeedVariation = 0.10f,
+        SidewaysSpread = 0.12f,
+        UpwardSpeed = 0.35f,
+        UpwardSpeedVariation = 0.18f,
+        StartSize = 0.80f,
+        StartSizeVariation = 0.40f,
+        EndSize = 1.22f,
+        EndSizeVariation = 0.34f,
+        Lifetime = 1.45f,
+        LifetimeVariation = 0.20f,
+        Opacity = 0.68f,
+        Color = new Color(220, 220, 220),
+        WindInfluence = 0.95f
+    };
+
     public static SmokeEmissionSettings RpgMuzzle() => new()
     {
         ParticleCount = 5,
