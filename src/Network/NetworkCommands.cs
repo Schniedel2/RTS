@@ -5,6 +5,10 @@ namespace RTS.Network;
 
 public static class NetworkCommands
 {
+    public static NetworkMessage CreateHarvestRequest(Guid senderId, Guid harvesterId, Vector3 target) =>
+        new(NetworkMessageType.HarvestRequest, senderId, PlayerId: senderId, UnitId: harvesterId,
+            X: target.X, Y: target.Y, Z: target.Z);
+
     public static NetworkMessage CreateUnitActionRequest(
         Guid senderId, Guid[] unitIds, UnitActionType actionType, UnitActionContext? context = null) =>
         new(NetworkMessageType.UnitActionRequest, senderId, PlayerId: senderId,

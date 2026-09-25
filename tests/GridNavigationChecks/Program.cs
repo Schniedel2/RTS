@@ -57,6 +57,45 @@ IReadOnlyList<Unit> stableUnitSnapshot = snapshotHandler.Units;
 UnitList(snapshotHandler).Add(Unit());
 Check(stableUnitSnapshot.Count == 1 && snapshotHandler.Units.Count == 2,
     "Unit rendering uses a stable snapshot while the live collection changes");
+MobileUnit defensiveUnit = Mobile(Vector3.Zero);
+Check(defensiveUnit.SetTemporaryTarget(Guid.NewGuid()) &&
+      defensiveUnit.HasCombatTarget && !defensiveUnit.HasExplicitTarget,
+    "Host-assigned defensive targets drive the same combat state as explicit attacks");
+MobileUnit healthBarUnit = Mobile(Vector3.Zero);
+Check(HealthBarRenderer.ShouldDraw(healthBarUnit, HealthBarDisplayMode.Always) &&
+      !HealthBarRenderer.ShouldDraw(healthBarUnit, HealthBarDisplayMode.Damaged) &&
+      !HealthBarRenderer.ShouldDraw(healthBarUnit, HealthBarDisplayMode.Off),
+    "Healthbar modes show healthy units only when requested");
+healthBarUnit.IsSelected = true;
+healthBarUnit.HitPoints = healthBarUnit.MaxHitPoints * 0.5f;
+Check(HealthBarRenderer.ShouldDraw(healthBarUnit, HealthBarDisplayMode.Selected) &&
+      HealthBarRenderer.ShouldDraw(healthBarUnit, HealthBarDisplayMode.Damaged),
+    "Selected and damaged healthbar modes recognize matching units");
+var basicHealthArmy = new Army(Guid.NewGuid(), Guid.NewGuid());
+Guid foreignHealthArmyId = Guid.NewGuid();
+Check(HealthBarRenderer.GetInformationLevel(basicHealthArmy, foreignHealthArmyId, Vector3.Zero) == HealthInformationLevel.Basic &&
+      HealthBarRenderer.GetFillFraction(healthBarUnit, HealthInformationLevel.Basic) == 1.0f,
+    "Basic health intelligence exposes only a categorical color");
+Guid healthTowerSource = Guid.NewGuid();
+basicHealthArmy.Perks.SetSource(healthTowerSource,
+    [new PerkGrant(PerkType.DetailedHealth, PerkLifetime.WhileProviderOperational,
+        PerkScope.Radius, new Vector3(10, 0, 10), 5)]);
+Check(HealthBarRenderer.GetInformationLevel(basicHealthArmy, foreignHealthArmyId, new Vector3(12, 0, 10)) == HealthInformationLevel.Detailed &&
+      HealthBarRenderer.GetInformationLevel(basicHealthArmy, foreignHealthArmyId, Vector3.Zero) == HealthInformationLevel.Basic &&
+      Math.Abs(HealthBarRenderer.GetFillFraction(healthBarUnit, HealthInformationLevel.Detailed) - 0.5f) < 0.001f,
+    "Local detailed-health perk exposes exact health only inside its coverage");
+Check(HealthBarRenderer.GetInformationLevel(basicHealthArmy, basicHealthArmy.Id, Vector3.Zero) == HealthInformationLevel.Detailed,
+    "An army always receives detailed health for its own units");
+basicHealthArmy.Perks.RemoveSource(healthTowerSource);
+Check(!basicHealthArmy.Perks.Has(PerkType.DetailedHealth),
+    "Removing the last temporary perk provider removes its army perk");
+var completedTower = Empty<CommunicationsTower>();
+completedTower.SetTransform(Matrix.CreateTranslation(20, 0, 20));
+completedTower.TotalBuildingPointsNeeded = 100;
+Field(completedTower, typeof(Building), "<ConstructionProgress>k__BackingField", 100f);
+Check(completedTower.GetProvidedPerks().Single() is
+    { Perk: PerkType.DetailedHealth, Scope: PerkScope.Radius, Radius: CommunicationsTower.DetailedHealthRadius },
+    "Completed communications tower provides local detailed-health coverage");
 HudLayout gameHudLayout = HudLayout.Calculate(new Viewport(0, 0, 1280, 720), HudLayoutMode.Game);
 Check(gameHudLayout.ShowMinimap && gameHudLayout.ShowStatusPanel && gameHudLayout.ShowActionPanel &&
       gameHudLayout.Minimap.Right == 1268 && gameHudLayout.Minimap.Bottom == 708 &&
@@ -97,6 +136,10 @@ ArmyPowerStatus powerStatus = ArmyPowerStatus.Calculate(
 Check(powerStatus == new ArmyPowerStatus(100, 40) && powerStatus.Balance == 60,
     "Army power HUD totals only completed active buildings");
 var staffedReactor = Empty<Reaktor>();
+Check(!staffedReactor.CanFireWeapon &&
+      !Empty<TiberiumRefinery>().CanFireWeapon &&
+      !Empty<CommunicationsTower>().CanFireWeapon,
+    "Ordinary buildings cannot acquire targets or fire weapons");
 Field(staffedReactor, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)powerArmyId);
 staffedReactor.TotalBuildingPointsNeeded = 0;
 staffedReactor.PowerProduction = 100;
@@ -382,6 +425,17 @@ resourceField.Tags.Add("early-game");
 resourceField.Properties["richness"] = "high";
 Check(firstStart.PlayerSlot == 1 && secondStart.PlayerSlot == 2, "Player start markers receive stable sequential slots");
 Check(resourceField.Shape == GameplayMarkerShape.Circle && resourceField.Size == new Vector2(8), "Marker actions retain semantic shape and tool size");
+Check(Empty<TerrainEditorTool>().Actions.Any(action =>
+        action.Type == UnitActionType.DeleteGameplayMarker && action.Name == "Remove Gameplay Marker"),
+    "Terrain editor exposes a clearly named gameplay-marker removal tool");
+var removableMarkers = new GameplayMarkerHandler();
+GameplayMarker removableStart = removableMarkers.Add(
+    GameplayMarkerType.PlayerStart, new Vector3(4, 0, 5), 0);
+removableMarkers.Add(GameplayMarkerType.ObservationPoint, new Vector3(12, 0, 12), 0);
+Check(removableMarkers.FindNearest(new Vector3(4.4f, 0, 5), 1.0f)?.Id == removableStart.Id &&
+      removableMarkers.RemoveNearest(new Vector3(4.4f, 0, 5), 1.0f) &&
+      removableMarkers.Markers.Count == 1,
+    "Gameplay-marker removal targets only the nearest marker inside the tool radius");
 var markerCopy = new GameplayMarkerHandler();
 markerCopy.ApplyStates(gameplayMarkers.GetStates());
 Check(markerCopy.Markers.Count == 3 && markerCopy.Markers[2].Tags.Contains("early-game") && markerCopy.Markers[2].Properties["richness"] == "high", "Gameplay marker state preserves metadata");
@@ -674,6 +728,27 @@ Check(game.Players.Any(player => player.Id == secondPlayerId) &&
       startedAI.Status == AIPlayerStatus.Active &&
       startedAI.Controller.Goal == AIGoalState.FindingBulldozer,
     "Match start restores and activates the host AI controller");
+using (var commandNetwork = new NetworkHandler("CommandServiceTest"))
+{
+    Field(commandNetwork, typeof(NetworkHandler), "<IsHost>k__BackingField", true);
+    Guid actingPlayerId = Guid.NewGuid();
+    Guid workerId = Guid.NewGuid();
+    Guid requestedBuildingId = Guid.NewGuid();
+    var receivedOrders = new List<NetworkMessage>();
+    commandNetwork.MessageReceived += receivedOrders.Add;
+    var commandService = new PlayerCommandService(commandNetwork, actingPlayerId);
+    Guid returnedBuildingId = await commandService.BuildAndConstructAsync(
+        "Reaktor", new Vector3(4.5f, 0.0f, 6.5f), 90.0f, [workerId], requestedBuildingId);
+    commandNetwork.Update();
+    Check(returnedBuildingId == requestedBuildingId &&
+          receivedOrders.Select(message => message.Type).SequenceEqual(
+              [NetworkMessageType.BuildRequest, NetworkMessageType.BuildConstructionRequest]),
+        "Shared player command service queues build and construction in order");
+    Check(receivedOrders.All(message => message.SenderId == actingPlayerId) &&
+          receivedOrders[0].UnitId == requestedBuildingId &&
+          receivedOrders[1].ConstructionSiteId == requestedBuildingId,
+        "Shared player command service preserves the human or AI actor identity");
+}
 // Shared texel density must be independent of model bounds and ordinary UVs.
 var sharedRegion = new TextureHandler.TextureRegion { AtlasIndex = 0, X = 16, Y = 32, Width = 256, Height = 128, AtlasWidth = 1024, AtlasHeight = 1024 };
 SubMesh TexturedPart(string? sharedName, float length)

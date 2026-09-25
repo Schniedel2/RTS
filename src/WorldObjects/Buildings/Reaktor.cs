@@ -20,10 +20,6 @@ public class Reaktor : Building
             position,
             unitId, purchasePrice)
     {
-        Length = 4;
-        Width = 5;
-        Height = 4;
-
         TotalBuildingPointsNeeded = 500;
         HitPoints = MaxHitPoints = 500;
         PowerProduction = 100;

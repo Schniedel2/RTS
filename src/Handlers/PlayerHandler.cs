@@ -423,26 +423,20 @@ public class PlayerHandler
     {
         ClearSelection(notify: false);
 
-        foreach (Unit unit in _map.Units.Units)
+        Unit[] candidates = _map.Units.Units
+            .Where(unit => unit.IsSelectable &&
+                Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, unit.ArmyId) &&
+                selection.Intersects(unit.GetScreenBounds(camera.View, camera.Projection, viewport)))
+            .ToArray();
+
+        // A mobile unit standing on a building (for example a helicopter on a
+        // helipad) must remain directly selectable. The same rule keeps drag
+        // selection from creating accidental mixed unit/building groups.
+        IEnumerable<Unit> prioritized = PrioritizeMobileUnits(candidates);
+        foreach (Unit unit in prioritized.Take(maxUnits))
         {
-            if (!unit.IsSelectable)
-                continue;
-            Rectangle unitBounds = unit.GetScreenBounds(
-                camera.View,
-                camera.Projection,
-                viewport);
-
-            if (!selection.Intersects(unitBounds))
-                continue;
-
-            if (!Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, unit.ArmyId))
-                continue;
-
-            if (_selectedUnits.Count < maxUnits)
-            {
-                _selectedUnits.Add(unit);
-                unit.Select();
-            }
+            _selectedUnits.Add(unit);
+            unit.Select();
         }
 
         var commonAction = _selectedUnits
@@ -697,10 +691,16 @@ public class PlayerHandler
 
         private Unit? FindUnitAt(Camera camera, Viewport viewport, Point screenPosition)
         {
-            return _map.Units.Units.FirstOrDefault(unit => unit.IsSelectable &&
+            Unit[] candidates = _map.Units.Units.Where(unit => unit.IsSelectable &&
                 _map.Visibility.IsUnitVisibleToLocalPlayer(unit) && unit.GetScreenBounds(
-                camera.View, camera.Projection, viewport).Contains(screenPosition));
+                    camera.View, camera.Projection, viewport).Contains(screenPosition)).ToArray();
+            return PrioritizeMobileUnits(candidates).FirstOrDefault();
         }
+
+        private static IEnumerable<Unit> PrioritizeMobileUnits(IReadOnlyList<Unit> candidates) =>
+            candidates.Any(unit => unit is MobileUnit)
+                ? candidates.Where(unit => unit is MobileUnit)
+                : candidates;
 
         private static Ray CreatePickRay(
             Camera camera,
@@ -816,6 +816,9 @@ public class PlayerHandler
                 if (ActiveAction.Type == UnitActionType.PlaceGameplayMarker && ActiveAction.MarkerType is GameplayMarkerType markerType)
                     _map.GameplayMarkers.DrawPreview(camera, _map.Terrain, _map.GameGrid, markerType,
                         _isDrag ? PressLeftWorldPosition : MouseWorldPosition, _buildPreviewDegree, _toolSize);
+                if (ActiveAction.Type == UnitActionType.DeleteGameplayMarker)
+                    _map.GameplayMarkers.DrawRemovalPreview(camera, _map.Terrain, _map.GameGrid,
+                        MouseWorldPosition, Math.Max(1.0f, _toolSize * 0.5f));
                 if (ActiveAction.Type == UnitActionType.PlaceTiberiumSource)
                 {
                     Point sourceCell = _map.GameGrid.ToCell(_isDrag ? PressLeftWorldPosition : MouseWorldPosition);

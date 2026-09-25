@@ -191,6 +191,17 @@ public sealed class VisibilitySystem
         return local is null || GetDisplayedTerrainVisibility(local.ArmyId, cell, false) != VisibilityState.Unexplored;
     }
 
+    /// <summary>
+    /// Presentation check for transient effects which must reveal no activity
+    /// in merely explored or still unknown terrain.
+    /// </summary>
+    public bool IsTerrainCurrentlyVisible(Guid viewerArmyId, Point cell)
+    {
+        if (!Globals.FogOfWarEnabled || _world.IsEditorActive)
+            return true;
+        return GetDisplayedTerrainVisibility(viewerArmyId, cell, false) == VisibilityState.Visible;
+    }
+
     public IReadOnlyList<Guid> GetAlliedArmyIds(Guid armyId) =>
         _alliedArmyIds.TryGetValue(armyId, out IReadOnlyList<Guid>? allies) ? allies : [];
 

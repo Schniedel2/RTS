@@ -186,10 +186,7 @@ public class Soldier : MobileUnit
 
         bool isMoving = PlannedPath.Count > 0 || IsLeavingBuilding;
 
-        bool hasAttackOrder =
-            AttackTargetId is not null ||
-            AttackGroundTarget is not null;
-        bool isAiming = hasAttackOrder && !isMoving;
+        bool isAiming = HasCombatTarget && !isMoving;
 
         if (IsLeavingBuilding)
             _currentUnitState = UnitActionState.Spawning;

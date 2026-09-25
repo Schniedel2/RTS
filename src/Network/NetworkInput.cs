@@ -213,6 +213,7 @@ public sealed class NetworkInput
         if (message.Type == NetworkMessageType.StartMultiplayerGameCommand)
         {
             Globals.World.Units.ClearForMatchStart();
+            Globals.Game.Armies.ClearPerks();
             Globals.Game.PrepareAIPlayersForMatch(message.MatchStartAssignments ?? []);
             Vector3? localStartPosition = null;
             foreach (MatchStartAssignment assignment in message.MatchStartAssignments ?? [])

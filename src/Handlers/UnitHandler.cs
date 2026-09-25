@@ -10,6 +10,7 @@ public class UnitHandler
 {
     private readonly List<Unit> _units = new List<Unit>();
     private readonly object _unitsSync = new();
+    private readonly Dictionary<Guid, Guid> _perkSourceArmies = [];
 
     public IReadOnlyList<Unit> Units
     {
@@ -40,6 +41,7 @@ public class UnitHandler
         if (SetFootprints(unit, RotateYDegrees))
         {
             lock (_unitsSync) _units.Add(unit);
+            RefreshPerkSource(unit);
             if (unit.Occupancy?.Slots.Any(slot => slot.Role == OccupantRole.Driver) == true &&
                 creatorPlayerId != Guid.Empty &&
                 driverUnitId is Guid initialDriverId)
@@ -85,6 +87,7 @@ public class UnitHandler
         else
             unit.BeginLeavingBuilding(sourceBuildingId, exitPosition);
         lock (_unitsSync) _units.Add(unit);
+        RefreshPerkSource(unit);
         if (unit.Occupancy?.Slots.Any(slot => slot.Role == OccupantRole.Driver) == true &&
             creatorPlayerId != Guid.Empty &&
             driverUnitId is Guid initialDriverId)
@@ -111,6 +114,7 @@ public class UnitHandler
         if (SetFootprints(unit, RotateYDegrees))
         {
             lock (_unitsSync) _units.Add(unit);
+            RefreshPerkSource(unit);
             return unit;
         }
         return null;
@@ -149,6 +153,7 @@ public class UnitHandler
             }
             else if (!unit.IsEmbarked)
                 unit.Update(gameTime);
+            RefreshPerkSource(unit);
         }
 
         foreach (Unit unit in Units)
@@ -248,6 +253,7 @@ public class UnitHandler
             }
 
         Globals.World.GameGrid.Remove(unit);
+        RemovePerkSource(unit.UnitId);
         if (!unit.BeginDeathSequence())
             lock (_unitsSync) _units.Remove(unit);
         return true;
@@ -278,6 +284,7 @@ public class UnitHandler
                 other.ClearReferencesToDestroyedUnit(unitId);
 
         Globals.World.GameGrid.Remove(building);
+        RemovePerkSource(building.UnitId);
         building.BeginSelling();
         return true;
     }
@@ -376,14 +383,56 @@ public class UnitHandler
     private void RemoveImmediately(Unit unit)
     {
         Globals.World.GameGrid.Remove(unit);
+        RemovePerkSource(unit.UnitId);
         lock (_unitsSync) _units.Remove(unit);
+    }
+
+    private void RefreshPerkSource(Unit unit)
+    {
+        Guid? currentArmyId = unit.ArmyId;
+        if (_perkSourceArmies.TryGetValue(unit.UnitId, out Guid previousArmyId) &&
+            previousArmyId != currentArmyId)
+        {
+            Globals.Game.Armies.Find(previousArmyId)?.Perks.RemoveSource(unit.UnitId);
+            _perkSourceArmies.Remove(unit.UnitId);
+        }
+
+        if (unit is not IPerkProvider provider || currentArmyId is not Guid armyId ||
+            Globals.Game.Armies.Find(armyId) is not Army army)
+        {
+            RemovePerkSource(unit.UnitId);
+            return;
+        }
+
+        IReadOnlyList<PerkGrant> grants = provider.GetProvidedPerks();
+        army.Perks.SetSource(unit.UnitId, grants);
+        if (grants.Count > 0)
+            _perkSourceArmies[unit.UnitId] = armyId;
+        else
+            _perkSourceArmies.Remove(unit.UnitId);
+    }
+
+    private void RemovePerkSource(Guid sourceId)
+    {
+        if (_perkSourceArmies.Remove(sourceId, out Guid armyId))
+            Globals.Game.Armies.Find(armyId)?.Perks.RemoveSource(sourceId);
     }
 
     public void Draw2D(SpriteBatch spriteBatch, Camera camera, Viewport viewport)
     {
+        Player? viewer = Globals.Game.Players.FirstOrDefault(
+            player => player.Id == Globals.Game.Network.LocalPeerId);
+        Army? viewerArmy = viewer is null ? null : Globals.Game.Armies.Find(viewer.ArmyId);
+
         foreach (Unit unit in Units)
-            if ((unit is Building or Helicopter or Harvester) && Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
-                unit.Draw2D(spriteBatch, camera, viewport);
+        {
+            if (unit.IsEmbarked || !Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
+                continue;
+            unit.Draw2D(spriteBatch, camera, viewport);
+            HealthInformationLevel healthInformation = HealthBarRenderer.GetInformationLevel(
+                viewerArmy, unit.ArmyId, unit.Position);
+            HealthBarRenderer.Draw(spriteBatch, camera, viewport, unit, healthInformation);
+        }
     }
 
     private bool SetFootprints(Unit unit, float rotateYDegrees)

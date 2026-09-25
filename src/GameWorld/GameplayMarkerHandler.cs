@@ -36,12 +36,21 @@ public sealed class GameplayMarkerHandler
 
     public bool RemoveNearest(Vector3 position, float maximumDistance)
     {
+        GameplayMarker? marker = FindNearest(position, maximumDistance);
+        return marker is not null && _markers.Remove(marker);
+    }
+
+    public GameplayMarker? FindNearest(Vector3 position, float maximumDistance)
+    {
+        Vector2 target = new(position.X, position.Z);
         GameplayMarker? marker = _markers
-            .OrderBy(item => Vector2.Distance(new Vector2(item.Position.X, item.Position.Z), new Vector2(position.X, position.Z)))
+            .OrderBy(item => Vector2.DistanceSquared(
+                new Vector2(item.Position.X, item.Position.Z), target))
             .FirstOrDefault();
-        if (marker is null || Vector2.Distance(new Vector2(marker.Position.X, marker.Position.Z), new Vector2(position.X, position.Z)) > maximumDistance)
-            return false;
-        return _markers.Remove(marker);
+        return marker is not null && Vector2.DistanceSquared(
+            new Vector2(marker.Position.X, marker.Position.Z), target) <= maximumDistance * maximumDistance
+                ? marker
+                : null;
     }
 
     public void Clear() => _markers.Clear();
@@ -100,6 +109,14 @@ public sealed class GameplayMarkerHandler
     {
         GameplayMarker preview = new() { Type = type, Position = position, RotationDegrees = rotationDegrees, Shape = DefaultShape(type), Size = new Vector2(Math.Max(1, toolSize)) };
         DrawMarker(camera, terrain, grid, preview, ColorFor(type) * 0.6f);
+    }
+
+    public void DrawRemovalPreview(Camera camera, Terrain terrain, GameGrid grid,
+        Vector3 position, float maximumDistance)
+    {
+        GameplayMarker? marker = FindNearest(position, maximumDistance);
+        if (marker is not null)
+            DrawMarker(camera, terrain, grid, marker, new Color(255, 30, 30, 210));
     }
 
     public void DrawLabels(SpriteBatch spriteBatch, Camera camera, Viewport viewport)

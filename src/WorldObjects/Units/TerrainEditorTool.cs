@@ -30,7 +30,7 @@ public class TerrainEditorTool : Soldier
         new(UnitActionType.PlaceGameplayMarker, "Observation Point", 4, 8, MarkerType: GameplayMarkerType.ObservationPoint),
         new(UnitActionType.PlaceGameplayMarker, "Landing Zone", 5, 8, MarkerType: GameplayMarkerType.LandingZone),
         new(UnitActionType.PlaceGameplayMarker, "Resource Field", 6, 8, MarkerType: GameplayMarkerType.ResourceField),
-        new(UnitActionType.DeleteGameplayMarker, "Delete Marker", 7, 8),
+        new(UnitActionType.DeleteGameplayMarker, "Remove Gameplay Marker", 12, 2),
         new(UnitActionType.PlaceTiberiumSource, "Place Tiberium Source", 0, 9),
         new(UnitActionType.PaintTiberium, "Paint Tiberium", 1, 9),
         new(UnitActionType.RemoveTiberium, "Remove Tiberium + Sources", 2, 9),

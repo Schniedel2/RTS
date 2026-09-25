@@ -623,6 +623,16 @@ public abstract class Unit : WorldObject
         TargetUnitId is not null ||
         TargetTerrainCell is not null;
 
+    /// <summary>
+    /// True for both player-issued attacks and host-assigned defensive fire.
+    /// Visual state machines should use this instead of checking only the
+    /// explicit attack fields.
+    /// </summary>
+    public bool HasCombatTarget =>
+        AttackTargetId is not null ||
+        AttackGroundTarget is not null ||
+        TemporaryTargetUnitId is not null;
+
     /// <summary>Central extension point for team, visibility and priority rules.</summary>
     public bool IsEnemy(Unit other)
     {
@@ -679,7 +689,8 @@ public abstract class Unit : WorldObject
 
     /// <summary>Central extension point evaluated by the host before a defensive target is assigned.</summary>
     public virtual bool ShouldAttack(Unit candidate) =>
-        !IsDying && !IsEmbarked && candidate.CanBeTargeted && Behavior == UnitBehavior.Aggressive && IsEnemy(candidate);
+        CanFireWeapon && !IsDying && !IsEmbarked && candidate.CanBeTargeted &&
+        Behavior == UnitBehavior.Aggressive && IsEnemy(candidate);
 
     /// <summary>
     /// Advances the local mesh angle towards the current target. Call this

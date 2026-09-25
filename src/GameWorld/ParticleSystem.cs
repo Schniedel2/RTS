@@ -387,12 +387,23 @@ public sealed class ParticleSystem
 
     public void Draw(Effect effect)
     {
-        foreach (Particle particle in _particles)
+        Player? localPlayer = Globals.Game.Players.FirstOrDefault(
+            player => player.Id == Globals.Game.Network.LocalPeerId);
+        bool revealAll = !Globals.FogOfWarEnabled || Globals.World.IsEditorActive || localPlayer is null;
+        bool IsVisible(WorldObject particle) => revealAll ||
+            Globals.World.Visibility.IsTerrainCurrentlyVisible(
+                localPlayer!.ArmyId, Globals.World.GameGrid.ToCell(particle.Position));
+
+        IEnumerable<Particle> visibleParticles = _particles.Where(IsVisible);
+        IEnumerable<DebrisParticle> visibleDebris = _debrisParticles.Where(IsVisible);
+        IEnumerable<SmokeParticle> visibleSmoke = _smokeParticles.Where(IsVisible);
+
+        foreach (Particle particle in visibleParticles)
             particle.Draw(effect);
-        foreach (DebrisParticle particle in _debrisParticles.Where(particle => !particle.UsesSprite))
+        foreach (DebrisParticle particle in visibleDebris.Where(particle => !particle.UsesSprite))
             particle.Draw(effect);
 
-        if (_smokeParticles.Count == 0 && !_debrisParticles.Any(particle => particle.UsesSprite))
+        if (!visibleSmoke.Any() && !visibleDebris.Any(particle => particle.UsesSprite))
             return;
 
         GraphicsDevice graphicsDevice = Globals.GraphicsDevice;
@@ -409,12 +420,12 @@ public sealed class ParticleSystem
         effect.Parameters["Unlit"]?.SetValue(1.0f);
         try
         {
-            foreach (DebrisParticle particle in _debrisParticles.Where(particle => particle.UsesSprite).OrderByDescending(particle =>
+            foreach (DebrisParticle particle in visibleDebris.Where(particle => particle.UsesSprite).OrderByDescending(particle =>
                 Vector3.DistanceSquared(particle.Position, Globals._camera.Position)))
             {
                 particle.Draw(effect);
             }
-            foreach (SmokeParticle particle in _smokeParticles.OrderByDescending(particle =>
+            foreach (SmokeParticle particle in visibleSmoke.OrderByDescending(particle =>
                 Vector3.DistanceSquared(particle.Position, Globals._camera.Position)))
             {
                 particle.Draw(effect);

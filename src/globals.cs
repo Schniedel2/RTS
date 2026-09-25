@@ -68,6 +68,7 @@ public static class Globals
     public static bool Debug_ShowNetworkMessages = false;
     public static bool Debug_ShowPathfindingMessages = false;
     public static bool Debug_ShowUnitCommands = false;
+    public static HealthBarDisplayMode HealthBarDisplayMode = HealthBarDisplayMode.Damaged;
     /// <summary>Hides terrain and neutral/resource objects until their cells have been explored.</summary>
     public static bool HideUnexploredWorld = true;
     /// <summary>Local rendering/debug switch. Disabling it does not alter stored exploration state.</summary>

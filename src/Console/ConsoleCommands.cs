@@ -132,6 +132,18 @@ public class ConsoleCommands
             "set-wind",
             SetWind);
         _console.RegisterCommand(
+            "set-healthbars-always",
+            _ => SetHealthBarMode(HealthBarDisplayMode.Always));
+        _console.RegisterCommand(
+            "set-healthbars-selected",
+            _ => SetHealthBarMode(HealthBarDisplayMode.Selected));
+        _console.RegisterCommand(
+            "set-healthbars-damaged",
+            _ => SetHealthBarMode(HealthBarDisplayMode.Damaged));
+        _console.RegisterCommand(
+            "set-healthbars-off",
+            _ => SetHealthBarMode(HealthBarDisplayMode.Off));
+        _console.RegisterCommand(
             "spawn-smokeemitter",
             SpawnSmokeEmitter);
         _console.RegisterAsyncCommand(
@@ -167,6 +179,12 @@ public class ConsoleCommands
         _console.RegisterAsyncCommand(
             "army-merge",
             MergeArmyAsync);
+    }
+
+    private void SetHealthBarMode(HealthBarDisplayMode mode)
+    {
+        Globals.HealthBarDisplayMode = mode;
+        _console.Print($"Healthbars: {mode}.");
     }
 
     public async System.Threading.Tasks.Task CallBatch(string[] args)

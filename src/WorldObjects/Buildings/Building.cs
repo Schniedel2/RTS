@@ -10,6 +10,12 @@ namespace RTS;
 
 public class Building : Unit
 {
+    /// <summary>
+    /// Ordinary buildings are unarmed. Defensive buildings opt in explicitly
+    /// by overriding this property.
+    /// </summary>
+    public override bool CanFireWeapon => false;
+
     private const float SellDurationSeconds = 1.0f;
     private const float CollapsePauseSeconds = 0.65f;
     private const float CollapseDurationSeconds = 1.35f;

@@ -5,8 +5,9 @@ using System.Collections.Generic;
 
 namespace RTS;
 
-public class CommunicationsTower : Building
+public class CommunicationsTower : Building, IPerkProvider
 {
+    public const float DetailedHealthRadius = 50.0f;
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
 
     public CommunicationsTower(
@@ -29,6 +30,15 @@ public class CommunicationsTower : Building
     {
         base.Update(gameTime);
     }
+
+    public IReadOnlyList<PerkGrant> GetProvidedPerks() =>
+        IsCompleted && !IsDying && Occupancy?.IsOperational != false
+            ? [new PerkGrant(PerkType.DetailedHealth,
+                PerkLifetime.WhileProviderOperational,
+                PerkScope.Radius,
+                Position,
+                DetailedHealthRadius)]
+            : Array.Empty<PerkGrant>();
 
     public IReadOnlyList<UnitAction> GetUnitActions()
     {

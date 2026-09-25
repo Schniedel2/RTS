@@ -27,6 +27,7 @@ public sealed class Army
     public HashSet<Guid> OwnerPlayerIds { get; } = [];
     public Dictionary<Guid, ArmyPermission> GrantedPermissions { get; } = [];
     public IntelligenceCapabilities Intelligence { get; } = new();
+    public ArmyPerkState Perks { get; } = new();
 
     public Army(Guid id, Guid ownerPlayerId, Guid? teamId = null)
     {
@@ -104,6 +105,8 @@ public sealed class ArmyHandler
         };
         merged.OwnerPlayerIds.UnionWith(first.OwnerPlayerIds);
         merged.OwnerPlayerIds.UnionWith(second.OwnerPlayerIds);
+        merged.Perks.CopyPermanentFrom(first.Perks);
+        merged.Perks.CopyPermanentFrom(second.Perks);
         foreach ((Guid playerId, ArmyPermission permission) in first.GrantedPermissions.Concat(second.GrantedPermissions))
             merged.GrantedPermissions[playerId] = permission;
 
@@ -111,5 +114,11 @@ public sealed class ArmyHandler
         _armies.Remove(secondArmyId);
         _armies.Add(merged.Id, merged);
         return merged;
+    }
+
+    public void ClearPerks()
+    {
+        foreach (Army army in _armies.Values)
+            army.Perks.Clear();
     }
 }

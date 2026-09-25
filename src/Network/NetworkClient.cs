@@ -10,10 +10,14 @@ namespace RTS.Network;
 public sealed class NetworkClient
 {
     private readonly NetworkHandler _networkHandler;
+    private readonly PlayerCommandService _commands;
+
+    public PlayerCommandService Commands => _commands;
 
     public NetworkClient(NetworkHandler networkHandler)
     {
         _networkHandler = networkHandler;
+        _commands = new PlayerCommandService(networkHandler, networkHandler.LocalPeerId);
     }
 
     public Task RequestWorldDataAsync(CancellationToken cancellationToken = default)
@@ -27,18 +31,13 @@ public sealed class NetworkClient
             X: target.X, Y: target.Y, Z: target.Z));
 
     public Task RequestHarvestAsync(Guid unitId, Vector3 target) =>
-        _networkHandler.SendToHostAsync(new(NetworkMessageType.HarvestRequest,
-            _networkHandler.LocalPeerId, UnitId: unitId,
-            X: target.X, Y: target.Y, Z: target.Z));
+        _commands.HarvestAsync(unitId, target);
 
     public Task RequestHarvesterReturnAsync(Guid unitId) =>
-        _networkHandler.SendToHostAsync(new(NetworkMessageType.HarvesterReturnRequest,
-            _networkHandler.LocalPeerId, UnitId: unitId));
+        _commands.ReturnHarvesterAsync(unitId);
 
     public Task RequestMoveAwayAsync(Guid unitId, Vector3 fromPosition) =>
-        _networkHandler.SendToHostAsync(new(NetworkMessageType.MoveAwayRequest,
-            _networkHandler.LocalPeerId, UnitId: unitId,
-            X: fromPosition.X, Y: fromPosition.Y, Z: fromPosition.Z));
+        _commands.MoveAwayAsync(unitId, fromPosition);
 
     private uint _selectionRevision;
 
@@ -103,11 +102,7 @@ public sealed class NetworkClient
 
     public Task RequestGotoAsync(Guid[] unitIds, float x, float y, float z, CancellationToken cancellationToken = default, bool appendToQueue = false, UnitRoute[]? routes = null)
     {
-        if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z))
-            return Task.CompletedTask;
-
-        NetworkMessage request = NetworkCommands.CreateGotoRequest( _networkHandler.LocalPeerId, unitIds, x, y, z, appendToQueue, routes);
-        return _networkHandler.SendToHostAsync(request, cancellationToken);
+        return _commands.GotoAsync(unitIds, new Vector3(x, y, z), appendToQueue, routes, cancellationToken);
     }
 
     public Task RequestBuildAsync(string buildingTypeName, Vector3 target, float targetAngleY, Guid unitId)
@@ -117,14 +112,12 @@ public sealed class NetworkClient
 
     public Task RequestBuildAsync(string buildingTypeName, float x, float y, float z, float targetAngleY, Guid unitId)
     {
-        NetworkMessage request = NetworkCommands.CreateBuildRequest(_networkHandler.LocalPeerId, buildingTypeName, x, y, z, targetAngleY, unitId);
-        return _networkHandler.SendToHostAsync(request, CancellationToken.None);
+        return _commands.BuildAsync(buildingTypeName, new Vector3(x, y, z), targetAngleY, unitId);
     }
 
     public Task RequestStopAsync(IEnumerable<Unit> units)
     {
-        return _networkHandler.SendToHostAsync(NetworkCommands.CreateStopRequest(
-            _networkHandler.LocalPeerId, units.Select(unit => unit.UnitId).ToArray()));
+        return _commands.StopAsync(units.Select(unit => unit.UnitId));
     }
 
     public Task RequestUnitActionAsync(
@@ -132,21 +125,14 @@ public sealed class NetworkClient
         UnitActionType actionType,
         UnitActionContext? context = null,
         CancellationToken cancellationToken = default) =>
-        _networkHandler.SendToHostAsync(NetworkCommands.CreateUnitActionRequest(
-            _networkHandler.LocalPeerId, units.Select(unit => unit.UnitId).ToArray(), actionType, context),
-            cancellationToken);
+        _commands.ExecuteActionAsync(units.Select(unit => unit.UnitId), actionType, context, cancellationToken);
 
     public Task RequestBuildConstructionAsync(
         IEnumerable<Unit> units,
         Guid constructionSiteId,
         CancellationToken cancellationToken = default)
     {
-        Guid[] unitIds = units.Select(unit => unit.UnitId).ToArray();
-        NetworkMessage request = NetworkCommands.CreateBuildConstructionRequest(
-            _networkHandler.LocalPeerId,
-            unitIds,
-            constructionSiteId);
-        return _networkHandler.SendToHostAsync(request, cancellationToken);
+        return _commands.ConstructAsync(units.Select(unit => unit.UnitId), constructionSiteId, cancellationToken);
     }
 
     public Task RequestStartPositionAsync(int slot, CancellationToken cancellationToken = default) =>
@@ -224,27 +210,17 @@ public sealed class NetworkClient
 
     public Task RequestAttackTerrainAsync(IEnumerable<Unit> units, Vector3 target)
     {
-        NetworkMessage request = NetworkCommands.CreateAttackGroundRequest(
-            _networkHandler.LocalPeerId,
-            units.Select(unit => unit.UnitId).ToArray(),
-            target);
-        return _networkHandler.SendToHostAsync(request, CancellationToken.None);
+        return _commands.AttackTerrainAsync(units.Select(unit => unit.UnitId), target);
     }
 
     public Task RequestAttackTargetAsync(IEnumerable<Unit> units, Guid targetId)
     {
-        NetworkMessage request = NetworkCommands.CreateAttackTargetRequest(
-            _networkHandler.LocalPeerId,
-            units.Select(unit => unit.UnitId).ToArray(),
-            targetId);
-        return _networkHandler.SendToHostAsync(request, CancellationToken.None);
+        return _commands.AttackTargetAsync(units.Select(unit => unit.UnitId), targetId);
     }
 
     public Task RequestFollowAsync(IEnumerable<Unit> units, Guid targetId)
     {
-        NetworkMessage request = NetworkCommands.CreateFollowRequest(
-            _networkHandler.LocalPeerId, units.Select(unit => unit.UnitId).ToArray(), targetId);
-        return _networkHandler.SendToHostAsync(request, CancellationToken.None);
+        return _commands.FollowAsync(units.Select(unit => unit.UnitId), targetId);
     }
 
     public Task RequestEnterUnitAsync(Guid unitId, Guid containerId, OccupantRole? role = null) =>
