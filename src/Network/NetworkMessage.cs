@@ -114,7 +114,11 @@ public sealed record WorldData(
     TiberiumSeedState[]? TiberiumCells = null,
     MapObjectState[]? MapObjects = null);
 
-public sealed record UnitRoute(Guid UnitId, Point[] Cells);
+public sealed record UnitRoute(
+    Guid UnitId,
+    Point[] Cells,
+    float? TargetX = null,
+    float? TargetZ = null);
 
 public sealed record MatchStartAssignment(
     Guid PlayerId,

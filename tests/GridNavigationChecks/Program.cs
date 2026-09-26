@@ -453,6 +453,47 @@ var host = new NetworkHost(transport, input, world);
 NetworkMessage? Request(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost)
     .GetMethod("TryCreateSetRallyPointCommand", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
 NetworkMessage Wire(NetworkMessage message) => JsonSerializer.Deserialize<NetworkMessage>(JsonSerializer.Serialize(message))!;
+
+var firstGroupUnit = Mobile(new Vector3(1.5f, 0, 1.5f));
+var secondGroupUnit = Mobile(new Vector3(1.5f, 0, 3.5f));
+Field(firstGroupUnit, typeof(Unit), "<ArmyId>k__BackingField", armyId);
+Field(secondGroupUnit, typeof(Unit), "<ArmyId>k__BackingField", armyId);
+UnitList(units).Add(firstGroupUnit);
+UnitList(units).Add(secondGroupUnit);
+Check(grid.TryMove(firstGroupUnit, grid.ToCell(firstGroupUnit.Position)) &&
+      grid.TryMove(secondGroupUnit, grid.ToCell(secondGroupUnit.Position)),
+    "Group goto fixtures occupy distinct start cells");
+NetworkMessage groupRequest = NetworkCommands.CreateGotoRequest(ownerId,
+    [firstGroupUnit.UnitId, secondGroupUnit.UnitId], 8.5f, 0, 8.5f);
+var groupCommand = (NetworkMessage?)typeof(NetworkHost)
+    .GetMethod("TryCreateGotoCommand", BindingFlags.Instance | BindingFlags.NonPublic)!
+    .Invoke(host, new object[] { groupRequest });
+UnitRoute[] groupRoutes = Wire(groupCommand!).Routes!;
+Check(groupRoutes.Length == 2 && groupRoutes.Select(route => new Vector2(route.TargetX!.Value, route.TargetZ!.Value)).Distinct().Count() == 2,
+    "Group goto assigns a distinct destination to every unit");
+Check(groupRoutes.Any(route => route.TargetX == 8.5f && route.TargetZ == 8.5f) &&
+      groupCommand!.Routes!.All(route => route.Cells.Length == 0 || route.Cells[^1] == grid.ToCell(new Vector3(route.TargetX!.Value, 0, route.TargetZ!.Value))),
+    "Group goto keeps the clicked point and transmits each route's matching endpoint");
+grid.Remove(firstGroupUnit);
+grid.Remove(secondGroupUnit);
+UnitList(units).Remove(firstGroupUnit);
+UnitList(units).Remove(secondGroupUnit);
+
+var blockedMover = Mobile(new Vector3(2.5f, 0, 2.5f));
+var movementBlocker = Mobile(new Vector3(3.5f, 0, 2.5f));
+Check(grid.TryMove(blockedMover, grid.ToCell(blockedMover.Position)) &&
+      grid.TryMove(movementBlocker, grid.ToCell(movementBlocker.Position)),
+    "Blocked movement fixtures occupy adjacent cells");
+blockedMover.ReceiveCommand(new GotoCommand(new Vector2(3.5f, 2.5f)));
+blockedMover.SetPlannedPath([new Point(3, 2)]);
+blockedMover.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.3)));
+Check(blockedMover.CurrentCommand is not null, "A temporary blocker is tolerated briefly");
+blockedMover.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.3)));
+Check(blockedMover.CurrentCommand is null && blockedMover.PlannedPath.Count == 0,
+    "A persistently blocked unit stops instead of retaining its run command");
+grid.Remove(blockedMover);
+grid.Remove(movementBlocker);
+
 var gameplayMarkers = new GameplayMarkerHandler();
 var firstStart = gameplayMarkers.Add(GameplayMarkerType.PlayerStart, new Vector3(4, 0, 5), 90);
 var secondStart = gameplayMarkers.Add(GameplayMarkerType.PlayerStart, new Vector3(8, 0, 9), 180);

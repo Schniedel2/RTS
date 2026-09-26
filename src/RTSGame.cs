@@ -146,6 +146,8 @@ public class RTSGame
         PlayerSkin skin = Globals.SkinHandler.Skins
             .Select(definition => definition.Skin)
             .FirstOrDefault(candidate => _players.All(player => player.Skin != candidate));
+        if (teamId <= 0)
+            teamId = GetNextAvailableTeamId();
         Player player = new(Guid.NewGuid(), name.Trim(), teamId, skin);
         _players.Add(player);
         Teams.UpdateMembership(player.Id, player.TeamId, player.TeamId);
@@ -153,6 +155,17 @@ public class RTSGame
         AIPlayer aiPlayer = new(player);
         _aiPlayers.Add(player.Id, aiPlayer);
         return aiPlayer;
+    }
+
+    internal int GetNextAvailableTeamId()
+    {
+        HashSet<int> occupied = _players.Select(player => player.TeamId)
+            .Where(teamId => teamId > 0)
+            .ToHashSet();
+        int candidate = 1;
+        while (occupied.Contains(candidate))
+            candidate++;
+        return candidate;
     }
 
     public AIPlayer? FindAIPlayer(string idOrName)

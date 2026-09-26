@@ -500,8 +500,6 @@ public sealed class NetworkInput
 
     private void ExecuteGoto(NetworkMessage message)
     {
-        GotoCommand command = new(new Vector2(message.X, message.Z));
-
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
         {
             MobileUnit? unit = Globals.World.Units.FindMobileUnitById(unitId);
@@ -510,7 +508,11 @@ public sealed class NetworkInput
             // The host already issued its own work movement before broadcasting it.
             if (message.EarthworkOrderId is not null && Globals.Game.Network.IsHost) continue;
             unit?.ClearFollowUnit();
-            Point[] route = message.Routes?.FirstOrDefault(candidate => candidate.UnitId == unitId)?.Cells ?? [];
+            UnitRoute? assignedRoute = message.Routes?.FirstOrDefault(candidate => candidate.UnitId == unitId);
+            Point[] route = assignedRoute?.Cells ?? [];
+            GotoCommand command = new(new Vector2(
+                assignedRoute?.TargetX ?? message.X,
+                assignedRoute?.TargetZ ?? message.Z));
             unit?.TryReceiveGotoCommand(Globals.World, command, message.AppendToQueue, route);
         }
 

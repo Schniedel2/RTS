@@ -24,7 +24,7 @@ public static class MuzzleFlashEmissionPresets
 
     public static MuzzleFlashEmissionSettings TankCannon() => new()
     {
-        TilemapName = "Explosion",
+        TilemapName = "MuzzleFlash",
         SecondaryFlashCount = 5,
         MainStartSize = 1.6f,
         MainEndSize = 2.08f,
@@ -48,18 +48,5 @@ public static class MuzzleFlashEmissionPresets
         SecondaryDistance = 0.85f,
         SecondarySpeed = 5.5f,
         SmokeSettings = SmokeEmissionPresets.TurretSmoke()
-        /*
-        TilemapName = "MuzzleFlash",
-        MainStartSize = 0.72f,
-        MainEndSize = 0.18f,
-        SecondaryFlashCount = 1,
-        SecondaryStartSize = 0.30f,
-        SecondaryEndSize = 0.04f,
-        Lifetime = 0.065f,
-        SecondaryDistance = 0.18f,
-        SecondarySpeed = 2.2f,
-        Color = Color.White,
-        SmokeSettings = SmokeEmissionPresets.TurretSmoke()
-        */
     };
 }

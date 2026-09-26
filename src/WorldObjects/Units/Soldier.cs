@@ -177,12 +177,15 @@ public class Soldier : MobileUnit
             if (_launcherReloadRemaining <= 0.0f)
                 SetLauncherProjectileVisible(true);
         }
+        Vector3 positionBeforeMovement = Position;
         base.Update(gameTime);
 
 
         var lastUnitState = _currentUnitState;
 
-        bool isMoving = PlannedPath.Count > 0 || IsLeavingBuilding;
+        Vector3 travelled = Position - positionBeforeMovement;
+        travelled.Y = 0.0f;
+        bool isMoving = travelled.LengthSquared() > 0.000001f || IsLeavingBuilding;
 
         bool isAiming = HasCombatTarget && !isMoving;
 

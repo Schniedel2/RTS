@@ -273,7 +273,11 @@ public sealed class NetworkHost
                     NetworkMessageType.TextRequest => NetworkCommands.CreateTextCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.ToolActionRequest => NetworkCommands.CreateToolActionCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.UnitActionRequest => TryCreateUnitActionCommand(request),
-                    NetworkMessageType.RequestPlayerUpdate => NetworkCommands.CreatePlayerUpdateCommand(_networkHandler.LocalPeerId, request, ConfirmPlayerSkin(request)),
+                    NetworkMessageType.RequestPlayerUpdate => NetworkCommands.CreatePlayerUpdateCommand(
+                        _networkHandler.LocalPeerId,
+                        request,
+                        ConfirmPlayerSkin(request),
+                        ConfirmTeamId(request)),
                     NetworkMessageType.BuildRequest => TryCreateBuildCommand(request),
                     NetworkMessageType.BuildConstructionRequest => NetworkCommands.CreateBuildConstructionCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.TrainUnitRequest => TryCreateTrainUnitCommand(request),
@@ -330,26 +334,94 @@ public sealed class NetworkHost
         Point destination = _world.GameGrid.ToCell(new Vector3(target.X, 0, target.Y));
         if (!_world.GameGrid.Contains(destination)) return null;
         List<UnitRoute> routes = [];
-        foreach (Guid id in request.UnitIds ?? [])
+        MobileUnit[] units = (request.UnitIds ?? [])
+            .Distinct()
+            .Select(_world.Units.FindMobileUnitById)
+            .Where(unit => unit is not null && Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId))
+            .Cast<MobileUnit>()
+            .OrderBy(unit => Vector2.DistanceSquared(new Vector2(unit.Position.X, unit.Position.Z), target))
+            .ToArray();
+        HashSet<Point> reservedDestinations = [];
+        bool distributeGroup = units.Length > 1;
+
+        foreach (MobileUnit unit in units)
         {
-            if (_world.Units.FindMobileUnitById(id) is not MobileUnit unit ||
-                !Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId)) continue;
-            Point[]? proposed = request.Routes?.FirstOrDefault(route => route.UnitId == id)?.Cells;
+            Guid id = unit.UnitId;
+            Point[]? proposed = !distributeGroup
+                ? request.Routes?.FirstOrDefault(route => route.UnitId == id)?.Cells
+                : null;
             bool plausible = proposed is { Length: <= 4096 } && proposed.All(_world.GameGrid.Contains) &&
                 (proposed.Length == 0 || proposed[^1] == destination);
-            if (!plausible)
+            Vector2 assignedTarget = target;
+            if (plausible)
             {
-                Vector2 startPosition = request.AppendToQueue && _gotoQueueEnds.TryGetValue(id, out Vector2 queuedEnd)
-                    ? queuedEnd : new Vector2(unit.Position.X, unit.Position.Z);
-                Point start = _world.GameGrid.ToCell(new Vector3(startPosition.X, 0, startPosition.Y));
-                if (!_world.PathfindingManager.TryFindPath(unit, start, target, out List<Point> path)) continue;
-                proposed = path.ToArray();
+                reservedDestinations.Add(destination);
             }
-            routes.Add(new UnitRoute(id, proposed!));
-            _gotoQueueEnds[id] = target;
+            else if (!TryAssignGotoDestination(unit, target, destination, reservedDestinations,
+                request.AppendToQueue, distributeGroup, out assignedTarget, out proposed))
+            {
+                // No useful position is reachable near the group destination.
+                // Sending an empty route cancels an older movement order and
+                // leaves the unit standing instead of running against a blocker.
+                assignedTarget = new Vector2(unit.Position.X, unit.Position.Z);
+                proposed = [];
+            }
+
+            routes.Add(new UnitRoute(id, proposed!, assignedTarget.X, assignedTarget.Y));
+            _gotoQueueEnds[id] = assignedTarget;
         }
         return routes.Count == 0 ? null : NetworkCommands.CreateGotoCommand(_networkHandler.LocalPeerId,
             request with { UnitIds = routes.Select(route => route.UnitId).ToArray() }, routes.ToArray());
+    }
+
+    private bool TryAssignGotoDestination(
+        MobileUnit unit,
+        Vector2 requestedTarget,
+        Point center,
+        HashSet<Point> reservedDestinations,
+        bool appendToQueue,
+        bool distributeGroup,
+        out Vector2 assignedTarget,
+        out Point[] route)
+    {
+        Vector2 startPosition = appendToQueue && _gotoQueueEnds.TryGetValue(unit.UnitId, out Vector2 queuedEnd)
+            ? queuedEnd
+            : new Vector2(unit.Position.X, unit.Position.Z);
+        Point start = _world.GameGrid.ToCell(new Vector3(startPosition.X, 0, startPosition.Y));
+        int maximumRadius = distributeGroup ? Math.Max(6, (int)MathF.Ceiling(MathF.Sqrt(reservedDestinations.Count + 1)) + 3) : 0;
+
+        for (int radius = 0; radius <= maximumRadius; radius++)
+        {
+            for (int y = -radius; y <= radius; y++)
+            {
+                for (int x = -radius; x <= radius; x++)
+                {
+                    if (Math.Max(Math.Abs(x), Math.Abs(y)) != radius)
+                        continue;
+                    Point candidate = center + new Point(x, y);
+                    if (reservedDestinations.Contains(candidate) || !_world.GameGrid.Contains(candidate) ||
+                        !unit.MovementProfile.CanEnter(_world, unit, candidate) ||
+                        !_world.GameGrid.IsPathfindingAllowed(unit, candidate))
+                        continue;
+
+                    Vector3 candidatePosition = _world.GameGrid.ToWorldPosition(candidate, unit.Position.Y);
+                    Vector2 candidateTarget = radius == 0
+                        ? requestedTarget
+                        : new Vector2(candidatePosition.X, candidatePosition.Z);
+                    if (!_world.PathfindingManager.TryFindPath(unit, start, candidateTarget, out List<Point> path))
+                        continue;
+
+                    reservedDestinations.Add(candidate);
+                    assignedTarget = candidateTarget;
+                    route = path.ToArray();
+                    return true;
+                }
+            }
+        }
+
+        assignedTarget = default;
+        route = [];
+        return false;
     }
 
     private NetworkMessage CreateStopCommand(NetworkMessage request)
@@ -858,6 +930,18 @@ public sealed class NetworkHost
             containerId,
             occupantId,
             exitPosition);
+    }
+
+    /// <summary>
+    /// Keeps explicit team changes for known players. A joining player receives
+    /// the first free positive team number, so everyone begins as an opponent.
+    /// </summary>
+    private static int ConfirmTeamId(NetworkMessage request)
+    {
+        Guid playerId = request.PlayerId ?? request.SenderId;
+        if (Globals.Game.Players.Any(player => player.Id == playerId))
+            return request.TeamId > 0 ? request.TeamId : Globals.Game.GetNextAvailableTeamId();
+        return Globals.Game.GetNextAvailableTeamId();
     }
 
     /// <summary>Grants the requested skin unless another player already owns it.</summary>

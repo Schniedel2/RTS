@@ -99,14 +99,18 @@ public static class NetworkCommands
             TeamId: teamId,
             PlayerSkin: (int)player.Skin);
 
-    public static NetworkMessage CreatePlayerUpdateCommand(Guid hostId, NetworkMessage request, PlayerSkin confirmedSkin)
+    public static NetworkMessage CreatePlayerUpdateCommand(
+        Guid hostId,
+        NetworkMessage request,
+        PlayerSkin confirmedSkin,
+        int? confirmedTeamId = null)
     {
         return new NetworkMessage(
             NetworkMessageType.PlayerUpdate,
             hostId,
             PlayerId: request.PlayerId ?? request.SenderId,
             DisplayName: request.DisplayName,
-            TeamId: request.TeamId,
+            TeamId: confirmedTeamId ?? request.TeamId,
             PlayerSkin: (int)confirmedSkin);
     }
 

@@ -45,8 +45,8 @@ public class Tank : MobileUnit
             OccupantRole.Driver,
             becomeNeutralWithoutController: true);
             
-        TargetAngleMinimumDegrees = -360.0f;
-        TargetAngleMaximumDegrees = 360.0f;
+        TargetAngleMinimumDegrees = -180.0f;
+        TargetAngleMaximumDegrees = 180.0f;
         Behavior = UnitBehavior.Passive;
         MoveSpeed = 3.0f;
         RotationSpeed = 1.0f;
@@ -177,7 +177,14 @@ public class Tank : MobileUnit
         if (_meshSet is null)
             return;
 
-        _meshSet.SetParameter(Mesh.TurretAngle, MathHelper.ToRadians(TargetAngleDegrees));
+        Quaternion turretRotation = Quaternion.CreateFromAxisAngle(
+            Vector3.Up,
+            MathHelper.ToRadians(TargetAngleDegrees));
+        bool usesAuthoredTurretPivot =
+            _meshSet.SetPivotRotation("pivot:turret-yaw", turretRotation) ||
+            _meshSet.SetPivotRotation("pivot:turret", turretRotation);
+        if (!usesAuthoredTurretPivot)
+            _meshSet.SetParameter(Mesh.TurretAngle, MathHelper.ToRadians(TargetAngleDegrees));
 
         // Rotate only the authored recoil group. In the new Tank BBModel the
         // tracks are outside this group and therefore remain planted. Recoil

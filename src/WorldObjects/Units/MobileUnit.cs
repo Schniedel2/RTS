@@ -97,6 +97,8 @@ public class MobileUnit : Unit
     private double _nextFollowReplanTime;
     private Vector2? _lastFollowApproachTarget;
     private bool _followPathActive;
+    private float _blockedMovementSeconds;
+    private const float BlockedMovementGraceSeconds = 0.5f;
 
     public override string GetDebugCommandText()
     {
@@ -198,7 +200,7 @@ public class MobileUnit : Unit
         if (!CanOnlyMoveForward)
         {
             FaceDirection(desiredDirection);
-            TryMoveTo(Position + desiredDirection * movementDistance);
+            TrackMovementAttempt(TryMoveTo(Position + desiredDirection * movementDistance), gameTime);
             return;
         }
 
@@ -218,7 +220,23 @@ public class MobileUnit : Unit
         if (!CanTurnInPlace)
                 forward = TurnTowards(steeringDirection, gameTime);
 
-        TryMoveTo(Position + forward * movementDistance);
+        TrackMovementAttempt(TryMoveTo(Position + forward * movementDistance), gameTime);
+    }
+
+    private void TrackMovementAttempt(bool moved, GameTime gameTime)
+    {
+        if (moved)
+        {
+            _blockedMovementSeconds = 0.0f;
+            return;
+        }
+
+        _blockedMovementSeconds += (float)gameTime.ElapsedGameTime.TotalSeconds;
+        if (_blockedMovementSeconds < BlockedMovementGraceSeconds)
+            return;
+
+        PathDebug("movement remained blocked; command completed at current position");
+        ClearCommand();
     }
 
     protected Vector3 TurnTowards(Vector3 desiredDirection, GameTime gameTime)
@@ -260,6 +278,7 @@ public class MobileUnit : Unit
 
     protected void CompleteWaypoint()
     {
+        _blockedMovementSeconds = 0.0f;
         Point completedWaypoint = _plannedPath[0];
         _plannedPath.RemoveAt(0);
         PathDebug($"waypoint reached cell=({completedWaypoint.X},{completedWaypoint.Y}) remaining={_plannedPath.Count}");
@@ -551,6 +570,7 @@ public class MobileUnit : Unit
 
     public override void ClearCommand()
     {
+        _blockedMovementSeconds = 0.0f;
         _commandQueue?.Clear();
         if (CurrentCommand is not null || _plannedPath.Count > 0)
             PathDebug($"command cleared remainingWaypoints={_plannedPath.Count}");
