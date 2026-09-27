@@ -26,6 +26,8 @@ public class RTSGame
     public IReadOnlyList<Player> Players => _players;
     private readonly Dictionary<Guid, AIPlayer> _aiPlayers = [];
     public IReadOnlyCollection<AIPlayer> AIPlayers => _aiPlayers.Values;
+    private readonly Dictionary<Guid, (Player Actor, ArmyGoalController Controller)> _manualArmyGoals = [];
+    private readonly Dictionary<Guid, ScoutingController> _manualArmyScouts = [];
     public TeamHandler Teams { get; } = new();
     public ArmyHandler Armies { get; } = new();
     public RemoteSelectionHandler RemoteSelections { get; } = new();
@@ -194,6 +196,48 @@ public class RTSGame
         }
     }
 
+    internal bool ApplyCommandCenterGoal(CommandCenter commandCenter, UnitActionType actionType)
+    {
+        if (!Network.IsHost || !commandCenter.IsOperational || commandCenter.ArmyId is not Guid armyId ||
+            Armies.Find(armyId) is not Army army)
+            return false;
+
+        if (actionType == UnitActionType.AIStopGoals)
+        {
+            if (_manualArmyGoals.Remove(armyId, out var running))
+                running.Controller.Stop();
+            _manualArmyScouts.Remove(armyId);
+            return true;
+        }
+
+        Player? actor = _players.FirstOrDefault(player => army.OwnerPlayerIds.Contains(player.Id));
+        if (actor is null)
+            return false;
+        if (actionType == UnitActionType.AIStartScouting)
+        {
+            ScoutingController scouting = new(World, actor.Id);
+            scouting.Start(World.Units.Units.Where(unit => unit.ArmyId == armyId));
+            _manualArmyScouts[armyId] = scouting;
+            return true;
+        }
+
+        AIArmyGoal goal = actionType switch
+        {
+            UnitActionType.AIStartReactor => AIArmyGoal.BuildReactor,
+            UnitActionType.AIStartRefinery => AIArmyGoal.BuildRefinery,
+            UnitActionType.AIStartEconomy => AIArmyGoal.EstablishEconomy,
+            _ => AIArmyGoal.None
+        };
+        if (goal == AIArmyGoal.None)
+            return false;
+
+        if (!_manualArmyGoals.TryGetValue(armyId, out var runningGoal))
+            runningGoal = (actor, new ArmyGoalController());
+        runningGoal.Controller.Start(goal);
+        _manualArmyGoals[armyId] = runningGoal;
+        return true;
+    }
+
     private void UpdateConsole(GameTime gameTime)
     {
         KeyboardState keyboard = Keyboard.GetState();
@@ -286,8 +330,14 @@ public class RTSGame
             LocalPlayer.Update(gameTime, camera, viewport);
         World.Update(gameTime);
         if (Network.IsHost)
+        {
             foreach (AIPlayer aiPlayer in _aiPlayers.Values.ToArray())
                 aiPlayer.Update(gameTime, World, Network);
+            foreach (var runningGoal in _manualArmyGoals.Values.ToArray())
+                runningGoal.Controller.Update(gameTime, runningGoal.Actor, World, Network);
+            foreach (ScoutingController scouting in _manualArmyScouts.Values.ToArray())
+                scouting.Update(gameTime);
+        }
         _fogRefreshElapsed += deltaTime;
         if (TryGetLocalPlayer(out Player viewer))
         {

@@ -125,6 +125,17 @@ public class MobileUnit : Unit
         MovementProfile = movementProfile ?? new GroundMovementProfile();
     }
 
+    /// <summary>
+    /// Vehicles follow the terrain plane. Infantry can override this to keep
+    /// its body upright while still using the terrain height.
+    /// </summary>
+    protected virtual bool AlignBodyToTerrain => true;
+    /// <summary>
+    /// Vehicle wrecks and heavy units may visibly settle after a height
+    /// change. Infantry should remain planted without springing.
+    /// </summary>
+    protected virtual bool UseTerrainLandingPhysics => true;
+
     public void AlignToTerrain()
     {
         Transform = CreateTerrainTransform(Globals.World.Terrain);
@@ -132,6 +143,13 @@ public class MobileUnit : Unit
 
     public void AlignToTerrain(GameTime gameTime)
     {
+        if (!UseTerrainLandingPhysics)
+        {
+            Transform = CreateTerrainTransform(Globals.World.Terrain);
+            Velocity = Vector3.Zero;
+            return;
+        }
+
         float deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
         Velocity += Vector3.Down * Gravity * deltaTime;
 
@@ -794,6 +812,18 @@ public class MobileUnit : Unit
             Vector3 back = Vector3.Normalize(Vector3.Cross(right, up));
             Vector3 terrainCenter =
                 (frontLeft + frontRight + backLeft + backRight) * 0.25f;
+
+            if (!AlignBodyToTerrain)
+            {
+                Vector3 uprightRight = horizontalRight;
+                Vector3 uprightBack = -horizontalForward;
+                float surfaceHeight = terrain.GetSurfaceHeight(position.X, position.Z);
+                return new Matrix(
+                    uprightRight.X, uprightRight.Y, uprightRight.Z, 0.0f,
+                    0.0f, 1.0f, 0.0f, 0.0f,
+                    uprightBack.X, uprightBack.Y, uprightBack.Z, 0.0f,
+                    position.X, surfaceHeight, position.Z, 1.0f);
+            }
 
             return new Matrix(
                 right.X, right.Y, right.Z, 0.0f,

@@ -51,6 +51,11 @@ public enum UnitActionType
     MoveAway,
     SellBuilding,
     ToggleEnabled,
+    AIStartReactor,
+    AIStartRefinery,
+    AIStartEconomy,
+    AIStartScouting,
+    AIStopGoals,
     max
 
 }

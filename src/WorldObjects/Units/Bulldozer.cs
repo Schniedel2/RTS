@@ -102,6 +102,7 @@ public class GDIBulldozer : Car
         new(UnitActionType.Build, "Build Base", 1, 4, "GDI-Base", ResourceCost: BuildingFactory.GetPurchasePrice("GDI-Base")),
         new(UnitActionType.Build, "Build Barracks", 2, 4, "GDI-Barracks", ResourceCost: BuildingFactory.GetPurchasePrice("GDI-Barracks")),
         new(UnitActionType.Build, "Build Communications Tower", 2, 4, "CommunicationsTower", ResourceCost: BuildingFactory.GetPurchasePrice("CommunicationsTower")),
+        new(UnitActionType.Build, "Build Command Center", 4, 4, "Command-Center", ResourceCost: BuildingFactory.GetPurchasePrice("Command-Center")),
         new(UnitActionType.Build, "Build Helipad", 2, 4, "Helipad", ResourceCost: BuildingFactory.GetPurchasePrice("Helipad")),
         new(UnitActionType.Build, "Build Silo", 2, 4, "Silo", ResourceCost: BuildingFactory.GetPurchasePrice("Silo")),
         new(UnitActionType.Build, "Build Tiberium Refinery", 3, 4, "Tiberium-Refinery", ResourceCost: BuildingFactory.GetPurchasePrice("Tiberium-Refinery")),

@@ -15,6 +15,7 @@ public static class BuildingFactory
         "silo" => 1500,
         "tiberium-refinery" => 4500,
         "vehicle-factory" => 5000,
+        "command-center" => 0,
         "turret-minigun" => 50,
         _ => 0
     };
@@ -50,6 +51,9 @@ public static class BuildingFactory
                 break;
             case "communicationstower":
                 building = new CommunicationsTower(position, unitId, GetPurchasePrice(buildingTypeName));
+                break;
+            case "command-center":
+                building = new CommandCenter(position, unitId, GetPurchasePrice(buildingTypeName));
                 break;
             case "antenna-1":
                 building = new GenericBuilding(position, unitId, "antenna-1");

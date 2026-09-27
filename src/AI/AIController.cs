@@ -20,11 +20,19 @@ public enum AIGoalState
     EconomyOnline
 }
 
+public enum AIArmyGoal
+{
+    None,
+    BuildReactor,
+    BuildRefinery,
+    EstablishEconomy
+}
+
 /// <summary>
 /// Deliberately small host-side AI plan: construct one reactor followed by one
 /// Tiberium refinery through the same requests a human player sends.
 /// </summary>
-public sealed class AIController
+public sealed class ArmyGoalController
 {
     private const float ThinkIntervalSeconds = 1.0f;
     private const float BuildRequestTimeoutSeconds = 3.0f;
@@ -34,21 +42,32 @@ public sealed class AIController
     private Guid? _refineryId;
 
     public AIGoalState Goal { get; private set; } = AIGoalState.WaitingForMatch;
+    public AIArmyGoal ActiveGoal { get; private set; }
     public string LastDecision { get; private set; } = "Waiting for game-start.";
 
-    public void BeginMatch()
+    public void Start(AIArmyGoal goal)
     {
+        ActiveGoal = goal;
         Goal = AIGoalState.FindingBulldozer;
-        LastDecision = "Match started; looking for my bulldozer.";
+        LastDecision = $"Started {goal}; looking for an army bulldozer.";
         _thinkElapsed = ThinkIntervalSeconds;
         _requestElapsed = 0.0f;
         _reactorId = null;
         _refineryId = null;
     }
 
-    public void Update(GameTime gameTime, AIPlayer ai, GameWorld world, NetworkHandler network)
+    public void Stop()
     {
-        if (!network.IsHost || ai.Status == AIPlayerStatus.Idle ||
+        ActiveGoal = AIArmyGoal.None;
+        Goal = AIGoalState.WaitingForMatch;
+        LastDecision = "Army goal stopped.";
+        _requestElapsed = 0.0f;
+    }
+
+    public void Update(GameTime gameTime, Player actor, GameWorld world, NetworkHandler network,
+        Action<AIPlayerStatus>? setStatus = null)
+    {
+        if (!network.IsHost || ActiveGoal == AIArmyGoal.None ||
             Goal is AIGoalState.WaitingForMatch or AIGoalState.EconomyOnline)
             return;
 
@@ -59,28 +78,38 @@ public sealed class AIController
         if (_thinkElapsed < ThinkIntervalSeconds)
             return;
         _thinkElapsed %= ThinkIntervalSeconds;
-        var commands = new PlayerCommandService(network, ai.Id);
+        var commands = new PlayerCommandService(network, actor.Id);
 
-        Building? reactor = FindOwnedBuilding<Reaktor>(world, ai.Player.ArmyId, _reactorId);
-        if (reactor is null)
+        Building? reactor = FindOwnedBuilding<Reaktor>(world, actor.ArmyId, _reactorId);
+        if (ActiveGoal is AIArmyGoal.BuildReactor or AIArmyGoal.EstablishEconomy && reactor is null)
         {
-            BuildReactor(ai, world, commands);
+            BuildReactor(actor, world, commands, setStatus);
             return;
         }
 
-        _reactorId = reactor.UnitId;
-        if (!reactor.IsCompleted)
+        if (reactor is not null)
         {
-            Goal = AIGoalState.ConstructingReactor;
-            ai.SetStatus(AIPlayerStatus.Building);
-            LastDecision = $"Constructing reactor ({reactor.ConstructionPercentage * 100.0f:0}%).";
+            _reactorId = reactor.UnitId;
+            if (!reactor.IsCompleted && ActiveGoal is AIArmyGoal.BuildReactor or AIArmyGoal.EstablishEconomy)
+            {
+                Goal = AIGoalState.ConstructingReactor;
+                setStatus?.Invoke(AIPlayerStatus.Building);
+                LastDecision = $"Constructing reactor ({reactor.ConstructionPercentage * 100.0f:0}%).";
+                return;
+            }
+        }
+
+        if (ActiveGoal == AIArmyGoal.BuildReactor)
+        {
+            Complete("Reactor goal completed.", setStatus);
             return;
         }
 
-        Building? refinery = FindOwnedBuilding<TiberiumRefinery>(world, ai.Player.ArmyId, _refineryId);
+        Building? refinery = FindOwnedBuilding<TiberiumRefinery>(world, actor.ArmyId, _refineryId);
         if (refinery is null)
         {
-            BuildRefinery(ai, world, commands, reactor.Position);
+            Vector3 origin = reactor?.Position ?? FindBulldozer(world, actor.ArmyId)?.Position ?? Vector3.Zero;
+            BuildRefinery(actor, world, commands, origin, setStatus);
             return;
         }
 
@@ -88,17 +117,23 @@ public sealed class AIController
         if (!refinery.IsCompleted)
         {
             Goal = AIGoalState.ConstructingRefinery;
-            ai.SetStatus(AIPlayerStatus.Building);
+            setStatus?.Invoke(AIPlayerStatus.Building);
             LastDecision = $"Constructing refinery ({refinery.ConstructionPercentage * 100.0f:0}%).";
             return;
         }
 
+        if (ActiveGoal == AIArmyGoal.BuildRefinery)
+        {
+            Complete("Refinery goal completed.", setStatus);
+            return;
+        }
+
         Harvester? harvester = world.Units.Units.OfType<Harvester>()
-            .FirstOrDefault(unit => unit.ArmyId == ai.Player.ArmyId && !unit.IsDying);
+            .FirstOrDefault(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying);
         if (harvester is null)
         {
             Goal = AIGoalState.WaitingForHarvester;
-            ai.SetStatus(AIPlayerStatus.Building);
+            setStatus?.Invoke(AIPlayerStatus.Building);
             LastDecision = "Refinery complete; waiting for its included harvester.";
             return;
         }
@@ -113,7 +148,7 @@ public sealed class AIController
         if (target is null)
         {
             Goal = AIGoalState.WaitingForHarvester;
-            ai.SetStatus(AIPlayerStatus.Gathering);
+            setStatus?.Invoke(AIPlayerStatus.Gathering);
             LastDecision = "Harvester ready; waiting for a Tiberium field.";
             return;
         }
@@ -121,17 +156,18 @@ public sealed class AIController
         Vector3 harvestPosition = world.GameGrid.ToWorldPosition(target.Value.Key, 0.0f);
         _ = commands.HarvestAsync(harvester.UnitId, harvestPosition);
         Goal = AIGoalState.EconomyOnline;
-        ai.SetStatus(AIPlayerStatus.Gathering);
+        setStatus?.Invoke(AIPlayerStatus.Gathering);
         LastDecision = $"Economy online; sent harvester to ({harvestPosition.X:0.0}, {harvestPosition.Z:0.0}).";
     }
 
-    private void BuildReactor(AIPlayer ai, GameWorld world, PlayerCommandService commands)
+    private void BuildReactor(Player actor, GameWorld world, PlayerCommandService commands,
+        Action<AIPlayerStatus>? setStatus)
     {
         if (WaitForBuildConfirmation(AIGoalState.ReactorBuildRequested,
             "Waiting for the host to confirm the reactor site."))
             return;
 
-        GDIBulldozer? bulldozer = FindBulldozer(world, ai.Player.ArmyId);
+        GDIBulldozer? bulldozer = FindBulldozer(world, actor.ArmyId);
         if (bulldozer is null)
         {
             Goal = AIGoalState.FindingBulldozer;
@@ -141,25 +177,26 @@ public sealed class AIController
 
         Goal = AIGoalState.FindingReactorSite;
         var preview = new Reaktor(Vector3.Zero, Guid.NewGuid(), BuildingFactory.GetPurchasePrice("Reaktor"));
-        PreparePreview(preview, ai);
+        PreparePreview(preview, actor);
         if (!TryFindBuildingSite(world, preview, bulldozer.Position, 5, 15, out Vector3 position))
         {
             LastDecision = "No valid reactor site found near the bulldozer; I will retry.";
             return;
         }
 
-        _reactorId = RequestBuilding(ai, commands, bulldozer, "Reaktor", position);
+        _reactorId = RequestBuilding(actor, commands, bulldozer, "Reaktor", position, setStatus);
         Goal = AIGoalState.ReactorBuildRequested;
         LastDecision = $"Requested reactor at ({position.X:0.0}, {position.Z:0.0}).";
     }
 
-    private void BuildRefinery(AIPlayer ai, GameWorld world, PlayerCommandService commands, Vector3 reactorPosition)
+    private void BuildRefinery(Player actor, GameWorld world, PlayerCommandService commands,
+        Vector3 reactorPosition, Action<AIPlayerStatus>? setStatus)
     {
         if (WaitForBuildConfirmation(AIGoalState.RefineryBuildRequested,
             "Waiting for the host to confirm the refinery site."))
             return;
 
-        GDIBulldozer? bulldozer = FindBulldozer(world, ai.Player.ArmyId);
+        GDIBulldozer? bulldozer = FindBulldozer(world, actor.ArmyId);
         if (bulldozer is null)
         {
             Goal = AIGoalState.FindingBulldozer;
@@ -169,7 +206,7 @@ public sealed class AIController
 
         const string buildingType = "Tiberium-Refinery";
         int price = BuildingFactory.GetPurchasePrice(buildingType);
-        Army? army = Globals.Game.Armies.Find(ai.Player.ArmyId);
+        Army? army = Globals.Game.Armies.Find(actor.ArmyId);
         if (army is null || army.Resources < price)
         {
             Goal = AIGoalState.FindingRefinerySite;
@@ -179,14 +216,14 @@ public sealed class AIController
 
         Goal = AIGoalState.FindingRefinerySite;
         var preview = new TiberiumRefinery(Vector3.Zero, Guid.NewGuid(), purchasePrice: price);
-        PreparePreview(preview, ai);
+        PreparePreview(preview, actor);
         if (!TryFindBuildingSite(world, preview, reactorPosition, 6, 18, out Vector3 position))
         {
             LastDecision = "No valid refinery site found near the reactor; I will retry.";
             return;
         }
 
-        _refineryId = RequestBuilding(ai, commands, bulldozer, buildingType, position);
+        _refineryId = RequestBuilding(actor, commands, bulldozer, buildingType, position, setStatus);
         Goal = AIGoalState.RefineryBuildRequested;
         LastDecision = $"Requested refinery at ({position.X:0.0}, {position.Z:0.0}).";
     }
@@ -199,14 +236,14 @@ public sealed class AIController
         return true;
     }
 
-    private Guid RequestBuilding(AIPlayer ai, PlayerCommandService commands, GDIBulldozer bulldozer,
-        string buildingType, Vector3 position)
+    private Guid RequestBuilding(Player actor, PlayerCommandService commands, GDIBulldozer bulldozer,
+        string buildingType, Vector3 position, Action<AIPlayerStatus>? setStatus)
     {
         Guid buildingId = Guid.NewGuid();
         _ = commands.BuildAndConstructAsync(buildingType, position, 0.0f,
             [bulldozer.UnitId], buildingId);
         _requestElapsed = 0.0f;
-        ai.SetStatus(AIPlayerStatus.Building);
+        setStatus?.Invoke(AIPlayerStatus.Building);
         return buildingId;
     }
 
@@ -223,10 +260,18 @@ public sealed class AIController
         world.Units.Units.OfType<GDIBulldozer>()
             .FirstOrDefault(unit => unit.ArmyId == armyId && !unit.IsDying);
 
-    private static void PreparePreview(Building preview, AIPlayer ai)
+    private static void PreparePreview(Building preview, Player actor)
     {
-        preview.SetCreatorPlayer(ai.Id);
-        preview.SetArmy(ai.Player.ArmyId);
+        preview.SetCreatorPlayer(actor.Id);
+        preview.SetArmy(actor.ArmyId);
+    }
+
+    private void Complete(string decision, Action<AIPlayerStatus>? setStatus)
+    {
+        ActiveGoal = AIArmyGoal.None;
+        Goal = AIGoalState.EconomyOnline;
+        LastDecision = decision;
+        setStatus?.Invoke(AIPlayerStatus.Active);
     }
 
     private static bool TryFindBuildingSite(GameWorld world, Building preview, Vector3 searchOrigin,
@@ -265,5 +310,19 @@ public sealed class AIController
                 yield return new Point(center.X + radius, center.Y + y);
             }
         }
+    }
+}
+
+/// <summary>Compatibility facade for autonomous AI players.</summary>
+public sealed class AIController
+{
+    private readonly ArmyGoalController _goals = new();
+    public AIGoalState Goal => _goals.Goal;
+    public string LastDecision => _goals.LastDecision;
+    public void BeginMatch() => _goals.Start(AIArmyGoal.EstablishEconomy);
+    public void Update(GameTime gameTime, AIPlayer ai, GameWorld world, NetworkHandler network)
+    {
+        if (ai.Status != AIPlayerStatus.Idle)
+            _goals.Update(gameTime, ai.Player, world, network, ai.SetStatus);
     }
 }

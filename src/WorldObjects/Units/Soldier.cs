@@ -7,6 +7,8 @@ namespace RTS;
 
 public class Soldier : MobileUnit
 {    
+    protected override bool AlignBodyToTerrain => false;
+    protected override bool UseTerrainLandingPhysics => false;
     public enum Weapon
     {
         //  pistol
@@ -185,7 +187,13 @@ public class Soldier : MobileUnit
 
         Vector3 travelled = Position - positionBeforeMovement;
         travelled.Y = 0.0f;
-        bool isMoving = travelled.LengthSquared() > 0.000001f || IsLeavingBuilding;
+        // Turning, waiting for the next path step, and short network/grid
+        // stalls are still part of the same movement. Using displacement
+        // alone caused Moving -> Idle -> Moving transitions which restarted
+        // the looping run clip.
+        bool isMoving = travelled.LengthSquared() > 0.000001f ||
+            CurrentCommand is not null ||
+            IsLeavingBuilding;
 
         bool isAiming = HasCombatTarget && !isMoving;
 

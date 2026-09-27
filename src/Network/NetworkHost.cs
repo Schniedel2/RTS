@@ -347,6 +347,18 @@ public sealed class NetworkHost
         foreach (MobileUnit unit in units)
         {
             Guid id = unit.UnitId;
+
+            // Helicopters fly directly to their world-space destination.
+            // Ground placement, occupied cells, slopes and terrain routes do
+            // not constrain an airborne Goto command. The Helicopter validates
+            // map bounds and fuel when the replicated command is applied.
+            if (unit is Helicopter)
+            {
+                routes.Add(new UnitRoute(id, [], target.X, target.Y));
+                _gotoQueueEnds[id] = target;
+                continue;
+            }
+
             Point[]? proposed = !distributeGroup
                 ? request.Routes?.FirstOrDefault(route => route.UnitId == id)?.Cells
                 : null;
@@ -454,6 +466,17 @@ public sealed class NetworkHost
             return null;
         if (actionType == UnitActionType.Stop)
             return CreateStopCommand(request with { UnitIds = acceptedIds });
+        if (actionType is UnitActionType.AIStartReactor or UnitActionType.AIStartRefinery or
+            UnitActionType.AIStartEconomy or UnitActionType.AIStartScouting or UnitActionType.AIStopGoals)
+        {
+            CommandCenter? commandCenter = acceptedIds
+                .Select(_world.Units.FindById)
+                .OfType<CommandCenter>()
+                .FirstOrDefault();
+            if (commandCenter is null || !Globals.Game.ApplyCommandCenterGoal(commandCenter, actionType))
+                return null;
+            acceptedIds = [commandCenter.UnitId];
+        }
         return NetworkCommands.CreateUnitActionCommand(_networkHandler.LocalPeerId, request, acceptedIds);
     }
 

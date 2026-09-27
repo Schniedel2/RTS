@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 namespace RTS;
-public sealed class ScoutingController(GameWorld world)
+public sealed class ScoutingController(GameWorld world, Guid? commandPlayerId = null)
 {
     private sealed class State { public Point Target; public float ReconsiderIn; }
     private readonly Dictionary<Guid, State> _scouts = [];
@@ -20,7 +20,10 @@ public sealed class ScoutingController(GameWorld world)
             if (!TryFindTarget(unit, army, current, out Point target)) { state.ReconsiderIn = 2; continue; }
             state.Target = target; state.ReconsiderIn = 8;
             Vector3 position = world.GameGrid.ToWorldPosition(target, 0);
-            _ = Globals.Game.NetworkClient.RequestGotoAsync([unit.UnitId], position.X, position.Y, position.Z);
+            if (commandPlayerId is Guid playerId)
+                _ = new Network.PlayerCommandService(Globals.Game.Network, playerId).GotoAsync([unit.UnitId], position);
+            else
+                _ = Globals.Game.NetworkClient.RequestGotoAsync([unit.UnitId], position.X, position.Y, position.Z);
         }
     }
     private bool TryFindTarget(MobileUnit unit, Guid army, Point current, out Point target)

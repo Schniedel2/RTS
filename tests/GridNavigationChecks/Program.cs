@@ -698,6 +698,7 @@ Globals.MeshHandler = new MeshHandler();
 var smallBox = new BoundingBox(new Vector3(-0.4f, 0, -0.4f), new Vector3(0.4f, 1, 0.4f));
 var smallVertices = smallBox.GetCorners().Select(p => new VertexPositionColorNormalTexture(p, Color.White, Vector3.Up, Vector2.Zero)).ToArray();
 Globals.MeshHandler.Meshes["barracks-1"] = new Mesh("test-barracks", new[] { new SubMesh("body", smallVertices, new[] { 0, 1, 2 }, Vector3.Zero) });
+Globals.MeshHandler.Meshes["building-1"] = Globals.MeshHandler.Meshes["barracks-1"];
 host = new NetworkHost(transport, input, world);
 NetworkMessage? BuildRequest(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost)
     .GetMethod("TryCreateBuildCommand", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
@@ -766,6 +767,34 @@ builtSite.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(1.0)));
 Check(builtSite.IsReadyForRemoval, "Sold building is removed after shrink animation");
 Check(!Empty<GenericBuilding>().Actions.Any(
     action => action.Type == UnitActionType.SellBuilding), "Generic building cannot be sold");
+
+var commandCenter = units.SpawnBuilding("command-center", new Vector3(9.5f, 0, 2.5f), 0,
+    Guid.NewGuid(), ownerId) as CommandCenter;
+Check(commandCenter is not null && commandCenter.IsOperational &&
+      commandCenter.Actions.Count(action => action.Type is UnitActionType.AIStartReactor or
+          UnitActionType.AIStartRefinery or UnitActionType.AIStartEconomy) == 3 &&
+      commandCenter.Actions.Any(action => action.Type == UnitActionType.AIStartScouting) &&
+      commandCenter.Actions.Any(action => action.Type == UnitActionType.AIStopGoals),
+    "Command Center uses building-1 and exposes economy, scouting and Stop controls");
+Field(game, typeof(RTSGame), "_manualArmyGoals",
+    new Dictionary<Guid, (Player Actor, ArmyGoalController Controller)>());
+Field(game, typeof(RTSGame), "_manualArmyScouts", new Dictionary<Guid, ScoutingController>());
+NetworkMessage startEconomyRequest = NetworkCommands.CreateUnitActionRequest(ownerId,
+    [commandCenter!.UnitId], UnitActionType.AIStartEconomy, UnitActionContext.Empty);
+Check(UnitActionRequest(startEconomyRequest) is { Type: NetworkMessageType.UnitActionCommand },
+    "Host accepts an owned Command Center goal action");
+var manualGoals = (Dictionary<Guid, (Player Actor, ArmyGoalController Controller)>)typeof(RTSGame)
+    .GetField("_manualArmyGoals", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(game)!;
+Check(manualGoals.TryGetValue(armyId, out var manualGoal) &&
+      manualGoal.Controller.ActiveGoal == AIArmyGoal.EstablishEconomy,
+    "Command Center starts the reusable economy goal for its army");
+Check(UnitActionRequest(startEconomyRequest with { SenderId = Guid.NewGuid() }) is null,
+    "Foreign players cannot start Command Center goals");
+Check(UnitActionRequest(NetworkCommands.CreateUnitActionRequest(ownerId, [commandCenter.UnitId],
+          UnitActionType.AIStopGoals, UnitActionContext.Empty)) is { Type: NetworkMessageType.UnitActionCommand } &&
+      manualGoals.Count == 0,
+    "Command Center stops its army goal through the host");
+units.RemoveMapObject(commandCenter);
 
 Guid secondPlayerId = Guid.NewGuid(), secondArmyId = Guid.NewGuid();
 Player aiIdentity = new(secondPlayerId, "second", armyId: secondArmyId);
