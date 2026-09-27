@@ -186,6 +186,7 @@ public class RTSGame
         if (!Network.IsHost)
             return;
 
+        int aiStrategyMatchSeed = Random.Shared.Next();
         foreach (MatchStartAssignment assignment in assignments.Where(item => item.IsAI))
         {
             if (!_aiPlayers.TryGetValue(assignment.PlayerId, out AIPlayer? aiPlayer))
@@ -194,7 +195,7 @@ public class RTSGame
             if (_players.All(player => player.Id != aiPlayer.Id))
                 _players.Add(aiPlayer.Player);
             Armies.EnsureArmy(assignment.ArmyId, aiPlayer.Id, GuidUtility.FromInt(aiPlayer.Player.TeamId));
-            aiPlayer.BeginMatch();
+            aiPlayer.BeginMatch(aiStrategyMatchSeed, assignment.ArmyId);
         }
     }
 

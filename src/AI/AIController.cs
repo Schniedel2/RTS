@@ -179,7 +179,7 @@ public sealed class ArmyGoalController
             return;
         }
 
-        if (!_harvestOrderIssued)
+        if (!_harvestOrderIssued || harvester.HarvestPhase == HarvestPhase.Idle)
         {
             KeyValuePair<Point, TiberiumCell>? target = world.Tiberium.Cells
                 .Where(pair => pair.Value.Amount > 0.01f)
@@ -465,11 +465,11 @@ public sealed class ArmyGoalController
             .FirstOrDefault(unit => unit.ArmyId == armyId && !unit.IsDying);
     }
 
-    private static GDIBulldozer? FindBulldozer(GameWorld world, Guid armyId) =>
+    internal static GDIBulldozer? FindBulldozer(GameWorld world, Guid armyId) =>
         world.Units.Units.OfType<GDIBulldozer>()
             .FirstOrDefault(unit => unit.ArmyId == armyId && !unit.IsDying);
 
-    private static void PreparePreview(Building preview, Player actor)
+    internal static void PreparePreview(Building preview, Player actor)
     {
         preview.SetCreatorPlayer(actor.Id);
         preview.SetArmy(actor.ArmyId);
@@ -483,7 +483,7 @@ public sealed class ArmyGoalController
         setStatus?.Invoke(AIPlayerStatus.Active);
     }
 
-    private static bool TryFindBuildingSite(GameWorld world, Building preview, Vector3 searchOrigin,
+    internal static bool TryFindBuildingSite(GameWorld world, Building preview, Vector3 searchOrigin,
         int minimumRadius, int maximumRadius, out Vector3 position)
     {
         Point center = world.GameGrid.ToCell(searchOrigin);
@@ -525,8 +525,25 @@ public sealed class ArmyGoalController
 /// <summary>Compatibility facade for autonomous AI players.</summary>
 public sealed class AIController
 {
+    private enum SquadCyclePhase
+    {
+        InitialPreparation,
+        Combat,
+        Reinforcing,
+        Recovering,
+        Reassembling
+    }
+
     private readonly ArmyGoalController _goals = new();
     private ScoutingController? _scouting;
+    private AIBaseDefenseController? _baseDefense;
+    private AISquadPreparationController? _squadPreparation;
+    private AISquadAssaultController? _squadAssault;
+    private AISquadRecoveryController? _squadRecovery;
+    private AIArmoredSupportController? _armoredSupport;
+    private AIInfrastructureController? _infrastructure;
+    private SquadCyclePhase _squadCyclePhase;
+    private AIStrategyProfile? _strategyProfile;
     private Guid? _scoutId;
     private string? _scoutingDecision;
 
@@ -534,12 +551,21 @@ public sealed class AIController
         ? AIGoalState.Scouting
         : _goals.Goal;
     public string LastDecision => _scoutingDecision ?? _goals.LastDecision;
+    public AIStrategyProfile? StrategyProfile => _strategyProfile;
 
-    public void BeginMatch()
+    public void BeginMatch(int matchSeed, Guid armyId)
     {
         _scouting = null;
+        _baseDefense = null;
+        _squadPreparation = null;
+        _squadAssault = null;
+        _squadRecovery = null;
+        _armoredSupport = null;
+        _infrastructure = null;
+        _squadCyclePhase = SquadCyclePhase.InitialPreparation;
         _scoutId = null;
         _scoutingDecision = null;
+        _strategyProfile = AIStrategyProfile.Create(matchSeed, armyId);
         _goals.Start(AIArmyGoal.EstablishEconomy);
     }
 
@@ -551,6 +577,19 @@ public sealed class AIController
         _goals.Update(gameTime, ai.Player, world, network, ai.SetStatus);
         if (_goals.Goal != AIGoalState.BaseDefenseReady)
             return;
+
+        _strategyProfile ??= AIStrategyProfile.Create(0, ai.Player.ArmyId);
+        _baseDefense ??= new AIBaseDefenseController(
+            world, ai.Player.Id, ai.Player.ArmyId, network, _strategyProfile.DefenseRadiusInCells);
+        _squadPreparation ??= new AISquadPreparationController(
+            world, ai.Player.Id, ai.Player.ArmyId, network, _strategyProfile);
+        _squadAssault ??= new AISquadAssaultController(
+            world, ai.Player.Id, ai.Player.ArmyId, network, _strategyProfile);
+        _squadRecovery ??= new AISquadRecoveryController(
+            world, ai.Player.Id, ai.Player.ArmyId, network);
+        _armoredSupport ??= new AIArmoredSupportController(
+            world, ai.Player, network, _strategyProfile);
+        _infrastructure ??= new AIInfrastructureController(world, ai.Player, network);
 
         _scouting ??= new ScoutingController(world, ai.Player.Id, network);
         Gunner? scout = _scoutId is Guid scoutId
@@ -581,5 +620,64 @@ public sealed class AIController
         }
 
         _scouting.Update(gameTime);
+        _baseDefense.Update(gameTime, _scoutId);
+        _armoredSupport.Update(gameTime);
+        if (_armoredSupport.IsReady)
+            _infrastructure.Update(gameTime);
+        if (_squadCyclePhase == SquadCyclePhase.Combat &&
+            _squadAssault.State == AISquadAssaultState.MissionComplete)
+        {
+            _squadPreparation.BeginReinforcement();
+            _squadCyclePhase = SquadCyclePhase.Reinforcing;
+        }
+
+        if (_squadCyclePhase is SquadCyclePhase.InitialPreparation or
+            SquadCyclePhase.Reinforcing or SquadCyclePhase.Reassembling)
+        {
+            if (!_squadPreparation.IsReady)
+                _squadPreparation.Update(gameTime, _scoutId);
+            if (_squadPreparation.IsReady)
+            {
+                if (_squadCyclePhase == SquadCyclePhase.Reinforcing && _squadRecovery.Begin())
+                    _squadCyclePhase = SquadCyclePhase.Recovering;
+                else if (_squadCyclePhase == SquadCyclePhase.Reassembling)
+                {
+                    _squadRecovery.Reset();
+                    _squadAssault.BeginNextMission();
+                    _squadCyclePhase = SquadCyclePhase.Combat;
+                }
+                else if (_squadCyclePhase == SquadCyclePhase.InitialPreparation)
+                    _squadCyclePhase = SquadCyclePhase.Combat;
+            }
+        }
+        else if (_squadCyclePhase == SquadCyclePhase.Recovering)
+        {
+            _squadRecovery.Update();
+            if (_squadRecovery.IsRecovered)
+            {
+                _squadPreparation.BeginReinforcement();
+                _squadCyclePhase = SquadCyclePhase.Reassembling;
+            }
+        }
+
+        if (_squadCyclePhase == SquadCyclePhase.Combat &&
+            (_squadPreparation.IsReady || _squadAssault.HasActiveMission) && !_baseDefense.IsEngaging)
+            _squadAssault.Update(gameTime);
+        if (_baseDefense.IsEngaging)
+            _scoutingDecision = _baseDefense.LastDecision;
+        else if (_squadCyclePhase is SquadCyclePhase.Reinforcing or SquadCyclePhase.Reassembling ||
+            _squadCyclePhase == SquadCyclePhase.InitialPreparation && !_squadPreparation.IsReady)
+            _scoutingDecision = _squadPreparation.LastDecision;
+        else if (_squadCyclePhase == SquadCyclePhase.Recovering)
+            _scoutingDecision = _squadRecovery.LastDecision;
+        else if (_squadCyclePhase == SquadCyclePhase.Combat)
+            _scoutingDecision = _squadAssault.LastDecision;
+        else if (scout is not null)
+            _scoutingDecision = $"Gunner {scout.UnitId.ToString()[..8]} is scouting unexplored terrain; " +
+                "the first squad is assembled at the base and awaits orders.";
+        if (!_armoredSupport.IsReady)
+            _scoutingDecision = $"{_scoutingDecision} | {_armoredSupport.LastDecision}";
+        else if (!_infrastructure.IsAirSupportReady)
+            _scoutingDecision = $"{_scoutingDecision} | {_infrastructure.LastDecision}";
     }
 }

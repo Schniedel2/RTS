@@ -25,6 +25,7 @@ public sealed class NetworkHost
     private const int MaximumQueuedRequests = 1024;
     private const int MaximumRequestsPerUpdate = 32;
     private const int MaximumStateUpdatesPerTick = 32;
+    private const int MaximumGotoPathAttemptsPerUnit = 12;
     private const double HostSimulationInterval = 0.1;
     private const double StateHeartbeatInterval = 3.0;
     private double _hostTime;
@@ -43,6 +44,7 @@ public sealed class NetworkHost
         public float UnloadElapsed { get; set; }
         public bool ResumeAfterUnload { get; set; } = true;
         public Vector3? StorageApproach { get; set; }
+        public double RetryAfter { get; set; }
     }
     private sealed class MedicJob(Guid patientId)
     {
@@ -482,6 +484,7 @@ public sealed class NetworkHost
             : new Vector2(unit.Position.X, unit.Position.Z);
         Point start = _world.GameGrid.ToCell(new Vector3(startPosition.X, 0, startPosition.Y));
         int maximumRadius = distributeGroup ? Math.Max(6, (int)MathF.Ceiling(MathF.Sqrt(reservedDestinations.Count + 1)) + 3) : 0;
+        int pathAttempts = 0;
 
         for (int radius = 0; radius <= maximumRadius; radius++)
         {
@@ -501,6 +504,12 @@ public sealed class NetworkHost
                     Vector2 candidateTarget = radius == 0
                         ? requestedTarget
                         : new Vector2(candidatePosition.X, candidatePosition.Z);
+                    if (pathAttempts++ >= MaximumGotoPathAttemptsPerUnit)
+                    {
+                        assignedTarget = default;
+                        route = [];
+                        return false;
+                    }
                     if (!_world.PathfindingManager.TryFindPath(unit, start, candidateTarget, out List<Point> path))
                         continue;
 
@@ -564,7 +573,9 @@ public sealed class NetworkHost
                 .Where(unit => unit != leader && unit is not SquadLeader && !unit.IsDying && !unit.IsEmbarked &&
                     unit.ArmyId == armyId &&
                     (unit.SquadLeaderId == leader.UnitId ||
-                     unit.SquadLeaderId is null &&
+                     (unit.SquadLeaderId is null ||
+                      _world.Units.FindById(unit.SquadLeaderId.Value) is not SquadLeader previousLeader ||
+                      previousLeader.IsDying || previousLeader.ArmyId != armyId) &&
                      Vector3.DistanceSquared(unit.Position, leader.Position) <= radius * radius))
                 .OrderBy(unit => unit.SquadLeaderId == leader.UnitId ? 0 : 1)
                 .ThenBy(unit => Vector3.DistanceSquared(unit.Position, leader.Position))
@@ -686,16 +697,34 @@ public sealed class NetworkHost
                 _harvestJobs.Remove(id);
                 continue;
             }
+            if (_hostTime < job.RetryAfter)
+                continue;
             if (job.Phase == HarvestPhase.DrivingToField)
             {
                 if (harvester.CargoAmount >= harvester.CargoCapacity - 0.001f || !TryFindTiberium(job.FieldCenter, out Point resourceCell))
                 {
-                    if (harvester.CargoAmount <= 0.001f) { await EndHarvestAsync(harvester); continue; }
+                    if (harvester.CargoAmount <= 0.001f)
+                    {
+                        DelayHarvestRetry(job);
+                        continue;
+                    }
                     await BeginReturnAsync(harvester, job); continue;
                 }
                 job.ResourceCell = resourceCell;
                 Vector3 target = _world.GameGrid.ToWorldPosition(resourceCell, 0);
-                if (!job.MoveIssued) { job.MoveIssued = await PublishHarvesterGotoAsync(harvester, target); continue; }
+                if (HorizontalDistanceSquared(harvester.Position, target) <= 4.0f)
+                {
+                    job.Phase = HarvestPhase.Harvesting;
+                    job.MoveIssued = false;
+                    await PublishHarvestStateAsync(harvester, job.Phase);
+                    continue;
+                }
+                if (!job.MoveIssued)
+                {
+                    job.MoveIssued = await PublishHarvesterGotoAsync(harvester, target);
+                    if (!job.MoveIssued) DelayHarvestRetry(job);
+                    continue;
+                }
                 if (harvester.CurrentCommand is null)
                 {
                     if (HorizontalDistanceSquared(harvester.Position, target) <= 4.0f)
@@ -741,19 +770,36 @@ public sealed class NetworkHost
                     silo = FindNearestSilo(harvester); job.SiloId = silo?.UnitId;
                     job.MoveIssued = false; job.StorageApproach = null;
                 }
-                if (silo is null) { await EndHarvestAsync(harvester); continue; }
+                if (silo is null)
+                {
+                    DelayHarvestRetry(job);
+                    continue;
+                }
                 if (job.StorageApproach is not Vector3 unload)
                 {
                     Vector3 preferredUnload = silo.GetResourceUnloadPosition();
                     if (!ProductionExitResolver.TryResolve(_world, silo, harvester,
                         harvester.Position, preferredUnload, out unload))
                     {
-                        await EndHarvestAsync(harvester);
+                        DelayHarvestRetry(job);
                         continue;
                     }
                     job.StorageApproach = unload;
                 }
-                if (!job.MoveIssued) { job.MoveIssued = await PublishHarvesterGotoAsync(harvester, unload); continue; }
+                if (HorizontalDistanceSquared(harvester.Position, unload) <= 6.25f)
+                {
+                    job.Phase = HarvestPhase.Unloading;
+                    job.UnloadElapsed = 0.0f;
+                    job.MoveIssued = false;
+                    await PublishHarvestStateAsync(harvester, job.Phase);
+                    continue;
+                }
+                if (!job.MoveIssued)
+                {
+                    job.MoveIssued = await PublishHarvesterGotoAsync(harvester, unload);
+                    if (!job.MoveIssued) DelayHarvestRetry(job);
+                    continue;
+                }
                 if (harvester.CurrentCommand is null)
                 {
                     if (HorizontalDistanceSquared(harvester.Position, unload) <= 6.25f)
@@ -816,6 +862,12 @@ public sealed class NetworkHost
         await PublishHarvestStateAsync(harvester, job.Phase);
     }
 
+    private void DelayHarvestRetry(HarvestJob job)
+    {
+        job.MoveIssued = false;
+        job.RetryAfter = _hostTime + Harvester.HarvestRetrySeconds;
+    }
+
     private async Task EndHarvestAsync(Harvester harvester)
     {
         _harvestJobs.Remove(harvester.UnitId);
@@ -830,6 +882,9 @@ public sealed class NetworkHost
         NetworkMessage? command = TryCreateGotoCommand(NetworkCommands.CreateGotoRequest(sender,
             [harvester.UnitId], target.X, target.Y, target.Z));
         if (command is null) return false;
+        UnitRoute? route = command.Routes?.FirstOrDefault(candidate => candidate.UnitId == harvester.UnitId);
+        if (route is null || route.Cells.Length == 0)
+            return false;
         await PublishAsync(command);
         return true;
     }

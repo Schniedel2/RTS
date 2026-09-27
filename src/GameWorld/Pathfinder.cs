@@ -6,6 +6,7 @@ namespace RTS;
 
 public class Pathfinder
 {
+    public const int MaximumExpandedNodes = 25000;
     private static readonly Point[] Directions =
     [
         new Point(1, 0),
@@ -78,8 +79,11 @@ public class Pathfinder
         Dictionary<Point, Point> previous = [];
         Dictionary<Point, float> costs = new() { [start] = 0 };
         open.Enqueue((start, 0), 0);
+        int expandedNodes = 0;
         while (open.TryDequeue(out var item, out _))
         {
+            if (++expandedNodes > MaximumExpandedNodes)
+                return false;
             Point current = item.Cell;
             if (item.Cost > costs[current])
                 continue;

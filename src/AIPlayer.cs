@@ -32,10 +32,10 @@ public sealed class AIPlayer
 
     public void SetStatus(AIPlayerStatus status) => Status = status;
 
-    public void BeginMatch()
+    public void BeginMatch(int matchSeed, Guid armyId)
     {
         Status = AIPlayerStatus.Active;
-        Controller.BeginMatch();
+        Controller.BeginMatch(matchSeed, armyId);
     }
 
     public void Update(GameTime gameTime, GameWorld world, Network.NetworkHandler network) =>

@@ -17,6 +17,7 @@ public enum HarvestPhase
 public sealed class Harvester : Car
 {
     public const float DefaultCargoCapacity = 300.0f;
+    public const float HarvestRetrySeconds = 3.0f;
     public override bool CanFireWeapon => false;
     public float CargoCapacity { get; set; } = DefaultCargoCapacity;
     public float CargoAmount { get; private set; }

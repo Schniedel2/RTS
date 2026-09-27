@@ -44,6 +44,7 @@ public static class EconomyCatalog
                 "rak-zero" or "engineer" or "medic" => new(300, []),
                 "squad-leader" => new(400, []),
                 "harvester" => new(500, []),
+                "tank" => new(1000, []),
                 "helicopter" or "heli" => new(1200, []),
                 _ => new(0, [])
             },

@@ -481,6 +481,15 @@ public class MobileUnit : Unit
         bool appendToQueue = false,
         IReadOnlyList<Point>? route = null)
     {
+        // The host uses an empty route both when the unit already occupies its
+        // destination and when no useful route exists. In either case there
+        // is nothing to execute; keeping CurrentCommand set would leave the
+        // unit permanently "moving" without any waypoint to complete.
+        if (route is { Count: 0 })
+        {
+            ClearCommand();
+            return true;
+        }
         if (appendToQueue && (CurrentCommand is not null || _plannedPath.Count > 0))
         {
             _commandQueue.Enqueue((command, route?.ToArray()));

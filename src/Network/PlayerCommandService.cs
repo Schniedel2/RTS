@@ -90,6 +90,13 @@ public sealed class PlayerCommandService
             : SendAsync(NetworkCommands.CreateTrainUnitRequest(PlayerId, buildingId, unitTypeId),
                 cancellationToken);
 
+    public Task ResearchAsync(Guid buildingId, string projectId,
+        CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(projectId)
+            ? Task.CompletedTask
+            : SendAsync(NetworkCommands.CreateResearchRequest(PlayerId, buildingId, projectId),
+                cancellationToken);
+
     public Task SetRallyPointAsync(Guid buildingId, Vector3? target,
         CancellationToken cancellationToken = default) =>
         target is not Vector3 point || IsFinite(point)

@@ -69,6 +69,53 @@ Check(Math.Abs(SquadBenefits.OutgoingDamageMultiplier - 1.10f) < 0.001f &&
       Math.Abs(SquadBenefits.IncomingDamageMultiplier - 0.90f) < 0.001f &&
       Math.Abs(SquadBenefits.OutgoingDamageMultiplier * SquadBenefits.IncomingDamageMultiplier - 0.99f) < 0.001f,
     "Squad cohesion grants small offensive and defensive bonuses without amplifying equal squad fights");
+Check(AIBaseDefenseController.IsWithinDefenseRadius(Vector3.Zero, new Vector3(36, 0, 0), 1.0f) &&
+      !AIBaseDefenseController.IsWithinDefenseRadius(Vector3.Zero, new Vector3(36.1f, 0, 0), 1.0f),
+    "AI base defense reacts only to threats inside its configured perimeter");
+Check(AISquadPreparationController.RequiredGunners == 3,
+    "AI prepares three squad gunners in addition to its reserved scout");
+Guid strategyArmyId = Guid.NewGuid();
+AIStrategyProfile stableStrategyA = AIStrategyProfile.Create(12345, strategyArmyId);
+AIStrategyProfile stableStrategyB = AIStrategyProfile.Create(12345, strategyArmyId);
+Check(stableStrategyA == stableStrategyB &&
+      Enumerable.Range(1, 100).Select(seed => AIStrategyProfile.Create(seed, strategyArmyId).Type).Distinct().Count() > 1,
+    "AI strategy profiles are reproducible per seed and vary across matches");
+Check(Enumerable.Range(1, 100)
+        .Select(seed => AIStrategyProfile.Create(seed, strategyArmyId).AssaultStallTimeoutSeconds)
+        .All(seconds => seconds is >= 45.0f and <= 70.0f),
+    "AI strategy profiles use bounded assault progress timeouts");
+Check(Enumerable.Range(1, 100)
+        .Select(seed => AIStrategyProfile.Create(seed, strategyArmyId).RequiredTanks)
+        .All(count => count is 1 or 2) &&
+      EconomyCatalog.GetBasePrice(PurchasableType.Unit, "tank") == 1000,
+    "AI profiles request a bounded tank complement with centralized pricing");
+Check(Pathfinder.MaximumExpandedNodes == 25000,
+    "Pathfinding aborts pathological unreachable searches before they can stall the game loop");
+Check(Math.Abs(Harvester.HarvestRetrySeconds - 3.0f) < 0.001f,
+    "Continuous harvest orders retry temporary resource, storage and path failures");
+MobileUnit emptyRouteUnit = Mobile(new Vector3(4.5f, 0, 4.5f));
+emptyRouteUnit.ReceiveCommand(new GotoCommand(new Vector2(8.5f, 8.5f)));
+Check(emptyRouteUnit.TryReceiveGotoCommand(
+          World(new GameGrid(16, 16, 1)),
+          new GotoCommand(new Vector2(4.5f, 4.5f)), route: []) &&
+      emptyRouteUnit.CurrentCommand is null,
+    "An empty authoritative route completes immediately instead of leaving a unit permanently moving");
+var reinforcementController = Empty<AISquadPreparationController>();
+Field(reinforcementController, typeof(AISquadPreparationController),
+    "<State>k__BackingField", AISquadPreparationState.Ready);
+reinforcementController.BeginReinforcement();
+Check(!reinforcementController.IsReady &&
+      reinforcementController.LastDecision.Contains("replacements", StringComparison.OrdinalIgnoreCase),
+    "A completed AI squad can re-enter preparation to replace mission losses");
+Check(Math.Abs(AISquadRecoveryController.RequiredAverageHealthFraction - 0.80f) < 0.001f,
+    "AI squads recover to eighty percent average health before another mission");
+Check(AISquadAssaultController.GetTargetPriority(Empty<Turret>()) <
+      AISquadAssaultController.GetTargetPriority(Empty<GDIBarracks>()) &&
+      AISquadAssaultController.GetTargetPriority(Empty<GDIBarracks>()) <
+      AISquadAssaultController.GetTargetPriority(Empty<TiberiumRefinery>()) &&
+      AISquadAssaultController.GetTargetPriority(Empty<TiberiumRefinery>()) <
+      AISquadAssaultController.GetTargetPriority(Empty<Reaktor>()),
+    "AI assault target priority prefers defenses, production, economy and then power");
 Unit groundWeaponUnit = Unit();
 groundWeaponUnit.AllowedTargetDomains = TargetDomain.Ground;
 Check(groundWeaponUnit.CanAttackDomain(TargetDomain.Ground) &&
