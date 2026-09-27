@@ -8,6 +8,7 @@ namespace RTS;
 
 public class Tank : MobileUnit
 {
+    public override ArmorClass Armor => ArmorClass.HeavyVehicle;
     public override bool UsesVehicleDeathSequence => true;
     // The turret angle is local to the hull.  Keeping it this way means that a
     // rotating hull does not automatically drag the turret around in world space.
@@ -57,6 +58,8 @@ public class Tank : MobileUnit
         TargetAngleDegreesPerSecond = 50.0f;
         VisualRecoilPivot = new Vector3(0.0f, 0.0f, -0.2f);
         HitPoints = MaxHitPoints = 500;
+        AttackDamageType = DamageType.AntiTank;
+        AllowedTargetDomains = TargetDomain.Ground;
 
         SetMesh("tank-1", deriveDimensions: true);
         /*

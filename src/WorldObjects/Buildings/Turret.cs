@@ -42,6 +42,8 @@ public class Turret : Building
         PowerConsumption = 0;
         AttackRange = 22.0f;
         AttackDamage = 7.0f;
+        AttackDamageType = DamageType.SmallArms;
+        AllowedTargetDomains = TargetDomain.Ground | TargetDomain.Air;
         AttackCooldown = 0.09f;
         TargetAngleMinimumDegrees = -360.0f;
         TargetAngleMaximumDegrees = 360.0f;

@@ -51,7 +51,8 @@ public sealed class NetworkHost
         Vector3 start,
         Vector3 initialVelocity,
         ProjectileKind kind,
-        float damage)
+        float damage,
+        DamageType damageType)
     {
         public Guid ProjectileId { get; } = projectileId;
         public Guid AttackerId { get; } = attackerId;
@@ -59,6 +60,7 @@ public sealed class NetworkHost
         public Vector3 InitialVelocity { get; } = initialVelocity;
         public ProjectileKind Kind { get; } = kind;
         public float Damage { get; } = damage;
+        public DamageType DamageType { get; } = damageType;
         public ProjectileFlightProfile Profile { get; } = ProjectileFlightProfile.For(kind);
         public float Age { get; set; }
     }
@@ -70,6 +72,7 @@ public sealed class NetworkHost
         Vector3 Normal,
         Guid? HitUnitId,
         float Damage,
+        DamageType DamageType,
         float ExplosionRadius);
 
     public NetworkHost(
@@ -163,6 +166,40 @@ public sealed class NetworkHost
             accepted.Add(id);
         }
         return accepted.Count == 0 ? null : NetworkCommands.CreateAttackCommand(_networkHandler.LocalPeerId, request with { UnitIds = accepted.ToArray() });
+    }
+
+    private NetworkMessage? TryCreateAttackTargetCommand(NetworkMessage request)
+    {
+        if (request.TargetId is not Guid targetId ||
+            _world.Units.FindById(targetId) is not Unit target)
+            return null;
+
+        Guid[] accepted = (request.UnitIds ?? Array.Empty<Guid>())
+            .Distinct()
+            .Where(id => _world.Units.FindById(id) is Unit attacker &&
+                (request.SenderId == _networkHandler.LocalPeerId ||
+                 Globals.Game.Armies.CanControl(request.SenderId, attacker.ArmyId)) &&
+                attacker.CanAttackTarget(target))
+            .ToArray();
+        return accepted.Length == 0
+            ? null
+            : NetworkCommands.CreateAttackTargetCommand(
+                _networkHandler.LocalPeerId, request with { UnitIds = accepted });
+    }
+
+    private NetworkMessage? TryCreateAttackGroundCommand(NetworkMessage request)
+    {
+        Guid[] accepted = (request.UnitIds ?? Array.Empty<Guid>())
+            .Distinct()
+            .Where(id => _world.Units.FindById(id) is Unit attacker &&
+                (request.SenderId == _networkHandler.LocalPeerId ||
+                 Globals.Game.Armies.CanControl(request.SenderId, attacker.ArmyId)) &&
+                attacker.CanAttackDomain(TargetDomain.Ground))
+            .ToArray();
+        return accepted.Length == 0
+            ? null
+            : NetworkCommands.CreateAttackGroundCommand(
+                _networkHandler.LocalPeerId, request with { UnitIds = accepted });
     }
 
     private void HandleMessage(NetworkMessage message)
@@ -272,8 +309,8 @@ public sealed class NetworkHost
                     NetworkMessageType.GotoRequest => TryCreateGotoCommand(request),
                     NetworkMessageType.StopRequest => CreateStopCommand(request),
                     NetworkMessageType.AttackRequest => TryCreateAttackCommand(request),
-                    NetworkMessageType.AttackTargetRequest => NetworkCommands.CreateAttackTargetCommand(_networkHandler.LocalPeerId, request),
-                    NetworkMessageType.AttackGroundRequest => NetworkCommands.CreateAttackGroundCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.AttackTargetRequest => TryCreateAttackTargetCommand(request),
+                    NetworkMessageType.AttackGroundRequest => TryCreateAttackGroundCommand(request),
                     NetworkMessageType.FollowRequest => NetworkCommands.CreateFollowCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.TextRequest => NetworkCommands.CreateTextCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.ToolActionRequest => NetworkCommands.CreateToolActionCommand(_networkHandler.LocalPeerId, request),
@@ -1388,7 +1425,8 @@ public sealed class NetworkHost
                     launchPosition,
                     initialVelocity,
                     ProjectileKind.Rocket,
-                    attacker.AttackDamage));
+                    attacker.AttackDamage,
+                    attacker.AttackDamageType));
 
                 NetworkMessage spawnCommand = NetworkCommands.CreateProjectileSpawnCommand(
                     _networkHandler.LocalPeerId,
@@ -1411,7 +1449,8 @@ public sealed class NetworkHost
                 await _networkHandler.BroadcastAsync(impactCommand, CancellationToken.None);
             }
 
-            await ApplyImpactDamageAsync(attackerId, impactPosition, attacker.AttackDamage);
+            await ApplyImpactDamageAsync(attackerId, impactPosition,
+                attacker.AttackDamage, attacker.AttackDamageType);
         }
     }
 
@@ -1458,6 +1497,7 @@ public sealed class NetworkHost
                     impactNormal,
                     hitUnitId,
                     projectile.Damage,
+                    projectile.DamageType,
                     projectile.Profile.ExplosionRadius));
                 _hostProjectiles.RemoveAt(index);
                 continue;
@@ -1609,7 +1649,8 @@ public sealed class NetworkHost
                 1.0f,
                 0.25f,
                 MathHelper.Clamp(horizontalDistance / impact.ExplosionRadius, 0.0f, 1.0f));
-            float damage = impact.Damage * damageFactor;
+            float damage = DamageCalculator.Calculate(
+                impact.Damage * damageFactor, impact.DamageType, target.Armor);
             HitInfo hit = new(impact.AttackerId, impact.Position, damage);
             bool destroyed = target.OnHit(hit);
             NetworkMessage hitCommand = NetworkCommands.CreateUnitHitCommand(
@@ -1647,13 +1688,15 @@ public sealed class NetworkHost
         }).OrderBy(unit => Vector3.DistanceSquared(unit.Position + Vector3.Up * unit.Height * 0.5f, impactPosition)).FirstOrDefault();
     }
 
-    private async Task ApplyImpactDamageAsync(Guid attackerId, Vector3 impactPosition, float damage)
+    private async Task ApplyImpactDamageAsync(Guid attackerId, Vector3 impactPosition,
+        float baseDamage, DamageType damageType)
     {
         Unit? target = FindImpactTarget(attackerId, impactPosition);
 
         if (target is null)
             return;
 
+        float damage = DamageCalculator.Calculate(baseDamage, damageType, target.Armor);
         HitInfo hit = new(attackerId, impactPosition, damage);
         bool destroyed = target.OnHit(hit);
         NetworkMessage hitCommand = NetworkCommands.CreateUnitHitCommand(

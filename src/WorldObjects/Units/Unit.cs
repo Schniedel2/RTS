@@ -137,12 +137,30 @@ public abstract class Unit : WorldObject
     }
     public override string StateTypeId => "unit";
     public float AttackRange { get; set; } = 12.0f;
+    public virtual TargetDomain Domain => TargetDomain.Ground;
+    public virtual ArmorClass Armor => ArmorClass.Infantry;
     /// <summary>
     /// Base damage caused by one successful attack. This is deliberately a
     /// plain field for now; individual unit constructors can simply assign
     /// their own fixed value.
     /// </summary>
-    public float AttackDamage = 25.0f;
+    public WeaponProfile WeaponProfile { get; private set; } =
+        new(25.0f, DamageType.SmallArms, TargetDomain.Ground);
+    public float AttackDamage
+    {
+        get => WeaponProfile.Damage;
+        set => WeaponProfile = WeaponProfile with { Damage = value };
+    }
+    public DamageType AttackDamageType
+    {
+        get => WeaponProfile.DamageType;
+        set => WeaponProfile = WeaponProfile with { DamageType = value };
+    }
+    public TargetDomain AllowedTargetDomains
+    {
+        get => WeaponProfile.AllowedTargets;
+        set => WeaponProfile = WeaponProfile with { AllowedTargets = value };
+    }
     public float AttackCooldown { get; set; } = 0.75f; // in seconds
     /// <summary>
     /// Hitscan weapons have no visible travelling projectile. The host sends a
@@ -690,7 +708,13 @@ public abstract class Unit : WorldObject
     /// <summary>Central extension point evaluated by the host before a defensive target is assigned.</summary>
     public virtual bool ShouldAttack(Unit candidate) =>
         CanFireWeapon && !IsDying && !IsEmbarked && candidate.CanBeTargeted &&
-        Behavior == UnitBehavior.Aggressive && IsEnemy(candidate);
+        Behavior == UnitBehavior.Aggressive && IsEnemy(candidate) && CanAttackTarget(candidate);
+
+    public bool CanAttackDomain(TargetDomain domain) =>
+        domain != TargetDomain.None && (AllowedTargetDomains & domain) != 0;
+
+    public bool CanAttackTarget(Unit target) =>
+        target != this && target.CanBeTargeted && CanAttackDomain(target.Domain);
 
     /// <summary>
     /// Advances the local mesh angle towards the current target. Call this
@@ -930,7 +954,7 @@ public abstract class Unit : WorldObject
 
         Guid? targetId = AttackTargetId ?? TemporaryTargetUnitId;
         target = targetId is Guid id ? Globals.World.Units.FindById(id) : null;
-        if (target is null || !target.CanBeTargeted)
+        if (target is null || !CanAttackTarget(target))
         {
             if (AttackTargetId is not null)
                 AttackTargetId = null;

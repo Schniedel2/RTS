@@ -390,6 +390,8 @@ public class Soldier : MobileUnit
     public void SetWeapon(Weapon weaponType)
     {
         EquippedWeapon = weaponType;
+        AttackDamageType = DamageType.SmallArms;
+        AllowedTargetDomains = TargetDomain.Ground;
         _launcherReloadRemaining = 0.0f;
         SetLauncherProjectileVisible(true);
         switch (weaponType)
@@ -399,6 +401,7 @@ public class Soldier : MobileUnit
                 _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["toolKit"]);
                 this.AttackCooldown = 0f;
                 this.AttackDamage = 0f;
+                AllowedTargetDomains = TargetDomain.None;
                 break;
 
             case Weapon.Medikit:
@@ -406,6 +409,7 @@ public class Soldier : MobileUnit
                 _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["medKit"]);
                 this.AttackCooldown = 0f;
                 this.AttackDamage = 0f;
+                AllowedTargetDomains = TargetDomain.None;
                 break;
 
             case Weapon.Ak47:
@@ -431,6 +435,7 @@ public class Soldier : MobileUnit
                 _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["kraber-ap-sniper"]);
                 this.AttackCooldown = 5.0f;
                 this.AttackDamage = 200.0f;
+                AttackDamageType = DamageType.ArmorPiercing;
                 break;                
             case Weapon.HuntingRifle:
                 SetWeaponType_Rifle();
@@ -467,12 +472,14 @@ public class Soldier : MobileUnit
                 _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["minigun"]);
                 this.AttackCooldown = 0.01f;
                 this.AttackDamage = 25.0f;
+                AllowedTargetDomains = TargetDomain.Ground | TargetDomain.Air;
                 break;
             case Weapon.RPG:
                 SetWeaponType_Launcher();
                 _meshSet?.SetAttachment("pivot:gun", Globals.MeshHandler.Meshes["rpg"]);
                 this.AttackCooldown = 2.00f;
                 this.AttackDamage = 150.0f;
+                AttackDamageType = DamageType.AntiTank;
                 this.AttackRange = 50;
                 break;
         }

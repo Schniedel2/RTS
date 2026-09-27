@@ -18,6 +18,8 @@ public sealed record HelicopterState(float X, float Y, float Z, float Yaw, Helic
 /// <summary>Air movement and supplies are simulated by the host; clients animate replicated state.</summary>
 public class Helicopter : MobileUnit
 {
+    public override TargetDomain Domain => TargetDomain.Air;
+    public override ArmorClass Armor => ArmorClass.LightVehicle;
     public override bool UsesVehicleDeathSequence => true;
     public override string StateTypeId => "helicopter";
     public HelicopterFlightState FlightState { get; private set; } = HelicopterFlightState.Landed;
@@ -108,6 +110,8 @@ public class Helicopter : MobileUnit
         CanOnlyMoveForward = false;
         AttackRange = 18;
         AttackDamage = 12;
+        AttackDamageType = DamageType.ArmorPiercing;
+        AllowedTargetDomains = TargetDomain.Ground | TargetDomain.Air;
         AttackCooldown = 0.2f;
         Behavior = UnitBehavior.Passive;
         Occupancy = new OccupancyComponent(this,

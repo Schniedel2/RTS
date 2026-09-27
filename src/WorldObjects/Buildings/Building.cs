@@ -11,6 +11,7 @@ namespace RTS;
 
 public class Building : Unit
 {
+    public override ArmorClass Armor => ArmorClass.Building;
     /// <summary>
     /// Ordinary buildings are unarmed. Defensive buildings opt in explicitly
     /// by overriding this property.

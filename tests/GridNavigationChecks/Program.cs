@@ -61,6 +61,19 @@ MobileUnit defensiveUnit = Mobile(Vector3.Zero);
 Check(defensiveUnit.SetTemporaryTarget(Guid.NewGuid()) &&
       defensiveUnit.HasCombatTarget && !defensiveUnit.HasExplicitTarget,
     "Host-assigned defensive targets drive the same combat state as explicit attacks");
+Check(Math.Abs(DamageCalculator.Calculate(25.0f, DamageType.SmallArms, ArmorClass.Infantry) - 25.0f) < 0.001f &&
+      Math.Abs(DamageCalculator.Calculate(25.0f, DamageType.SmallArms, ArmorClass.LightVehicle) - 6.25f) < 0.001f &&
+      Math.Abs(DamageCalculator.Calculate(25.0f, DamageType.SmallArms, ArmorClass.HeavyVehicle) - 1.25f) < 0.001f,
+    "Small arms retain full infantry damage but are reduced by vehicle armor");
+Unit groundWeaponUnit = Unit();
+groundWeaponUnit.AllowedTargetDomains = TargetDomain.Ground;
+Check(groundWeaponUnit.CanAttackDomain(TargetDomain.Ground) &&
+      !groundWeaponUnit.CanAttackDomain(TargetDomain.Air),
+    "Ground-only weapons reject air targets");
+groundWeaponUnit.AllowedTargetDomains = TargetDomain.Ground | TargetDomain.Air;
+Check(groundWeaponUnit.CanAttackDomain(TargetDomain.Ground) &&
+      groundWeaponUnit.CanAttackDomain(TargetDomain.Air),
+    "Combined target-domain weapons can engage ground and air targets");
 MobileUnit healthBarUnit = Mobile(Vector3.Zero);
 Check(HealthBarRenderer.ShouldDraw(healthBarUnit, HealthBarDisplayMode.Always) &&
       !HealthBarRenderer.ShouldDraw(healthBarUnit, HealthBarDisplayMode.Damaged) &&

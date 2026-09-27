@@ -7,6 +7,7 @@ namespace RTS;
 
 public class Car : MobileUnit
 {
+    public override ArmorClass Armor => ArmorClass.LightVehicle;
     public override bool UsesVehicleDeathSequence => true;
     public override IReadOnlyList<UnitAction> Actions =>
     [
