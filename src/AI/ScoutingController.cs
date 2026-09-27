@@ -3,10 +3,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 namespace RTS;
-public sealed class ScoutingController(GameWorld world, Guid? commandPlayerId = null)
+public sealed class ScoutingController(GameWorld world, Guid? commandPlayerId = null,
+    Network.NetworkHandler? commandNetwork = null)
 {
     private sealed class State { public Point Target; public float ReconsiderIn; }
     private readonly Dictionary<Guid, State> _scouts = [];
+    public int ActiveScoutCount => _scouts.Count;
+    public bool IsScouting(Guid unitId) => _scouts.ContainsKey(unitId);
     public void Start(IEnumerable<Unit> units) { foreach (MobileUnit unit in units.OfType<MobileUnit>()) if (!unit.IsDying && !unit.IsEmbarked) _scouts[unit.UnitId] = new(); }
     public void Stop(IEnumerable<Unit> units) { foreach (Unit unit in units) _scouts.Remove(unit.UnitId); }
     public void Update(GameTime gameTime)
@@ -21,7 +24,8 @@ public sealed class ScoutingController(GameWorld world, Guid? commandPlayerId = 
             state.Target = target; state.ReconsiderIn = 8;
             Vector3 position = world.GameGrid.ToWorldPosition(target, 0);
             if (commandPlayerId is Guid playerId)
-                _ = new Network.PlayerCommandService(Globals.Game.Network, playerId).GotoAsync([unit.UnitId], position);
+                _ = new Network.PlayerCommandService(commandNetwork ?? Globals.Game.Network, playerId)
+                    .GotoAsync([unit.UnitId], position);
             else
                 _ = Globals.Game.NetworkClient.RequestGotoAsync([unit.UnitId], position.X, position.Y, position.Z);
         }

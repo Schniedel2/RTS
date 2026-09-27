@@ -11,6 +11,7 @@ public enum UnitActionType
     BuildConstruction,
     Follow,
     TrainUnit,
+    Research,
     EnterUnit,
     LeaveContainer,
     Repair,
@@ -49,6 +50,7 @@ public enum UnitActionType
     Harvest,
     ReturnToStorage,
     MoveAway,
+    CancelConstruction,
     SellBuilding,
     ToggleEnabled,
     AIStartReactor,
@@ -68,4 +70,5 @@ public sealed record UnitAction(
     string TargetObjectName = "",
     GameplayMarkerType? MarkerType = null,
     int ResourceCost = 0,
-    bool RequiresTarget = true);
+    bool RequiresTarget = true
+    );

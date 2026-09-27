@@ -18,6 +18,8 @@ public sealed class ActionPanel
     private readonly Texture2D _pixel;
     private readonly List<(Rectangle Bounds, UnitAction Action)> _buttons = [];
     private readonly HashSet<UnitAction> _disabledActions = [];
+    private readonly Dictionary<UnitAction, int> _actionCosts = [];
+    private readonly Dictionary<UnitAction, IReadOnlyList<PerkType>> _missingPerks = [];
     private MouseState _previousMouseState;
     private UnitAction? _activeAction;
     private UnitAction? _hoverAction;
@@ -38,6 +40,8 @@ public sealed class ActionPanel
         _isMouseOnPanel = false;
         _buttons.Clear();
         _disabledActions.Clear();
+        _actionCosts.Clear();
+        _missingPerks.Clear();
         if (selectedUnits.Count == 0)
         {
             _activeAction = null;
@@ -59,8 +63,14 @@ public sealed class ActionPanel
         int index = 0;
         foreach (UnitAction action in availableActions)
         {
-            if (action.ResourceCost > 0 && selectedUnits.FirstOrDefault()?.ArmyId is Guid armyId &&
-                (Globals.Game.Armies.Find(armyId)?.Resources ?? 0) < action.ResourceCost)
+            PurchaseQuote? quote = GetActionQuote(action, selectedUnits);
+            int cost = quote?.FinalPrice ?? action.ResourceCost;
+            _actionCosts[action] = cost;
+            if (quote is not null)
+                _missingPerks[action] = quote.MissingPerks;
+            if (quote is { IsAvailable: false } ||
+                cost > 0 && selectedUnits.FirstOrDefault()?.ArmyId is Guid armyId &&
+                (Globals.Game.Armies.Find(armyId)?.Resources ?? 0) < cost)
                 _disabledActions.Add(action);
             _buttons.Add((Rectangle.Empty, action));
             index++;
@@ -96,8 +106,10 @@ public sealed class ActionPanel
             {
                 _hoverAction = action;
                 _tooltipText = _hoverAction!.Name;
-                if (_hoverAction.ResourceCost > 0)
-                    _tooltipText += $" ({_hoverAction.ResourceCost} resources)";
+                if (_actionCosts.GetValueOrDefault(_hoverAction) is int cost && cost > 0)
+                    _tooltipText += $" ({cost} resources)";
+                if (_missingPerks.GetValueOrDefault(_hoverAction) is { Count: > 0 } missing)
+                    _tooltipText += $" - Requires: {string.Join(", ", missing.Select(GetPerkDisplayName))}";
                 if (_hoverAction.Type == UnitActionType.TilePreview)
                     _tooltipText = $"{_hoverAction!.Name} ({Globals.LocalPlayer._currentTerrainTile})";
             }
@@ -122,6 +134,33 @@ public sealed class ActionPanel
         _previousMouseState = mouse;
         return true;
     }
+
+    private static PurchaseQuote? GetActionQuote(UnitAction action, IReadOnlyList<Unit> selectedUnits)
+    {
+        Unit? producer = selectedUnits.FirstOrDefault();
+        PurchasableType? type = action.Type switch
+        {
+            UnitActionType.Build => PurchasableType.Building,
+            UnitActionType.TrainUnit => PurchasableType.Unit,
+            UnitActionType.Research => PurchasableType.Research,
+            _ => null
+        };
+        if (type is null || string.IsNullOrWhiteSpace(action.TargetObjectName))
+            return null;
+
+        return Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+            type.Value,
+            action.TargetObjectName,
+            producer?.ArmyId,
+            producer?.UnitId));
+    }
+
+    private static string GetPerkDisplayName(PerkType perk) => perk switch
+    {
+        PerkType.BaseEstablished => "Base",
+        PerkType.AirTechnology => "Air Technology",
+        _ => perk.ToString()
+    };
 
     public void Draw(SpriteBatch spriteBatch)
     {

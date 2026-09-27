@@ -24,11 +24,7 @@ public class Jeep : Car
     public Jeep(Vector3 position, Guid unitId, IMovementProfile? movementProfile = null)
         : base(position, unitId, movementProfile)
     {
-        Length = 3;
-        Width = 2;         
-        Height = 2.2f;
-
-        MoveSpeed = 3.0f;
+        MoveSpeed = 5.0f;
         RotationSpeed = 1.0f;
         HeadingSnapAngle = 0.0f;
         CanOnlyMoveForward = true;

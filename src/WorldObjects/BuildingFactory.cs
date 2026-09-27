@@ -5,67 +5,55 @@ namespace RTS;
 
 public static class BuildingFactory
 {
-    public static int GetPurchasePrice(string buildingTypeName) => buildingTypeName.ToLowerInvariant() switch
-    {
-        "gdi-barracks" => 2500,
-        "gdi-base" => 2500,
-        "reaktor" => 500,
-        "communicationstower" => 500,
-        "helipad" => 1500,
-        "silo" => 1500,
-        "tiberium-refinery" => 4500,
-        "vehicle-factory" => 5000,
-        "command-center" => 0,
-        "turret-minigun" => 50,
-        _ => 0
-    };
-
     public static Building? SpawnBuilding(
         string buildingTypeName,
         Vector3 position,
         float RotateYDegrees,
         Guid unitId,
-        Guid creatorPlayerId)
+        Guid creatorPlayerId,
+        int? purchasePrice = null)
     {
+        int price = Math.Max(0, purchasePrice ??
+            EconomyCatalog.GetBasePrice(PurchasableType.Building, buildingTypeName));
         Building? building = null;
         switch (buildingTypeName.ToLower())
         {
             case "gdi-barracks":
-                building = new GDIBarracks(position, unitId, GetPurchasePrice(buildingTypeName));
+                building = new GDIBarracks(position, unitId, price);
                 break;
             case "gdi-base":
-                building = new GDIBase(position, unitId, GetPurchasePrice(buildingTypeName));
+                building = new GDIBase(position, unitId, price);
                 break;
             case "reaktor":
-                building = new Reaktor(position, unitId, GetPurchasePrice(buildingTypeName));
+                building = new Reaktor(position, unitId, price);
                 break;
             case "turret-minigun":
-                building = new Turret(position, unitId, "gatling-tower-1", GetPurchasePrice(buildingTypeName));
+                building = new Turret(position, unitId, "gatling-tower-1", price);
                 break;
             case "building-4x3x4":
             case "building-1":
                 building = new GenericBuilding(position, unitId, "building-1");
                 break;            
             case "vehicle-factory":
-                building = new VehicleFactory(position, unitId, "vehicle-factory-1", GetPurchasePrice(buildingTypeName));
+                building = new VehicleFactory(position, unitId, "vehicle-factory-1", price);
                 break;
             case "communicationstower":
-                building = new CommunicationsTower(position, unitId, GetPurchasePrice(buildingTypeName));
+                building = new CommunicationsTower(position, unitId, price);
                 break;
             case "command-center":
-                building = new CommandCenter(position, unitId, GetPurchasePrice(buildingTypeName));
+                building = new CommandCenter(position, unitId, price);
                 break;
             case "antenna-1":
                 building = new GenericBuilding(position, unitId, "antenna-1");
                 break;
             case "helipad":
-                building = new Helipad(position, unitId, purchasePrice: GetPurchasePrice(buildingTypeName));
+                building = new Helipad(position, unitId, purchasePrice: price);
                 break;
             case "silo":
-                building = new Silo(position, unitId, "silo-1", GetPurchasePrice(buildingTypeName));
+                building = new Silo(position, unitId, "silo-1", price);
                 break;
             case "tiberium-refinery":
-                building = new TiberiumRefinery(position, unitId, "tiberium-refinery-1", GetPurchasePrice(buildingTypeName));
+                building = new TiberiumRefinery(position, unitId, "tiberium-refinery-1", price);
                 break;
             case "tiberium-source":
                 building = new TiberiumSource(position, unitId);

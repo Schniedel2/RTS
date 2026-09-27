@@ -269,6 +269,46 @@ public sealed class NetworkInput
                     playerId,
                     message.ProductionSeconds);
             }
+            if (message.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
+                army.Resources = message.ResourceAmount;
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.ResearchCommand)
+        {
+            if (message.UnitId is Guid buildingId &&
+                message.ProductionOrderId is Guid orderId &&
+                message.PlayerId is Guid playerId &&
+                message.UnitTypeId is not null &&
+                Globals.World.Units.FindById(buildingId) is Building building)
+            {
+                building.TryQueueProduction(orderId, message.UnitTypeId, playerId,
+                    message.ProductionSeconds);
+            }
+            if (message.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
+                army.Resources = message.ResourceAmount;
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.ResearchCompletedCommand)
+        {
+            if (message.ArmyId is Guid armyId &&
+                message.ProductionOrderId is Guid researchId &&
+                message.UnitTypeId is string projectId &&
+                ResearchProjects.TryGetGrantedPerk(projectId, out PerkType perk) &&
+                Globals.Game.Armies.Find(armyId) is Army army)
+            {
+                army.Perks.GrantPermanent(perk, researchId);
+            }
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.CancelConstructionCommand)
+        {
+            if (message.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
+                army.Resources = message.ResourceAmount;
+            if (message.UnitId is Guid buildingId)
+                Globals.World.Units.SellBuilding(buildingId);
             return;
         }
 
@@ -276,7 +316,8 @@ public sealed class NetworkInput
         {
             Guid unitId = message.UnitId ?? Guid.NewGuid();
             if (message.PlayerId is Guid playerId && message.UnitTypeId is not null)
-                SpawnBuildingLocally(message.UnitTypeId, playerId, unitId, message.X, message.Y, message.Z, message.TargetAngleY);
+                SpawnBuildingLocally(message.UnitTypeId, playerId, unitId, message.X, message.Y, message.Z,
+                    message.TargetAngleY, message.PurchasePrice);
             if (message.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
                 army.Resources = message.ResourceAmount;
 
@@ -485,13 +526,15 @@ public sealed class NetworkInput
             occupancy.ClearReservation(occupant.UnitId);
     }
 
-    private void SpawnBuildingLocally(string buildingTypeId, Guid playerId, Guid unitId, float x, float y, float z, float targetAngleY)
+    private void SpawnBuildingLocally(string buildingTypeId, Guid playerId, Guid unitId, float x, float y,
+        float z, float targetAngleY, int purchasePrice)
     {
         // Host placement already reserves the site; repeated confirmations are idempotent.
         if (Globals.World.Units.FindById(unitId) is not null)
             return;
         Vector3 target = new(x, y, z);
-        if (Globals.World.Units.SpawnBuilding(buildingTypeId, target, targetAngleY, unitId, playerId) is null)
+        if (Globals.World.Units.SpawnBuilding(buildingTypeId, target, targetAngleY, unitId, playerId,
+            purchasePrice) is null)
             return;
 
         string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);

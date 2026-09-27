@@ -21,7 +21,7 @@ public sealed class NetworkHandler : IDisposable
     private readonly ConcurrentDictionary<Guid, NetworkPeer> _members = new();
     private readonly ConcurrentDictionary<Guid, string> _peerDisplayNames = new();
     private readonly object _memberLock = new();
-    private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
+    private readonly JsonSerializerOptions _jsonOptions = NetworkJson.Options;
     private TcpListener? _listener;
     private TcpClient? _serverConnection;
     private CancellationTokenSource? _cancellation;

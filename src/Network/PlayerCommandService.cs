@@ -82,6 +82,20 @@ public sealed class PlayerCommandService
         SendAsync(new NetworkMessage(NetworkMessageType.HarvesterReturnRequest, PlayerId, UnitId: harvesterId),
             cancellationToken);
 
+    public Task TrainUnitAsync(Guid buildingId, string unitTypeId,
+        CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(unitTypeId)
+            ? Task.CompletedTask
+            : SendAsync(NetworkCommands.CreateTrainUnitRequest(PlayerId, buildingId, unitTypeId),
+                cancellationToken);
+
+    public Task SetRallyPointAsync(Guid buildingId, Vector3? target,
+        CancellationToken cancellationToken = default) =>
+        target is not Vector3 point || IsFinite(point)
+            ? SendAsync(NetworkCommands.CreateSetRallyPointRequest(PlayerId, buildingId, target),
+                cancellationToken)
+            : Task.CompletedTask;
+
     public Task AttackTerrainAsync(IEnumerable<Guid> unitIds, Vector3 target,
         CancellationToken cancellationToken = default) =>
         SendAsync(NetworkCommands.CreateAttackGroundRequest(PlayerId, unitIds.ToArray(), target), cancellationToken);

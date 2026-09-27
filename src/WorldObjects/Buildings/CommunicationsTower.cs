@@ -42,16 +42,12 @@ public class CommunicationsTower : Building, IPerkProvider
 
     public IReadOnlyList<UnitAction> GetUnitActions()
     {
-        IReadOnlyList<UnitAction> actions =
-        [
-            new(UnitActionType.Goto, "Cancel", 0, 1)
-        ];
+        IReadOnlyList<UnitAction> actions = Array.Empty<UnitAction>();
     
         if (IsCompleted)
         {
             actions = 
             [
-                new(UnitActionType.Destroy, "Destroy", 7, 1)
             ];
         }
         

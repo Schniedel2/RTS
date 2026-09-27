@@ -18,7 +18,7 @@ public sealed class CommandCenter : Building
             new(UnitActionType.AIStartScouting, "AI: Start scouting", 5, 1, RequiresTarget: false),
             new(UnitActionType.AIStopGoals, "AI: Stop goals", 7, 1, RequiresTarget: false)
         ])
-        : [new(UnitActionType.Goto, "Cancel", 0, 1)];
+        : WithSellAction([]);
 
     public CommandCenter(Vector3 position, Guid unitId, int purchasePrice = 0)
         : base(position, unitId, purchasePrice)

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
+using RTS.Network;
 
 namespace RTS;
 
@@ -121,7 +122,10 @@ public class Building : Unit
     protected IReadOnlyList<UnitAction> WithSellAction(IEnumerable<UnitAction> actions)
     {
         List<UnitAction> result = [.. WithDestroyAction(actions)];
-        if (!result.Any(action => action.Type == UnitActionType.SellBuilding))
+        if (!IsCompleted && !result.Any(action => action.Type == UnitActionType.CancelConstruction))
+            result.Add(new(UnitActionType.CancelConstruction, $"Cancel construction (+{CancelRefund})", 6, 1,
+                RequiresTarget: false));
+        else if (IsCompleted && !result.Any(action => action.Type == UnitActionType.SellBuilding))
             result.Add(new(UnitActionType.SellBuilding, $"Sell (+{SellRefund})", 6, 1));
         return result;
     }
@@ -223,6 +227,16 @@ public class Building : Unit
         return accepted;
     }
 
+    public float WithdrawResources(float amount)
+    {
+        if (!float.IsFinite(amount) || amount <= 0.0f || StoredResources <= 0.0f)
+            return 0.0f;
+        float removed = Math.Min(amount, StoredResources);
+        StoredResources -= removed;
+        MarkStateDirty();
+        return removed;
+    }
+
     private bool TryGetPivotPosition(string pivotName, out Vector3 position)
     {
         if (_meshSet?.TryGetPivotWorldPosition(pivotName, GetWorldMatrix(), out position) == true)
@@ -263,7 +277,7 @@ public class Building : Unit
 
     public void AdvanceConstruction(float buildPoints)
     {
-        if (buildPoints <= 0.0f || IsCompleted)
+        if (!float.IsFinite(buildPoints) || buildPoints <= 0.0f || IsCompleted)
             return;
 
         float nextProgress = Math.Min(
@@ -282,7 +296,7 @@ public class Building : Unit
     {
         byte[] payload = JsonSerializer.SerializeToUtf8Bytes(
             new BuildingState(ConstructionProgress, ProductionQueue.GetState(), GetRallyPointState(),
-                StoredResources, IncludedUnitGranted, IsEnabled));
+                StoredResources, IncludedUnitGranted, IsEnabled), NetworkJson.Options);
         return new UnitState(
             UnitId,
             StateRevision,
@@ -299,8 +313,9 @@ public class Building : Unit
             state.Revision < StateRevision)
             return;
 
-        BuildingState? payload = JsonSerializer.Deserialize<BuildingState>(state.Payload);
-        if (payload is null)
+        BuildingState? payload = JsonSerializer.Deserialize<BuildingState>(state.Payload, NetworkJson.Options);
+        if (payload is null || !float.IsFinite(payload.ConstructionProgress) ||
+            !float.IsFinite(payload.StoredResources))
             return;
 
         ConstructionProgress = Math.Clamp(

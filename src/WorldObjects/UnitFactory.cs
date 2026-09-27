@@ -15,12 +15,11 @@ public static class UnitFactory
         MobileUnit? unit;            
         switch (unitTypeName.ToLower())
         {
-            case "soldier":
+            case "gunner":
+                unit = new Gunner(position, unitId);
+                break;
             case "rak-zero":
-            case "grunt":
-            case "flamer":
-            case "invasor":
-                unit = new Soldier(position, unitId);
+                unit = new RakZero(position, unitId);
                 break;
             case "engineer":
                 unit = new Engineer(position, unitId);

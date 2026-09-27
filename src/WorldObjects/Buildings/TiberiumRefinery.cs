@@ -52,19 +52,24 @@ public class TiberiumRefinery : Building
         return true;
     }
 
+    public override bool TryGetProductionDuration(string unitTypeId, out float durationSeconds)
+    {
+        durationSeconds = string.Equals(unitTypeId, "harvester", StringComparison.OrdinalIgnoreCase)
+            ? 10.0f
+            : 0.0f;
+        return durationSeconds > 0.0f;
+    }
+
     public IReadOnlyList<UnitAction> GetUnitActions()
     {
-        IReadOnlyList<UnitAction> actions =
-        [
-            new(UnitActionType.Goto, "Cancel", 0, 1)
-        ];
+        IReadOnlyList<UnitAction> actions = Array.Empty<UnitAction>();
     
         if (IsCompleted)
         {
             actions = 
             [
+                new(UnitActionType.TrainUnit, "Harvester", 6, 1, "harvester"),
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1),
-                new(UnitActionType.Stop, "Destroy", 7, 1)
             ];
         }
         

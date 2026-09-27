@@ -18,14 +18,10 @@ public class GDIBarracks : Building
         ) : base(
             position,
             unitId, purchasePrice)
-    {
-        Length = 2;
-        Width = 4;
-        Height = 4;
-
+    {                
         TotalBuildingPointsNeeded = 2500;
         HitPoints = MaxHitPoints = 2500;
-        PowerConsumption = 20;
+        PowerConsumption = 0;
 
         SetMesh("barracks-1", deriveDimensions: true);
     }
@@ -39,10 +35,10 @@ public class GDIBarracks : Building
     {
         durationSeconds = unitTypeId.ToLowerInvariant() switch
         {
-            "rak-zero" => 4.0f,
-            "grunt" => 5.0f,
-            "flamer" => 6.0f,
-            "invasor" => 8.0f,
+            "gunner" => 4.0f,
+            "rak-zero" => 5.0f,
+            //"flamer" => 6.0f,
+            //"invasor" => 8.0f,
             "engineer" => 5.0f,
             _ => 0.0f
         };
@@ -51,26 +47,19 @@ public class GDIBarracks : Building
 
     public IReadOnlyList<UnitAction> GetUnitActions()
     {
-        IReadOnlyList<UnitAction> actions =
-        [
-            new(UnitActionType.SetRallyPoint, "Set rally point", 0, 1),
-            new(UnitActionType.ClearRallyPoint, "Clear rally point", 7, 1),
-            new(UnitActionType.Goto, "Cancel", 0, 1)
-        ];
+        IReadOnlyList<UnitAction> actions = Array.Empty<UnitAction>();
     
         if (IsCompleted)
         {
             actions = 
             [
+                new(UnitActionType.TrainUnit, "Gunner", 6, 1, "gunner"),
                 new(UnitActionType.TrainUnit, "Rak Zero", 6, 1, "rak-zero"),
-                new(UnitActionType.TrainUnit, "Grunt", 6, 1, "grunt"),
-                new(UnitActionType.TrainUnit, "Flamer", 6, 1, "flamer"),
                 new(UnitActionType.TrainUnit, "Engineer", 6, 1, "engineer"),
-                new(UnitActionType.SetRallyPoint, "Set rally point", 0, 1),
-                new(UnitActionType.ClearRallyPoint, "Clear rally point", 7, 1),
-                new(UnitActionType.Goto, "Cancel", 0, 1),
+                new(UnitActionType.SetRallyPoint, "Set rally point", 0, 1, RequiresTarget: true),
+                new(UnitActionType.ClearRallyPoint, "Clear rally point", 7, 1, RequiresTarget: false),
+                new(UnitActionType.Stop, "Cancel", 0, 1),
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1),
-                new(UnitActionType.Stop, "Destroy", 7, 1)
             ];
         }
         

@@ -185,7 +185,7 @@ public class Turret : Building
 
     public IReadOnlyList<UnitAction> GetUnitActions()
     {
-        IReadOnlyList<UnitAction> actions = [new(UnitActionType.Goto, "Cancel", 0, 1)];
+        IReadOnlyList<UnitAction> actions = Array.Empty<UnitAction>();
         if (IsCompleted)
         {
             actions =
@@ -195,7 +195,6 @@ public class Turret : Building
                     RequiresTarget: false),
                 new(UnitActionType.Stop, "Stop", 7, 1, RequiresTarget: false),
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1),
-                new(UnitActionType.Destroy, "Destroy", 7, 1)
             ];
         }
         return WithSellAction(actions);

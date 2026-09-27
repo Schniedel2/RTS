@@ -38,10 +38,7 @@ public class Reaktor : Building
 
     public IReadOnlyList<UnitAction> GetUnitActions()
     {
-        IReadOnlyList<UnitAction> actions =
-        [
-            new(UnitActionType.Goto, "Cancel", 0, 1)
-        ];
+        IReadOnlyList<UnitAction> actions = Array.Empty<UnitAction>();
     
         if (IsCompleted)
         {
@@ -50,7 +47,6 @@ public class Reaktor : Building
                 new(UnitActionType.Goto, "Override", 0, 1),
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1),
                 new(UnitActionType.Stop, "Stop", 7, 1),
-                new(UnitActionType.Destroy, "Destroy", 7, 1)
             ];
         }
         

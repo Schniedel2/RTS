@@ -42,17 +42,13 @@ public class Silo : Building
 
     public IReadOnlyList<UnitAction> GetUnitActions()
     {
-        IReadOnlyList<UnitAction> actions =
-        [
-            new(UnitActionType.Goto, "Cancel", 0, 1)
-        ];
+        IReadOnlyList<UnitAction> actions = Array.Empty<UnitAction>();
     
         if (IsCompleted)
         {
             actions = 
             [
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1),
-                new(UnitActionType.Stop, "Destroy", 7, 1)
             ];
         }
         

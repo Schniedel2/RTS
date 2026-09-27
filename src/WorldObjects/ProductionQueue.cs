@@ -63,7 +63,7 @@ public sealed class ProductionQueue
     {
         if (orderId == Guid.Empty ||
             string.IsNullOrWhiteSpace(unitTypeId) ||
-            durationSeconds <= 0.0f ||
+            !float.IsFinite(durationSeconds) || durationSeconds <= 0.0f ||
             _orders.Count >= Capacity ||
             _orders.Any(order => order.OrderId == orderId))
         {
@@ -81,7 +81,7 @@ public sealed class ProductionQueue
     public bool Update(float elapsedSeconds, out ProductionOrder? completedOrder)
     {
         completedOrder = null;
-        if (elapsedSeconds <= 0.0f || _orders.Count == 0)
+        if (!float.IsFinite(elapsedSeconds) || elapsedSeconds <= 0.0f || _orders.Count == 0)
             return false;
 
         ProductionOrder activeOrder = _orders[0];
@@ -109,7 +109,8 @@ public sealed class ProductionQueue
         {
             if (order.OrderId == Guid.Empty ||
                 string.IsNullOrWhiteSpace(order.UnitTypeId) ||
-                order.DurationSeconds <= 0.0f)
+                !float.IsFinite(order.DurationSeconds) || order.DurationSeconds <= 0.0f ||
+                !float.IsFinite(order.ElapsedSeconds))
             {
                 continue;
             }

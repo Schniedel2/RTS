@@ -100,9 +100,11 @@ var completedBase = Empty<GDIBase>();
 completedBase.SetTransform(Matrix.CreateTranslation(30, 0, 40));
 completedBase.TotalBuildingPointsNeeded = 100;
 Field(completedBase, typeof(Building), "<ConstructionProgress>k__BackingField", 100f);
-Check(completedBase.GetProvidedPerks().Single() is
-    { Perk: PerkType.Home, Scope: PerkScope.Global },
-    "Completed GDI base provides the army home location");
+Field(completedBase, typeof(Building), "<IsEnabled>k__BackingField", true);
+IReadOnlyList<PerkGrant> basePerks = completedBase.GetProvidedPerks();
+Check(basePerks.Any(grant => grant is { Perk: PerkType.Home, Scope: PerkScope.Global }) &&
+      basePerks.Any(grant => grant.Perk == PerkType.BaseEstablished),
+    "Completed GDI base provides home and construction-network perks");
 Guid homeSource = Guid.NewGuid();
 basicHealthArmy.Perks.SetSource(homeSource,
     [new PerkGrant(PerkType.Home, PerkLifetime.WhileProviderOperational,
@@ -430,6 +432,8 @@ Globals.World = world;
 var game = Empty<RTSGame>();
 var armies = new ArmyHandler();
 Field(game, typeof(RTSGame), "<Armies>k__BackingField", armies);
+Field(game, typeof(RTSGame), "<Pricing>k__BackingField",
+    new PricingService(armies, id => units.FindById(id)));
 Globals.Game = game;
 var transport = Empty<NetworkHandler>();
 Guid hostId = Guid.NewGuid(), ownerId = Guid.NewGuid(), armyId = Guid.NewGuid();
@@ -452,7 +456,11 @@ var input = new NetworkInput(transport);
 var host = new NetworkHost(transport, input, world);
 NetworkMessage? Request(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost)
     .GetMethod("TryCreateSetRallyPointCommand", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
-NetworkMessage Wire(NetworkMessage message) => JsonSerializer.Deserialize<NetworkMessage>(JsonSerializer.Serialize(message))!;
+NetworkMessage Wire(NetworkMessage message) => JsonSerializer.Deserialize<NetworkMessage>(
+    JsonSerializer.Serialize(message, NetworkJson.Options), NetworkJson.Options)!;
+Check(float.IsPositiveInfinity(Wire(new NetworkMessage(
+        NetworkMessageType.TextMessage, Guid.NewGuid(), X: float.PositiveInfinity)).X),
+    "Network serialization cannot crash on a transient non-finite simulation value");
 
 var firstGroupUnit = Mobile(new Vector3(1.5f, 0, 1.5f));
 var secondGroupUnit = Mobile(new Vector3(1.5f, 0, 3.5f));
@@ -707,16 +715,22 @@ terrain.SetHeight(7, 7, 1);
 Check(BuildRequest(buildRequest) is null && units.Units.Count == 0, "Host rejects uneven site without registering it");
 Check(units.SpawnBuilding("gdi-barracks", new Vector3(6.5f, 0, 6.5f), 0, Guid.NewGuid(), ownerId) is null, "Direct spawn also validates height");
 terrain.SetHeight(7, 7, 0);
+Check(BuildRequest(buildRequest) is null && units.Units.Count == 0,
+    "Host rejects barracks before the army has an operational base");
+armies.Find(armyId)!.Perks.GrantPermanent(PerkType.BaseEstablished, Guid.NewGuid());
 var buildCommand = BuildRequest(buildRequest);
 Check(buildCommand is { Type: NetworkMessageType.BuildCommand, Y: 0 } && units.Units.Count == 1, "Host places valid site at terrain height");
 Check(BuildRequest(buildRequest with { UnitId = Guid.NewGuid() }) is null && units.Units.Count == 1, "Host rejects overlapping request in same tick");
 Deliver(buildCommand!);
 Check(units.Units.Count == 1, "Host confirmation does not duplicate building");
 Building builtSite = (Building)units.Units.Single();
-Check(builtSite.PurchasePrice == 2500 && armies.Find(armyId)!.Resources == 7500,
+int barracksPrice = EconomyCatalog.GetBasePrice(PurchasableType.Building, "gdi-barracks");
+Check(builtSite.PurchasePrice == barracksPrice &&
+      armies.Find(armyId)!.Resources == 10000 - barracksPrice,
     "Host charges constructor-supplied building price");
-Check(builtSite.Actions.Any(action => action.Type == UnitActionType.SellBuilding),
-    "Playable building exposes sell action while under construction");
+Check(builtSite.Actions.Any(action => action.Type == UnitActionType.CancelConstruction) &&
+      !builtSite.Actions.Any(action => action.Type == UnitActionType.SellBuilding),
+    "Playable building exposes full-refund cancellation only while under construction");
 Check(builtSite.Actions.Any(action => action.Type == UnitActionType.Destroy),
     "Playable building exposes destroy action while under construction");
 NetworkMessage destroyRequest = Wire(NetworkCommands.CreateDestroyBuildingRequest(ownerId, builtSite.UnitId));
@@ -757,16 +771,41 @@ Check(UnitActionRequest(unitActionRequest with
 }) is null, "Host rejects non-finite action parameters");
 NetworkMessage? SellRequest(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost)
     .GetMethod("TryCreateSellBuildingCommand", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
-var sellCommand = SellRequest(NetworkCommands.CreateSellBuildingRequest(ownerId, builtSite.UnitId));
-Check(sellCommand is { Type: NetworkMessageType.SellBuildingCommand, ResourceAmount: 8750 },
+NetworkMessage? CancelConstructionRequest(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost)
+    .GetMethod("TryCreateCancelConstructionCommand", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
+var cancelCommand = CancelConstructionRequest(
+    NetworkCommands.CreateCancelConstructionRequest(ownerId, builtSite.UnitId));
+Check(cancelCommand is { Type: NetworkMessageType.CancelConstructionCommand, ResourceAmount: 10000 } &&
+      builtSite.IsSelling,
+    "Host cancels unfinished construction and refunds its complete purchase price");
+Check(CancelConstructionRequest(NetworkCommands.CreateCancelConstructionRequest(ownerId, builtSite.UnitId)) is null,
+    "Host cannot refund the same construction twice");
+Deliver(cancelCommand!);
+builtSite.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(1.0)));
+Check(builtSite.IsReadyForRemoval, "Cancelled construction is removed after shrink animation");
+
+Guid completedSaleId = Guid.NewGuid();
+var completedSaleCommand = BuildRequest(buildRequest with { UnitId = completedSaleId });
+Check(completedSaleCommand is not null, "A new building may use the released construction footprint");
+Building completedSaleSite = (Building)units.FindById(completedSaleId)!;
+completedSaleSite.AdvanceConstruction(completedSaleSite.RemainingBuildingPoints);
+Check(completedSaleSite.Actions.Any(action => action.Type == UnitActionType.SellBuilding) &&
+      !completedSaleSite.Actions.Any(action => action.Type == UnitActionType.CancelConstruction),
+    "Completed building replaces cancel with sell action");
+Check(CancelConstructionRequest(NetworkCommands.CreateCancelConstructionRequest(ownerId, completedSaleId)) is null,
+    "Completed building can no longer be cancelled");
+var sellCommand = SellRequest(NetworkCommands.CreateSellBuildingRequest(ownerId, completedSaleId));
+Check(sellCommand is { Type: NetworkMessageType.SellBuildingCommand } &&
+      sellCommand.ResourceAmount == 10000 - barracksPrice + barracksPrice / 2,
     "Host refunds half the purchase price");
 Deliver(sellCommand!);
-Check(builtSite.IsSelling && grid.GetOccupant(grid.ToCell(builtSite.Position)) is null,
+Check(completedSaleSite.IsSelling && grid.GetOccupant(grid.ToCell(completedSaleSite.Position)) is null,
     "Selling starts shrink animation and releases grid footprint");
-builtSite.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(1.0)));
-Check(builtSite.IsReadyForRemoval, "Sold building is removed after shrink animation");
+completedSaleSite.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(1.0)));
+Check(completedSaleSite.IsReadyForRemoval, "Sold building is removed after shrink animation");
 Check(!Empty<GenericBuilding>().Actions.Any(
-    action => action.Type == UnitActionType.SellBuilding), "Generic building cannot be sold");
+    action => action.Type is UnitActionType.SellBuilding or UnitActionType.CancelConstruction),
+    "Generic building cannot be sold or construction-cancelled");
 
 var commandCenter = units.SpawnBuilding("command-center", new Vector3(9.5f, 0, 2.5f), 0,
     Guid.NewGuid(), ownerId) as CommandCenter;
@@ -1096,6 +1135,16 @@ Check(earthController.Start(DriveRequest(bulldozer)) is null, "Empty bulldozer c
 // Helicopter host simulation, supplies, landing reservations and snapshot replay.
 Globals.MeshHandler.Meshes["heli-1"] = Globals.MeshHandler.Meshes["barracks-1"];
 Globals.MeshHandler.Meshes["helipad-1"] = Globals.MeshHandler.Meshes["barracks-1"];
+var includedHelipad = new Helipad(Vector3.Zero, Guid.NewGuid());
+includedHelipad.AdvanceConstruction(includedHelipad.TotalBuildingPointsNeeded);
+Check(includedHelipad.TryQueueIncludedHelicopter(ownerId) &&
+      includedHelipad.ProductionQueue.ActiveOrder is
+          { UnitTypeId: "helicopter", DurationSeconds: 0.1f } &&
+      includedHelipad.IncludedUnitGranted &&
+      !includedHelipad.TryQueueIncludedHelicopter(ownerId) &&
+      includedHelipad.Actions.Any(action => action.Type == UnitActionType.TrainUnit &&
+          action.TargetObjectName == "helicopter"),
+    "Completed helipad grants one included helicopter and offers paid replacements");
 Helicopter SetupHelicopter(int passengers = 0)
 {
     var old = SetupEarthwork();
@@ -1455,8 +1504,79 @@ var storageReplay = new Silo(Vector3.Zero, storageSilo.UnitId);
 storageReplay.ApplyState(storageSilo.GetState());
 Check(Math.Abs(storageReplay.StoredResources - storageReplay.ResourceCapacity) < 0.001f,
     "Silo fill level is included in building network state");
+var resourceGrid = new GameGrid(4, 4, 1);
+var resourceWorld = World(resourceGrid);
+var resourceUnits = new UnitHandler();
+Field(resourceWorld, typeof(GameWorld), "<Units>k__BackingField", resourceUnits);
+Guid resourceArmyId = Guid.NewGuid();
+var resourceArmy = new Army(resourceArmyId, Guid.NewGuid()) { Resources = 1000 };
+var firstStorage = new Silo(Vector3.Zero, Guid.NewGuid());
+firstStorage.AdvanceConstruction(firstStorage.TotalBuildingPointsNeeded);
+Field(firstStorage, typeof(Unit), "<ArmyId>k__BackingField", resourceArmyId);
+firstStorage.StoreResources(400);
+var secondStorage = new TiberiumRefinery(Vector3.Zero, Guid.NewGuid());
+secondStorage.AdvanceConstruction(secondStorage.TotalBuildingPointsNeeded);
+Field(secondStorage, typeof(Unit), "<ArmyId>k__BackingField", resourceArmyId);
+secondStorage.StoreResources(300);
+UnitList(resourceUnits).Add(firstStorage);
+UnitList(resourceUnits).Add(secondStorage);
+Check(ArmyResourceService.TrySpend(resourceArmy, resourceWorld, 600) &&
+      resourceArmy.Resources == 400 &&
+      Math.Abs(firstStorage.StoredResources + secondStorage.StoredResources - 100) < 0.001f &&
+      firstStorage.NetworkStateDirty && secondStorage.NetworkStateDirty,
+    "Spending army resources drains owned refinery and silo storage");
 var refinery = new TiberiumRefinery(Vector3.Zero, Guid.NewGuid());
 refinery.AdvanceConstruction(refinery.TotalBuildingPointsNeeded);
+var pricing = new PricingService(new ArmyHandler(), _ => null);
+Check(EconomyCatalog.GetBasePrice(PurchasableType.Unit, "harvester") == 500 &&
+      EconomyCatalog.GetBasePrice(PurchasableType.Unit, "helicopter") == 1200 &&
+      pricing.GetQuote(new PurchaseRequest(PurchasableType.Unit, "harvester")).FinalPrice == 500 &&
+      refinery.TryGetProductionDuration("harvester", out float harvesterProductionSeconds) &&
+      MathF.Abs(harvesterProductionSeconds - 10.0f) < 0.001f &&
+      refinery.Actions.Any(action => action.Type == UnitActionType.TrainUnit &&
+          action.TargetObjectName == "harvester"),
+    "Central pricing quotes harvester and helicopter prices");
+var prerequisiteArmies = new ArmyHandler();
+Guid prerequisiteArmyId = Guid.NewGuid();
+Army prerequisiteArmy = prerequisiteArmies.EnsureArmy(prerequisiteArmyId, Guid.NewGuid());
+var prerequisitePricing = new PricingService(prerequisiteArmies, _ => null);
+PurchaseQuote lockedReactor = prerequisitePricing.GetQuote(new PurchaseRequest(
+    PurchasableType.Building, "Reaktor", prerequisiteArmyId));
+prerequisiteArmy.Perks.GrantPermanent(PerkType.BaseEstablished, Guid.NewGuid());
+PurchaseQuote unlockedReactor = prerequisitePricing.GetQuote(new PurchaseRequest(
+    PurchasableType.Building, "Reaktor", prerequisiteArmyId));
+PurchaseQuote lockedHelipad = prerequisitePricing.GetQuote(new PurchaseRequest(
+    PurchasableType.Building, "Helipad", prerequisiteArmyId));
+PurchaseQuote airResearch = prerequisitePricing.GetQuote(new PurchaseRequest(
+    PurchasableType.Research, ResearchProjects.AirTechnologyId, prerequisiteArmyId));
+prerequisiteArmy.Perks.GrantPermanent(PerkType.AirTechnology, Guid.NewGuid());
+PurchaseQuote unlockedHelipad = prerequisitePricing.GetQuote(new PurchaseRequest(
+    PurchasableType.Building, "Helipad", prerequisiteArmyId));
+Check(!lockedReactor.IsAvailable && lockedReactor.MissingPerks.Contains(PerkType.BaseEstablished) &&
+      unlockedReactor.IsAvailable &&
+      !lockedHelipad.IsAvailable && lockedHelipad.MissingPerks.Contains(PerkType.AirTechnology) &&
+      airResearch is { IsAvailable: true, FinalPrice: 1000 } && unlockedHelipad.IsAvailable &&
+      prerequisitePricing.GetQuote(new PurchaseRequest(
+          PurchasableType.Building, "GDI-Base", prerequisiteArmyId)).IsAvailable,
+    "Base and Air Technology perks unlock their central building requirements");
+var researchBase = Empty<GDIBase>();
+Check(researchBase.TryGetProductionDuration(ResearchProjects.AirTechnologyId,
+          out float airResearchSeconds) && MathF.Abs(airResearchSeconds - 15.0f) < 0.001f,
+    "Air Technology research takes 15 seconds in the GDI base");
+NetworkMessage researchRequest = Wire(NetworkCommands.CreateResearchRequest(
+    Guid.NewGuid(), Guid.NewGuid(), ResearchProjects.AirTechnologyId));
+NetworkMessage researchCompleted = Wire(NetworkCommands.CreateResearchCompletedCommand(
+    Guid.NewGuid(), prerequisiteArmyId, Guid.NewGuid(), ResearchProjects.AirTechnologyId));
+Check(researchRequest.Type == NetworkMessageType.ResearchRequest &&
+      researchCompleted.Type == NetworkMessageType.ResearchCompletedCommand &&
+      researchCompleted.UnitTypeId == ResearchProjects.AirTechnologyId,
+    "Research request and completion survive network serialization");
+var completedBarracks = new GDIBarracks(Vector3.Zero, Guid.NewGuid());
+completedBarracks.AdvanceConstruction(completedBarracks.TotalBuildingPointsNeeded);
+Check(EconomyCatalog.GetBasePrice(PurchasableType.Unit, "gunner") == 100 &&
+      completedBarracks.Actions.Any(action => action.Type == UnitActionType.TrainUnit &&
+          action.TargetObjectName == "gunner"),
+    "Central pricing quotes basic soldiers at 100 resources");
 Guid refineryOwner = Guid.NewGuid();
 Check(refinery.TryQueueIncludedHarvester(refineryOwner) &&
     refinery.ProductionQueue.ActiveOrder?.UnitTypeId == "harvester",

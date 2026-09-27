@@ -596,12 +596,20 @@ public static class NetworkCommands
     public static NetworkMessage CreateSellBuildingRequest(Guid senderId, Guid buildingId) =>
         new(NetworkMessageType.SellBuildingRequest, senderId, UnitId: buildingId);
 
+    public static NetworkMessage CreateCancelConstructionRequest(Guid senderId, Guid buildingId) =>
+        new(NetworkMessageType.CancelConstructionRequest, senderId, UnitId: buildingId);
+
     public static NetworkMessage CreateDestroyBuildingRequest(Guid senderId, Guid buildingId) =>
         new(NetworkMessageType.DestroyBuildingRequest, senderId, UnitId: buildingId);
 
     public static NetworkMessage CreateSellBuildingCommand(
         Guid hostId, Building building, int armyResources) =>
         new(NetworkMessageType.SellBuildingCommand, hostId,
+            UnitId: building.UnitId, ArmyId: building.ArmyId, ResourceAmount: armyResources);
+
+    public static NetworkMessage CreateCancelConstructionCommand(
+        Guid hostId, Building building, int armyResources) =>
+        new(NetworkMessageType.CancelConstructionCommand, hostId,
             UnitId: building.UnitId, ArmyId: building.ArmyId, ResourceAmount: armyResources);
 
     public static NetworkMessage CreateBuildConstructionCommand(
@@ -633,7 +641,9 @@ public static class NetworkCommands
     public static NetworkMessage CreateTrainUnitCommand(
         Guid hostId,
         NetworkMessage request,
-        float productionSeconds)
+        float productionSeconds,
+        Guid armyId,
+        int armyResources)
     {
         return new NetworkMessage(
             NetworkMessageType.TrainUnitCommand,
@@ -642,8 +652,30 @@ public static class NetworkCommands
             UnitId: request.UnitId,
             UnitTypeId: request.UnitTypeId,
             ProductionOrderId: request.ProductionOrderId ?? Guid.NewGuid(),
-            ProductionSeconds: productionSeconds);
+            ProductionSeconds: productionSeconds,
+            ArmyId: armyId,
+            ResourceAmount: armyResources);
     }
+
+    public static NetworkMessage CreateResearchRequest(Guid senderId, Guid buildingId, string projectId) =>
+        new(NetworkMessageType.ResearchRequest, senderId, PlayerId: senderId, UnitId: buildingId,
+            UnitTypeId: projectId, ProductionOrderId: Guid.NewGuid());
+
+    public static NetworkMessage CreateResearchCommand(Guid hostId, NetworkMessage request,
+        float researchSeconds, Guid armyId, int armyResources) =>
+        new(NetworkMessageType.ResearchCommand, hostId,
+            PlayerId: request.PlayerId ?? request.SenderId,
+            UnitId: request.UnitId,
+            UnitTypeId: request.UnitTypeId,
+            ProductionOrderId: request.ProductionOrderId ?? Guid.NewGuid(),
+            ProductionSeconds: researchSeconds,
+            ArmyId: armyId,
+            ResourceAmount: armyResources);
+
+    public static NetworkMessage CreateResearchCompletedCommand(Guid hostId, Guid armyId,
+        Guid researchId, string projectId) =>
+        new(NetworkMessageType.ResearchCompletedCommand, hostId, ArmyId: armyId,
+            ProductionOrderId: researchId, UnitTypeId: projectId);
 
     public static NetworkMessage CreateUnitStateCommand(
         Guid hostId,

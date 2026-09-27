@@ -8,7 +8,10 @@ namespace RTS;
 public enum PerkType
 {
     DetailedHealth,
-    Home
+    Home,
+    Minimap,
+    BaseEstablished,
+    AirTechnology
 }
 
 public enum PerkLifetime

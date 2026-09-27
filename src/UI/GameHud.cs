@@ -13,6 +13,7 @@ public sealed class GameHud
     private readonly GameStatusPanel _statusPanel = new();
     private readonly GameWorld _world;
     private float _minimapRefreshElapsed;
+    private bool _showMinimap;
     private KeyboardState _previousKeyboardState;
 
     public HudLayout Layout { get; private set; }
@@ -29,8 +30,10 @@ public sealed class GameHud
     {
         Layout = HudLayout.Calculate(viewport,
             editorMode ? HudLayoutMode.Editor : HudLayoutMode.Game);
+        _showMinimap = Layout.ShowMinimap &&
+            (editorMode || localArmy?.Perks.Has(PerkType.Minimap) == true);
 
-        bool minimapConsumed = Layout.ShowMinimap &&
+        bool minimapConsumed = _showMinimap &&
             _minimap.Update(camera, Layout.Minimap, inputEnabled);
         bool actionPanelConsumed = Layout.ShowActionPanel &&
             _actionPanel.Update(selectedUnits, Layout.ActionPanel, inputEnabled);
@@ -47,7 +50,7 @@ public sealed class GameHud
         _previousKeyboardState = keyboard;
 
         _minimapRefreshElapsed += (float)gameTime.ElapsedGameTime.TotalSeconds;
-        if (localArmy is not null && _minimapRefreshElapsed >= 0.2f)
+        if (_showMinimap && localArmy is not null && _minimapRefreshElapsed >= 0.2f)
         {
             _minimapRefreshElapsed %= 0.2f;
             _minimap.Refresh(localArmy.Id);
@@ -57,7 +60,7 @@ public sealed class GameHud
 
     public void Draw(SpriteBatch spriteBatch, Camera camera, Army? localArmy, GameWorld world)
     {
-        if (Layout.ShowMinimap)
+        if (_showMinimap)
             _minimap.Draw(spriteBatch, camera, Layout.Minimap);
         if (Layout.ShowStatusPanel && localArmy is not null)
             _statusPanel.Draw(spriteBatch, Layout.StatusPanel, localArmy, world);
@@ -69,5 +72,6 @@ public sealed class GameHud
     {
         _minimap.Reset();
         _minimapRefreshElapsed = 0.0f;
+        _showMinimap = false;
     }
 }

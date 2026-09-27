@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using RTS.Network;
 
 namespace RTS;
 
@@ -584,13 +585,19 @@ public class Helicopter : MobileUnit
     public override UnitState GetState() => new(UnitId, StateRevision, StateTypeId, StateVersion,
         JsonSerializer.SerializeToUtf8Bytes(new HelicopterState(Position.X, Position.Y, Position.Z, _yaw, FlightState,
             Fuel, Ammunition, AssignedHelipadId, _landing?.X, _landing?.Y, _landing?.Z,
-            _landingAttitude.X, _landingAttitude.Y, _landingAttitude.Z, _landingAttitude.W)));
+            _landingAttitude.X, _landingAttitude.Y, _landingAttitude.Z, _landingAttitude.W), NetworkJson.Options));
 
     public override void ApplyState(UnitState state)
     {
         if (state.UnitId != UnitId || state.TypeId != StateTypeId || state.Version != StateVersion || state.Revision < StateRevision) return;
-        HelicopterState? data = JsonSerializer.Deserialize<HelicopterState>(state.Payload);
-        if (data is null || !float.IsFinite(data.X) || !float.IsFinite(data.Y) || !float.IsFinite(data.Z)) return;
+        HelicopterState? data = JsonSerializer.Deserialize<HelicopterState>(state.Payload, NetworkJson.Options);
+        if (data is null || !float.IsFinite(data.X) || !float.IsFinite(data.Y) || !float.IsFinite(data.Z) ||
+            !float.IsFinite(data.Yaw) || !float.IsFinite(data.Fuel) ||
+            data.LandingX is float landingX && !float.IsFinite(landingX) ||
+            data.LandingY is float landingY && !float.IsFinite(landingY) ||
+            data.LandingZ is float landingZ && !float.IsFinite(landingZ) ||
+            !float.IsFinite(data.LandingTiltX) || !float.IsFinite(data.LandingTiltY) ||
+            !float.IsFinite(data.LandingTiltZ) || !float.IsFinite(data.LandingTiltW)) return;
         FlightState = data.Flight; Fuel = Math.Clamp(data.Fuel, 0, MaximumFuel); Ammunition = Math.Clamp(data.Ammunition, 0, MaximumAmmunition);
         AssignedHelipadId = data.HelipadId;
         _landing = data.LandingX is float x && data.LandingY is float y && data.LandingZ is float z ? new(x, y, z) : null;

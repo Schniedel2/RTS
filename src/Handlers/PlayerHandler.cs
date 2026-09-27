@@ -136,11 +136,27 @@ public class PlayerHandler
                         _ = Globals.Game.NetworkClient.RequestLeaveContainerAsync(_selectedUnits[0].UnitId);
                     return false;
                 }
+            case UnitActionType.Research:
+                {
+                    Building? building = _selectedUnits.Count == 1
+                        ? _selectedUnits[0] as Building
+                        : null;
+                    if (building is not null && !string.IsNullOrWhiteSpace(action.TargetObjectName))
+                        _ = Globals.Game.NetworkClient.RequestResearchAsync(
+                            building.UnitId, action.TargetObjectName);
+                    return false;
+                }
             case UnitActionType.SellBuilding:
                 foreach (Building building in _selectedUnits.OfType<Building>().Where(
                     building => building is not GenericBuilding &&
                         Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, building.ArmyId)))
                     _ = RequestSellBuildingAsync(building);
+                return false;
+            case UnitActionType.CancelConstruction:
+                foreach (Building building in _selectedUnits.OfType<Building>().Where(
+                    building => !building.IsCompleted && building is not GenericBuilding &&
+                        Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, building.ArmyId)))
+                    _ = Globals.Game.NetworkClient.RequestCancelConstructionAsync(building.UnitId);
                 return false;
             case UnitActionType.Destroy:
                 foreach (Building building in _selectedUnits.OfType<Building>().Where(

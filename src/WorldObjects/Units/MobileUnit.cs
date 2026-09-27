@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using RTS.Network;
 
 namespace RTS;
 
@@ -629,7 +630,7 @@ public class MobileUnit : Unit
         bool isMoving = CurrentCommand is not null || _plannedPath.Count > 0 || IsLeavingBuilding;
         return new UnitState(UnitId, StateRevision, StateTypeId, StateVersion,
             JsonSerializer.SerializeToUtf8Bytes(new MobileUnitState(
-                Position.X, Position.Y, Position.Z, yaw, isMoving)));
+                Position.X, Position.Y, Position.Z, yaw, isMoving), NetworkJson.Options));
     }
 
     public override void ApplyState(UnitState state)
@@ -637,7 +638,7 @@ public class MobileUnit : Unit
         if (state.UnitId != UnitId || state.TypeId != StateTypeId ||
             state.Version != StateVersion || state.Revision < StateRevision)
             return;
-        MobileUnitState? data = JsonSerializer.Deserialize<MobileUnitState>(state.Payload);
+        MobileUnitState? data = JsonSerializer.Deserialize<MobileUnitState>(state.Payload, NetworkJson.Options);
         if (data is null || !float.IsFinite(data.X) || !float.IsFinite(data.Y) ||
             !float.IsFinite(data.Z) || !float.IsFinite(data.YawDegrees))
             return;

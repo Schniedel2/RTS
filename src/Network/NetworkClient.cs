@@ -148,6 +148,11 @@ public sealed class NetworkClient
             NetworkCommands.CreateSellBuildingRequest(_networkHandler.LocalPeerId, buildingId),
             cancellationToken);
 
+    public Task RequestCancelConstructionAsync(Guid buildingId, CancellationToken cancellationToken = default) =>
+        _networkHandler.SendToHostAsync(
+            NetworkCommands.CreateCancelConstructionRequest(_networkHandler.LocalPeerId, buildingId),
+            cancellationToken);
+
     public Task RequestDestroyBuildingAsync(Guid buildingId, CancellationToken cancellationToken = default) =>
         _networkHandler.SendToHostAsync(
             NetworkCommands.CreateDestroyBuildingRequest(_networkHandler.LocalPeerId, buildingId),
@@ -187,6 +192,12 @@ public sealed class NetworkClient
             unitTypeId);
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
+
+    public Task RequestResearchAsync(Guid buildingId, string projectId,
+        CancellationToken cancellationToken = default) =>
+        _networkHandler.SendToHostAsync(
+            NetworkCommands.CreateResearchRequest(_networkHandler.LocalPeerId, buildingId, projectId),
+            cancellationToken);
 
     /// <summary>Host-side tooling entry point for spawning a unit owned by another player, such as an AI.</summary>
     public Task RequestSpawnForPlayerAsync(

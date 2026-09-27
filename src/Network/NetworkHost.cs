@@ -182,12 +182,14 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.BuildRequest &&
             message.Type != NetworkMessageType.BuildConstructionRequest &&
             message.Type != NetworkMessageType.TrainUnitRequest &&
+            message.Type != NetworkMessageType.ResearchRequest &&
             message.Type != NetworkMessageType.SetRallyPointRequest &&
             message.Type != NetworkMessageType.EarthworkRequest &&
             message.Type != NetworkMessageType.HelicopterOrderRequest &&
             message.Type != NetworkMessageType.HarvestRequest &&
             message.Type != NetworkMessageType.MoveAwayRequest &&
             message.Type != NetworkMessageType.HarvesterReturnRequest &&
+            message.Type != NetworkMessageType.CancelConstructionRequest &&
             message.Type != NetworkMessageType.SellBuildingRequest &&
             message.Type != NetworkMessageType.DestroyBuildingRequest &&
             message.Type != NetworkMessageType.StartPositionWishRequest &&
@@ -217,6 +219,9 @@ public sealed class NetworkHost
             return;
 
         if (message.Type == NetworkMessageType.TrainUnitRequest &&
+            (message.UnitId is null || string.IsNullOrWhiteSpace(message.UnitTypeId)))
+            return;
+        if (message.Type == NetworkMessageType.ResearchRequest &&
             (message.UnitId is null || string.IsNullOrWhiteSpace(message.UnitTypeId)))
             return;
 
@@ -281,12 +286,14 @@ public sealed class NetworkHost
                     NetworkMessageType.BuildRequest => TryCreateBuildCommand(request),
                     NetworkMessageType.BuildConstructionRequest => NetworkCommands.CreateBuildConstructionCommand(_networkHandler.LocalPeerId, request),
                     NetworkMessageType.TrainUnitRequest => TryCreateTrainUnitCommand(request),
+                    NetworkMessageType.ResearchRequest => TryCreateResearchCommand(request),
                     NetworkMessageType.SetRallyPointRequest => TryCreateSetRallyPointCommand(request),
                     NetworkMessageType.EarthworkRequest => _earthworks.Start(request),
                     NetworkMessageType.HelicopterOrderRequest => TryCreateHelicopterOrder(request),
                     NetworkMessageType.HarvestRequest => TryCreateHarvestCommand(request),
                     NetworkMessageType.MoveAwayRequest => TryCreateMoveAwayCommand(request),
                     NetworkMessageType.HarvesterReturnRequest => TryCreateHarvesterReturnCommand(request),
+                    NetworkMessageType.CancelConstructionRequest => TryCreateCancelConstructionCommand(request),
                     NetworkMessageType.SellBuildingRequest => TryCreateSellBuildingCommand(request),
                     NetworkMessageType.DestroyBuildingRequest => TryCreateDestroyBuildingCommand(request),
                     NetworkMessageType.StartPositionWishRequest => RememberStartPositionWish(request),
@@ -729,8 +736,9 @@ public sealed class NetworkHost
         if (player is null || Globals.Game.Armies.Find(player.ArmyId) is not Army army)
             return null;
         Guid armyId = player.ArmyId;
-        int purchasePrice = BuildingFactory.GetPurchasePrice(request.UnitTypeId);
-        if (purchasePrice > army.Resources)
+        PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+            PurchasableType.Building, request.UnitTypeId, armyId));
+        if (!quote.IsAvailable || !quote.CanAfford(army.Resources))
             return null;
 
         Guid unitId = request.UnitId ?? Guid.NewGuid();
@@ -740,20 +748,20 @@ public sealed class NetworkHost
         // Register immediately so another request in this host tick cannot
         // claim the same footprint before the replicated command is processed.
         Building? building = _world.Units.SpawnBuilding(request.UnitTypeId, position,
-            request.TargetAngleY, unitId, request.SenderId);
+            request.TargetAngleY, unitId, request.SenderId, quote.FinalPrice);
         if (building is null)
             return null;
-        army.Resources -= building.PurchasePrice;
+        ArmyResourceService.TrySpend(army, _world, building.PurchasePrice);
         return NetworkCommands.CreateBuildCommand(_networkHandler.LocalPeerId,
             request with { UnitId = unitId, PlayerId = request.SenderId, Y = position.Y,
-                ArmyId = armyId, ResourceAmount = army.Resources });
+                ArmyId = armyId, ResourceAmount = army.Resources, PurchasePrice = quote.FinalPrice });
     }
 
     private NetworkMessage? TryCreateSellBuildingCommand(NetworkMessage request)
     {
         if (request.UnitId is not Guid buildingId ||
             _world.Units.FindById(buildingId) is not Building building ||
-            building is GenericBuilding || building.IsDying ||
+            building is GenericBuilding || building.IsDying || !building.IsCompleted ||
             building.ArmyId is not Guid armyId ||
             Globals.Game.Players.FirstOrDefault(player => player.Id == request.SenderId)?.ArmyId != armyId ||
             building.Occupancy?.Occupants.Count > 0 ||
@@ -763,7 +771,26 @@ public sealed class NetworkHost
         }
 
         army.Resources += building.SellRefund;
+        _world.Units.SellBuilding(buildingId);
         return NetworkCommands.CreateSellBuildingCommand(
+            _networkHandler.LocalPeerId, building, army.Resources);
+    }
+
+    private NetworkMessage? TryCreateCancelConstructionCommand(NetworkMessage request)
+    {
+        if (request.UnitId is not Guid buildingId ||
+            _world.Units.FindById(buildingId) is not Building building ||
+            building is GenericBuilding || building.IsDying || building.IsCompleted ||
+            building.ArmyId is not Guid armyId ||
+            Globals.Game.Players.FirstOrDefault(player => player.Id == request.SenderId)?.ArmyId != armyId ||
+            Globals.Game.Armies.Find(armyId) is not Army army)
+        {
+            return null;
+        }
+
+        army.Resources += building.CancelRefund;
+        _world.Units.SellBuilding(buildingId);
+        return NetworkCommands.CreateCancelConstructionCommand(
             _networkHandler.LocalPeerId, building, army.Resources);
     }
 
@@ -894,12 +921,18 @@ public sealed class NetworkHost
             _world.Units.FindById(buildingId) is not Building building ||
             !building.IsCompleted ||
             !Globals.Game.Armies.CanControl(request.SenderId, building.ArmyId) ||
-            !building.TryGetProductionDuration(request.UnitTypeId, out float durationSeconds))
+            !building.TryGetProductionDuration(request.UnitTypeId, out float durationSeconds) ||
+            building.ArmyId is not Guid armyId ||
+            Globals.Game.Armies.Find(armyId) is not Army army)
         {
             return null;
         }
 
         if (building is Helipad pad && !pad.CanOrderHelicopter(_world)) return null;
+
+        PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+            PurchasableType.Unit, request.UnitTypeId, armyId, building.UnitId));
+        if (!quote.IsAvailable || !quote.CanAfford(army.Resources)) return null;
 
         Guid orderId = request.ProductionOrderId ?? Guid.NewGuid();
         Guid requestedByPlayerId = request.PlayerId ?? request.SenderId;
@@ -912,10 +945,48 @@ public sealed class NetworkHost
             return null;
         }
 
+        ArmyResourceService.TrySpend(army, _world, quote.FinalPrice);
+
         return NetworkCommands.CreateTrainUnitCommand(
             _networkHandler.LocalPeerId,
             request with { ProductionOrderId = orderId },
-            durationSeconds);
+            durationSeconds,
+            armyId,
+            army.Resources);
+    }
+
+    private NetworkMessage? TryCreateResearchCommand(NetworkMessage request)
+    {
+        if (request.UnitId is not Guid buildingId ||
+            string.IsNullOrWhiteSpace(request.UnitTypeId) ||
+            _world.Units.FindById(buildingId) is not GDIBase building ||
+            !building.IsCompleted ||
+            !ResearchProjects.TryGetGrantedPerk(request.UnitTypeId, out PerkType perk) ||
+            !Globals.Game.Armies.CanControl(request.SenderId, building.ArmyId) ||
+            !building.TryGetProductionDuration(request.UnitTypeId, out float durationSeconds) ||
+            building.ArmyId is not Guid armyId ||
+            Globals.Game.Armies.Find(armyId) is not Army army ||
+            army.Perks.Has(perk) ||
+            _world.Units.Units.OfType<Building>().Any(candidate => candidate.ArmyId == armyId &&
+                candidate.ProductionQueue.Orders.Any(order => string.Equals(
+                    order.UnitTypeId, request.UnitTypeId, StringComparison.OrdinalIgnoreCase))))
+        {
+            return null;
+        }
+
+        PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+            PurchasableType.Research, request.UnitTypeId, armyId, building.UnitId));
+        if (!quote.IsAvailable || !quote.CanAfford(army.Resources)) return null;
+
+        Guid orderId = request.ProductionOrderId ?? Guid.NewGuid();
+        Guid requestedByPlayerId = request.PlayerId ?? request.SenderId;
+        if (!building.TryQueueProduction(orderId, request.UnitTypeId,
+                requestedByPlayerId, durationSeconds))
+            return null;
+
+        ArmyResourceService.TrySpend(army, _world, quote.FinalPrice);
+        return NetworkCommands.CreateResearchCommand(_networkHandler.LocalPeerId,
+            request with { ProductionOrderId = orderId }, durationSeconds, armyId, army.Resources);
     }
 
     private NetworkMessage? TryCreateEnterUnitCommand(NetworkMessage request)
@@ -1076,9 +1147,29 @@ public sealed class NetworkHost
                     : refinery.CreatorPlayerId;
                 refinery.TryQueueIncludedHarvester(ownerPlayerId);
             }
+            if (building is Helipad includedPad && includedPad.IsCompleted && !includedPad.IncludedUnitGranted)
+            {
+                Guid ownerPlayerId = includedPad.ArmyId is Guid armyId
+                    ? Globals.Game.Armies.Find(armyId)?.OwnerPlayerIds.OrderBy(id => id).FirstOrDefault() ?? Guid.Empty
+                    : includedPad.CreatorPlayerId;
+                includedPad.TryQueueIncludedHelicopter(ownerPlayerId);
+            }
             if (!building.UpdateProduction(elapsedSeconds, out ProductionOrder? completedOrder) ||
                 completedOrder is null)
             {
+                continue;
+            }
+
+            if (ResearchProjects.TryGetGrantedPerk(completedOrder.UnitTypeId, out PerkType researchPerk) &&
+                building.ArmyId is Guid researchArmyId &&
+                Globals.Game.Armies.Find(researchArmyId) is Army researchArmy)
+            {
+                researchArmy.Perks.GrantPermanent(researchPerk, completedOrder.OrderId);
+                NetworkMessage researchCompleted = NetworkCommands.CreateResearchCompletedCommand(
+                    _networkHandler.LocalPeerId, researchArmyId, completedOrder.OrderId,
+                    completedOrder.UnitTypeId);
+                _networkHandler.EnqueueLocalMessage(researchCompleted);
+                _ = _networkHandler.BroadcastAsync(researchCompleted, CancellationToken.None);
                 continue;
             }
 

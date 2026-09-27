@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Xna.Framework;
 
 namespace RTS;
 
@@ -28,12 +29,19 @@ public sealed class Army
     public Dictionary<Guid, ArmyPermission> GrantedPermissions { get; } = [];
     public IntelligenceCapabilities Intelligence { get; } = new();
     public ArmyPerkState Perks { get; } = new();
+    public ArmyPowerStatus PowerStatus { get; set; } = new();
 
     public Army(Guid id, Guid ownerPlayerId, Guid? teamId = null)
     {
         Id = id;
         TeamId = teamId;
         OwnerPlayerIds.Add(ownerPlayerId);
+    }
+
+    public void Update(GameTime gameTime)
+    {
+        // Implement any periodic updates for the army here.
+        PowerStatus = ArmyPowerStatus.Calculate(Globals.World.Units.Units, Id);        
     }
 }
 
@@ -120,5 +128,13 @@ public sealed class ArmyHandler
     {
         foreach (Army army in _armies.Values)
             army.Perks.Clear();
+    }
+
+    public void Update(GameTime gameTime)
+    {
+        foreach (Army army in _armies.Values)
+        {
+            army.Update(gameTime);
+        }
     }
 }

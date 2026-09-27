@@ -20,6 +20,17 @@ public class Helipad : Building
         return durationSeconds > 0;
     }
 
+    public bool TryQueueIncludedHelicopter(Guid ownerPlayerId)
+    {
+        if (!IsCompleted || IncludedUnitGranted || IsReservedForDelivery || ownerPlayerId == Guid.Empty)
+            return false;
+        if (!TryQueueProduction(Guid.NewGuid(), "helicopter", ownerPlayerId, 0.1f))
+            return false;
+        IncludedUnitGranted = true;
+        MarkStateDirty();
+        return true;
+    }
+
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
     /// <summary>Center/top of this model's landing slab; optional pivot:landing overrides it.</summary>
     public Vector3 LandingLocalPosition { get; set; } = new(2.4f, 0.1f, -0.8f);
@@ -61,18 +72,14 @@ public class Helipad : Building
 
     public IReadOnlyList<UnitAction> GetUnitActions()
     {
-        IReadOnlyList<UnitAction> actions =
-        [
-            new(UnitActionType.Goto, "Cancel", 0, 1)
-        ];
+        IReadOnlyList<UnitAction> actions = Array.Empty<UnitAction>();
     
         if (IsCompleted)
         {
             actions = 
             [
-                new(UnitActionType.TrainUnit, "Buy helicopter (0 resources, 10s)", 6, 1, "helicopter"),
+                new(UnitActionType.TrainUnit, "Buy helicopter", 6, 1, "helicopter"),
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1),
-                new(UnitActionType.Stop, "Destroy", 7, 1)
             ];
         }
         

@@ -2,6 +2,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace RTS;
 
@@ -33,40 +34,71 @@ public class GDIBase : Building, IPerkProvider
         base.Draw(effect);
     }
 
-    public IReadOnlyList<PerkGrant> GetProvidedPerks() =>
-        IsCompleted && !IsDying && Occupancy?.IsOperational != false
-            ? [new PerkGrant(PerkType.Home,
+    public IReadOnlyList<PerkGrant> GetProvidedPerks()
+    {
+        if (!IsOperational || Occupancy?.IsOperational == false)
+            return Array.Empty<PerkGrant>();
+
+        List<PerkGrant> perks =
+        [
+            new PerkGrant(PerkType.Home,
                 PerkLifetime.WhileProviderOperational,
                 PerkScope.Global,
-                Position)]
-            : Array.Empty<PerkGrant>();
+                Position),
+            new PerkGrant(PerkType.BaseEstablished,
+                PerkLifetime.WhileProviderOperational)
+        ];
+        if (ArmyId is Guid armyId &&
+            Globals.Game.Armies.Find(armyId)?.PowerStatus.HasEnoughPower == true)
+        {
+            perks.Add(new PerkGrant(PerkType.Minimap,
+                PerkLifetime.WhileProviderOperational));
+        }
+        return perks;
+    }
 
     public IReadOnlyList<UnitAction> GetUnitActions()
     {
-        IReadOnlyList<UnitAction> actions =
-        [
-            new(UnitActionType.Goto, "Cancel", 0, 1)
-        ];
+        IReadOnlyList<UnitAction> actions = Array.Empty<UnitAction>();
     
         if (IsCompleted)
         {
-            actions = 
+            List<UnitAction> completedActions =
             [
                 new(UnitActionType.TrainUnit, "Bulldozer", 6, 1),
-                new(UnitActionType.LeaveContainer, "Leave", 5, 1),
-                new(UnitActionType.Stop, "Destroy", 7, 1)
+                new(UnitActionType.LeaveContainer, "Leave", 5, 1)
             ];
+            bool researched = ArmyId is Guid armyId &&
+                Globals.Game.Armies.Find(armyId)?.Perks.Has(PerkType.AirTechnology) == true;
+            bool queued = ProductionQueue.Orders.Any(order => string.Equals(
+                order.UnitTypeId, ResearchProjects.AirTechnologyId, StringComparison.OrdinalIgnoreCase));
+            if (!researched && !queued)
+                completedActions.Add(new(UnitActionType.Research, "Research Air Technology", 4, 4,
+                    ResearchProjects.AirTechnologyId, RequiresTarget: false));
+            actions = completedActions;
         }
         
         return WithSellAction(actions);
+    }
+
+    public override bool TryGetProductionDuration(string unitTypeId, out float durationSeconds)
+    {
+        durationSeconds = string.Equals(unitTypeId, ResearchProjects.AirTechnologyId,
+            StringComparison.OrdinalIgnoreCase) ? 15.0f : 0.0f;
+        return durationSeconds > 0.0f;
     }
 
     public override void Update(GameTime gameTime)
     {
         if (IsCompleted)
         {
-            //  todo: bei Stromausfall muss RadarSpeedFactor reduziert werden
-            RadarSpeedFactor += 0.01f;
+            Army? army = ArmyId is Guid armyId ? Globals.Game.Armies.Find(armyId) : null;
+
+            if (army?.PowerStatus.HasEnoughPower == true)
+                RadarSpeedFactor += 0.01f;
+            else
+                RadarSpeedFactor *= 0.99f; // decrease by 1% if not enough power
+                
             if (RadarSpeedFactor > 1.0f)
                 RadarSpeedFactor = 1.0f;
 

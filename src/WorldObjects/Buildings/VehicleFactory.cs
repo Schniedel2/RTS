@@ -48,19 +48,17 @@ public class VehicleFactory : Building
         [
             new(UnitActionType.SetRallyPoint, "Set rally point", 0, 1),
             new(UnitActionType.ClearRallyPoint, "Clear rally point", 7, 1),
-            new(UnitActionType.Goto, "Cancel", 0, 1)
         ];
     
         if (IsCompleted)
         {
             actions = 
             [
-                new(UnitActionType.TrainUnit, "Tank", 6, 1, "tank"),
                 new(UnitActionType.SetRallyPoint, "Set rally point", 0, 1),
+                new(UnitActionType.TrainUnit, "Tank", 6, 1, "tank"),
+                new(UnitActionType.TrainUnit, "Jeep", 6, 1, "jeep"),
                 new(UnitActionType.ClearRallyPoint, "Clear rally point", 7, 1),
-                new(UnitActionType.Goto, "Cancel", 0, 1),
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1),
-                new(UnitActionType.Stop, "Destroy", 7, 1)
             ];
         }
         

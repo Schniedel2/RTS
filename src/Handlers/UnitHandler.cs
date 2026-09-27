@@ -102,9 +102,11 @@ public class UnitHandler
         Vector3 position,
         float RotateYDegrees,
         Guid unitId,
-        Guid creatorPlayerId)
+        Guid creatorPlayerId,
+        int? purchasePrice = null)
     {
-        Building? unit = BuildingFactory.SpawnBuilding(buildingTypeName, position, RotateYDegrees, unitId, creatorPlayerId);
+        Building? unit = BuildingFactory.SpawnBuilding(buildingTypeName, position, RotateYDegrees,
+            unitId, creatorPlayerId, purchasePrice);
         if (unit is null)
             return null;
 

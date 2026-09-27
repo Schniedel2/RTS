@@ -10,6 +10,9 @@ public enum AIGoalState
 {
     WaitingForMatch,
     FindingBulldozer,
+    FindingBaseSite,
+    BaseBuildRequested,
+    ConstructingBase,
     FindingReactorSite,
     ReactorBuildRequested,
     ConstructingReactor,
@@ -17,7 +20,13 @@ public enum AIGoalState
     RefineryBuildRequested,
     ConstructingRefinery,
     WaitingForHarvester,
-    EconomyOnline
+    EconomyOnline,
+    FindingBarracksSite,
+    BarracksBuildRequested,
+    ConstructingBarracks,
+    TrainingSoldiers,
+    BaseDefenseReady,
+    Scouting
 }
 
 public enum AIArmyGoal
@@ -38,8 +47,12 @@ public sealed class ArmyGoalController
     private const float BuildRequestTimeoutSeconds = 3.0f;
     private float _thinkElapsed;
     private float _requestElapsed;
+    private Guid? _baseId;
     private Guid? _reactorId;
     private Guid? _refineryId;
+    private Guid? _barracksId;
+    private bool _harvestOrderIssued;
+    private bool _rallyPointIssued;
 
     public AIGoalState Goal { get; private set; } = AIGoalState.WaitingForMatch;
     public AIArmyGoal ActiveGoal { get; private set; }
@@ -52,8 +65,12 @@ public sealed class ArmyGoalController
         LastDecision = $"Started {goal}; looking for an army bulldozer.";
         _thinkElapsed = ThinkIntervalSeconds;
         _requestElapsed = 0.0f;
+        _baseId = null;
         _reactorId = null;
         _refineryId = null;
+        _barracksId = null;
+        _harvestOrderIssued = false;
+        _rallyPointIssued = false;
     }
 
     public void Stop()
@@ -68,17 +85,41 @@ public sealed class ArmyGoalController
         Action<AIPlayerStatus>? setStatus = null)
     {
         if (!network.IsHost || ActiveGoal == AIArmyGoal.None ||
-            Goal is AIGoalState.WaitingForMatch or AIGoalState.EconomyOnline)
+            Goal is AIGoalState.WaitingForMatch or AIGoalState.BaseDefenseReady)
             return;
 
         float seconds = (float)gameTime.ElapsedGameTime.TotalSeconds;
         _thinkElapsed += seconds;
-        if (Goal is AIGoalState.ReactorBuildRequested or AIGoalState.RefineryBuildRequested)
+        if (Goal is AIGoalState.BaseBuildRequested or AIGoalState.ReactorBuildRequested or
+            AIGoalState.RefineryBuildRequested or
+            AIGoalState.BarracksBuildRequested)
             _requestElapsed += seconds;
         if (_thinkElapsed < ThinkIntervalSeconds)
             return;
         _thinkElapsed %= ThinkIntervalSeconds;
         var commands = new PlayerCommandService(network, actor.Id);
+
+        GDIBase? homeBase = FindOwnedBuilding<GDIBase>(world, actor.ArmyId, _baseId);
+        if (homeBase is null)
+        {
+            BuildBase(actor, world, commands, setStatus);
+            return;
+        }
+
+        _baseId = homeBase.UnitId;
+        if (!homeBase.IsCompleted)
+        {
+            Goal = AIGoalState.ConstructingBase;
+            setStatus?.Invoke(AIPlayerStatus.Building);
+            LastDecision = $"Constructing base ({homeBase.ConstructionPercentage * 100.0f:0}%).";
+            return;
+        }
+        if (Globals.Game.Armies.Find(actor.ArmyId)?.Perks.Has(PerkType.BaseEstablished) != true)
+        {
+            Goal = AIGoalState.ConstructingBase;
+            LastDecision = "Base completed; waiting for its construction network to become operational.";
+            return;
+        }
 
         Building? reactor = FindOwnedBuilding<Reaktor>(world, actor.ArmyId, _reactorId);
         if (ActiveGoal is AIArmyGoal.BuildReactor or AIArmyGoal.EstablishEconomy && reactor is null)
@@ -138,26 +179,191 @@ public sealed class ArmyGoalController
             return;
         }
 
-        KeyValuePair<Point, TiberiumCell>? target = world.Tiberium.Cells
-            .Where(pair => pair.Value.Amount > 0.01f)
-            .OrderBy(pair => Vector3.DistanceSquared(
-                harvester.Position,
-                world.GameGrid.ToWorldPosition(pair.Key, harvester.Position.Y)))
-            .Select(pair => (KeyValuePair<Point, TiberiumCell>?)pair)
-            .FirstOrDefault();
-        if (target is null)
+        if (!_harvestOrderIssued)
         {
-            Goal = AIGoalState.WaitingForHarvester;
+            KeyValuePair<Point, TiberiumCell>? target = world.Tiberium.Cells
+                .Where(pair => pair.Value.Amount > 0.01f)
+                .OrderBy(pair => Vector3.DistanceSquared(
+                    harvester.Position,
+                    world.GameGrid.ToWorldPosition(pair.Key, harvester.Position.Y)))
+                .Select(pair => (KeyValuePair<Point, TiberiumCell>?)pair)
+                .FirstOrDefault();
+            if (target is null)
+            {
+                Goal = AIGoalState.WaitingForHarvester;
+                setStatus?.Invoke(AIPlayerStatus.Gathering);
+                LastDecision = "Harvester ready; waiting for a Tiberium field.";
+                return;
+            }
+
+            Vector3 harvestPosition = world.GameGrid.ToWorldPosition(target.Value.Key, 0.0f);
+            _ = commands.HarvestAsync(harvester.UnitId, harvestPosition);
+            _harvestOrderIssued = true;
+            Goal = AIGoalState.EconomyOnline;
             setStatus?.Invoke(AIPlayerStatus.Gathering);
-            LastDecision = "Harvester ready; waiting for a Tiberium field.";
+            LastDecision = $"Economy online; sent harvester to ({harvestPosition.X:0.0}, {harvestPosition.Z:0.0}).";
             return;
         }
 
-        Vector3 harvestPosition = world.GameGrid.ToWorldPosition(target.Value.Key, 0.0f);
-        _ = commands.HarvestAsync(harvester.UnitId, harvestPosition);
-        Goal = AIGoalState.EconomyOnline;
-        setStatus?.Invoke(AIPlayerStatus.Gathering);
-        LastDecision = $"Economy online; sent harvester to ({harvestPosition.X:0.0}, {harvestPosition.Z:0.0}).";
+        BuildBaseDefense(actor, world, commands, reactor, setStatus);
+    }
+
+    private void BuildBaseDefense(Player actor, GameWorld world, PlayerCommandService commands,
+        Building? reactor, Action<AIPlayerStatus>? setStatus)
+    {
+        GDIBarracks? barracks = FindOwnedBuilding<GDIBarracks>(world, actor.ArmyId, _barracksId);
+        if (barracks is null)
+        {
+            if (WaitForBuildConfirmation(AIGoalState.BarracksBuildRequested,
+                "Waiting for the host to confirm the barracks site."))
+                return;
+
+            GDIBulldozer? bulldozer = FindBulldozer(world, actor.ArmyId);
+            if (bulldozer is null)
+            {
+                Goal = AIGoalState.FindingBulldozer;
+                LastDecision = "Economy is online, but no usable bulldozer was found for the barracks.";
+                return;
+            }
+
+            const string buildingType = "GDI-Barracks";
+            PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+                PurchasableType.Building, buildingType, actor.ArmyId));
+            int price = quote.FinalPrice;
+            Army? army = Globals.Game.Armies.Find(actor.ArmyId);
+            if (army is null || army.Resources < price)
+            {
+                Goal = AIGoalState.FindingBarracksSite;
+                LastDecision = $"Waiting for {price} resources before building the barracks.";
+                return;
+            }
+
+            Goal = AIGoalState.FindingBarracksSite;
+            var preview = new GDIBarracks(Vector3.Zero, Guid.NewGuid(), price);
+            PreparePreview(preview, actor);
+            Vector3 origin = reactor?.Position ?? bulldozer.Position;
+            if (!TryFindBuildingSite(world, preview, origin, 6, 18, out Vector3 position))
+            {
+                LastDecision = "No valid barracks site found near the base; I will retry.";
+                return;
+            }
+
+            _barracksId = RequestBuilding(actor, commands, bulldozer, buildingType, position, setStatus);
+            Goal = AIGoalState.BarracksBuildRequested;
+            LastDecision = $"Requested barracks at ({position.X:0.0}, {position.Z:0.0}).";
+            return;
+        }
+
+        _barracksId = barracks.UnitId;
+        if (!barracks.IsCompleted)
+        {
+            Goal = AIGoalState.ConstructingBarracks;
+            setStatus?.Invoke(AIPlayerStatus.Building);
+            LastDecision = $"Constructing barracks ({barracks.ConstructionPercentage * 100.0f:0}%).";
+            return;
+        }
+
+        if (!_rallyPointIssued && TryFindRallyPoint(world, barracks, out Vector3 rallyPoint))
+        {
+            _ = commands.SetRallyPointAsync(barracks.UnitId, rallyPoint);
+            _rallyPointIssued = true;
+        }
+
+        int soldiers = world.Units.Units.Count(unit =>
+            unit is Gunner && unit.ArmyId == actor.ArmyId && !unit.IsDying);
+        int queued = barracks.ProductionQueue.Orders.Count(order =>
+            string.Equals(order.UnitTypeId, "gunner", StringComparison.OrdinalIgnoreCase));
+        if (soldiers + queued >= 3)
+        {
+            if (soldiers < 3)
+            {
+                Goal = AIGoalState.TrainingSoldiers;
+                setStatus?.Invoke(AIPlayerStatus.Building);
+                LastDecision = $"Training base defenders ({soldiers}/3 ready, {queued} queued).";
+                return;
+            }
+
+            ActiveGoal = AIArmyGoal.None;
+            Goal = AIGoalState.BaseDefenseReady;
+            setStatus?.Invoke(AIPlayerStatus.Active);
+            LastDecision = "Base defense ready: three soldiers are guarding the base.";
+            return;
+        }
+
+        PurchaseQuote soldierQuote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+            PurchasableType.Unit, "gunner", actor.ArmyId, barracks.UnitId));
+        int soldierPrice = soldierQuote.FinalPrice;
+        Army? ownerArmy = Globals.Game.Armies.Find(actor.ArmyId);
+        if (ownerArmy is null || ownerArmy.Resources < soldierPrice)
+        {
+            Goal = AIGoalState.TrainingSoldiers;
+            LastDecision = $"Waiting for {soldierPrice} resources for the next soldier ({soldiers}/3 ready).";
+            return;
+        }
+
+        _ = commands.TrainUnitAsync(barracks.UnitId, "gunner");
+        Goal = AIGoalState.TrainingSoldiers;
+        setStatus?.Invoke(AIPlayerStatus.Building);
+        LastDecision = $"Ordered a base defender ({soldiers}/3 ready, {queued + 1} queued).";
+    }
+
+    private static bool TryFindRallyPoint(GameWorld world, Building building, out Vector3 position)
+    {
+        Point center = world.GameGrid.ToCell(building.Position);
+        foreach (Point cell in CandidateCells(center, 3, 7))
+        {
+            if (!world.GameGrid.Contains(cell)) continue;
+            GridCell data = world.GameGrid.GetCell(cell);
+            if (!data.HasTerrain || data.IsBlocked || data.ExcludeFromPathfinding ||
+                data.AllowedMovement == MovementModes.None || world.GameGrid.GetOccupant(cell) is Building)
+                continue;
+            position = world.GameGrid.ToWorldPosition(cell, 0.0f);
+            position.Y = world.Terrain.GetSurfaceHeight(position.X, position.Z);
+            return true;
+        }
+
+        position = default;
+        return false;
+    }
+
+    private void BuildBase(Player actor, GameWorld world, PlayerCommandService commands,
+        Action<AIPlayerStatus>? setStatus)
+    {
+        if (WaitForBuildConfirmation(AIGoalState.BaseBuildRequested,
+            "Waiting for the host to confirm the base site."))
+            return;
+
+        GDIBulldozer? bulldozer = FindBulldozer(world, actor.ArmyId);
+        if (bulldozer is null)
+        {
+            Goal = AIGoalState.FindingBulldozer;
+            LastDecision = "No usable bulldozer found; I cannot establish a base.";
+            return;
+        }
+
+        const string buildingType = "GDI-Base";
+        PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+            PurchasableType.Building, buildingType, actor.ArmyId));
+        Army? army = Globals.Game.Armies.Find(actor.ArmyId);
+        if (!quote.IsAvailable || army is null || !quote.CanAfford(army.Resources))
+        {
+            Goal = AIGoalState.FindingBaseSite;
+            LastDecision = $"Waiting for {quote.FinalPrice} resources before building the base.";
+            return;
+        }
+
+        Goal = AIGoalState.FindingBaseSite;
+        var preview = new GDIBase(Vector3.Zero, Guid.NewGuid(), quote.FinalPrice);
+        PreparePreview(preview, actor);
+        if (!TryFindBuildingSite(world, preview, bulldozer.Position, 4, 14, out Vector3 position))
+        {
+            LastDecision = "No valid base site found near the bulldozer; I will retry.";
+            return;
+        }
+
+        _baseId = RequestBuilding(actor, commands, bulldozer, buildingType, position, setStatus);
+        Goal = AIGoalState.BaseBuildRequested;
+        LastDecision = $"Requested base at ({position.X:0.0}, {position.Z:0.0}).";
     }
 
     private void BuildReactor(Player actor, GameWorld world, PlayerCommandService commands,
@@ -176,7 +382,9 @@ public sealed class ArmyGoalController
         }
 
         Goal = AIGoalState.FindingReactorSite;
-        var preview = new Reaktor(Vector3.Zero, Guid.NewGuid(), BuildingFactory.GetPurchasePrice("Reaktor"));
+        int price = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+            PurchasableType.Building, "Reaktor", actor.ArmyId)).FinalPrice;
+        var preview = new Reaktor(Vector3.Zero, Guid.NewGuid(), price);
         PreparePreview(preview, actor);
         if (!TryFindBuildingSite(world, preview, bulldozer.Position, 5, 15, out Vector3 position))
         {
@@ -205,7 +413,8 @@ public sealed class ArmyGoalController
         }
 
         const string buildingType = "Tiberium-Refinery";
-        int price = BuildingFactory.GetPurchasePrice(buildingType);
+        int price = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+            PurchasableType.Building, buildingType, actor.ArmyId)).FinalPrice;
         Army? army = Globals.Game.Armies.Find(actor.ArmyId);
         if (army is null || army.Resources < price)
         {
@@ -317,12 +526,60 @@ public sealed class ArmyGoalController
 public sealed class AIController
 {
     private readonly ArmyGoalController _goals = new();
-    public AIGoalState Goal => _goals.Goal;
-    public string LastDecision => _goals.LastDecision;
-    public void BeginMatch() => _goals.Start(AIArmyGoal.EstablishEconomy);
+    private ScoutingController? _scouting;
+    private Guid? _scoutId;
+    private string? _scoutingDecision;
+
+    public AIGoalState Goal => _goals.Goal == AIGoalState.BaseDefenseReady
+        ? AIGoalState.Scouting
+        : _goals.Goal;
+    public string LastDecision => _scoutingDecision ?? _goals.LastDecision;
+
+    public void BeginMatch()
+    {
+        _scouting = null;
+        _scoutId = null;
+        _scoutingDecision = null;
+        _goals.Start(AIArmyGoal.EstablishEconomy);
+    }
+
     public void Update(GameTime gameTime, AIPlayer ai, GameWorld world, NetworkHandler network)
     {
-        if (ai.Status != AIPlayerStatus.Idle)
-            _goals.Update(gameTime, ai.Player, world, network, ai.SetStatus);
+        if (ai.Status == AIPlayerStatus.Idle || !network.IsHost)
+            return;
+
+        _goals.Update(gameTime, ai.Player, world, network, ai.SetStatus);
+        if (_goals.Goal != AIGoalState.BaseDefenseReady)
+            return;
+
+        _scouting ??= new ScoutingController(world, ai.Player.Id, network);
+        Gunner? scout = _scoutId is Guid scoutId
+            ? world.Units.FindById(scoutId) as Gunner
+            : null;
+        if (scout is null || scout.IsDying || scout.IsEmbarked || scout.ArmyId != ai.Player.ArmyId)
+        {
+            if (scout is not null)
+                _scouting.Stop([scout]);
+
+            scout = world.Units.Units.OfType<Gunner>()
+                .Where(unit => unit.ArmyId == ai.Player.ArmyId && !unit.IsDying && !unit.IsEmbarked)
+                .OrderBy(unit => unit.UnitId)
+                .FirstOrDefault();
+            _scoutId = scout?.UnitId;
+            if (scout is null)
+            {
+                _scoutingDecision = "Base defense ready; waiting for a soldier who can scout.";
+                return;
+            }
+
+            _scouting.Start([scout]);
+            int defenders = world.Units.Units.Count(unit =>
+                unit is Gunner && unit.UnitId != scout.UnitId &&
+                unit.ArmyId == ai.Player.ArmyId && !unit.IsDying && !unit.IsEmbarked);
+            _scoutingDecision = $"Gunner {scout.UnitId.ToString()[..8]} is scouting unexplored terrain; " +
+                $"{defenders} soldier(s) remain at the base.";
+        }
+
+        _scouting.Update(gameTime);
     }
 }

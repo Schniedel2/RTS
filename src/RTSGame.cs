@@ -30,6 +30,7 @@ public class RTSGame
     private readonly Dictionary<Guid, ScoutingController> _manualArmyScouts = [];
     public TeamHandler Teams { get; } = new();
     public ArmyHandler Armies { get; } = new();
+    public PricingService Pricing { get; }
     public RemoteSelectionHandler RemoteSelections { get; } = new();
     private readonly FogOfWarTexture _fogTexture;
     private float _fogRefreshElapsed;
@@ -56,6 +57,7 @@ public class RTSGame
         Globals._camera = new Camera();
     
         World = new GameWorld(terrainWidth, terrainHeight, 1);
+        Pricing = new PricingService(Armies, id => World.Units.FindById(id));
         Globals.World = World;
         Globals.LocalPlayer = new PlayerHandler(World, World.Markers);
         _shadowMap = new ShadowMap(4096);
@@ -316,6 +318,8 @@ public class RTSGame
 
         float deltaTime =
             (float)gameTime.ElapsedGameTime.TotalSeconds;
+
+        Armies.Update(gameTime);
 
         Army? localArmy = TryGetLocalPlayer(out Player hudPlayer)
             ? Armies.Find(hudPlayer.ArmyId) : null;
