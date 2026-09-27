@@ -116,6 +116,12 @@ public class Game1 : Game
 
         _rtsGame.Draw3D(Globals._camera);
 
+        Globals._debugRenderer.DrawSelectedSquadLeaders(
+            _rtsGame.World,
+            _rtsGame.LocalPlayer.SelectedUnits,
+            Globals._camera.View,
+            Globals._camera.Projection);
+
         if (Globals.Debug_ShowPathfindingMessages)
         {
             Globals._debugRenderer.DrawSelectedUnitPaths(

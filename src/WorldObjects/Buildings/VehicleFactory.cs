@@ -37,6 +37,7 @@ public class VehicleFactory : Building
         durationSeconds = unitTypeId.ToLowerInvariant() switch
         {
             "tank" => 10.0f,
+            "jeep" => 7.0f,
             _ => 0.0f
         };
         return durationSeconds > 0.0f;

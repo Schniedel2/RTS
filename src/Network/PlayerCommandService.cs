@@ -24,12 +24,13 @@ public sealed class PlayerCommandService
     }
 
     public Task GotoAsync(IEnumerable<Guid> unitIds, Vector3 target, bool appendToQueue = false,
-        UnitRoute[]? routes = null, CancellationToken cancellationToken = default)
+        UnitRoute[]? routes = null, CancellationToken cancellationToken = default,
+        float? formationFacingDegrees = null)
     {
         if (!IsFinite(target))
             return Task.CompletedTask;
         return SendAsync(NetworkCommands.CreateGotoRequest(PlayerId, unitIds.ToArray(),
-            target.X, target.Y, target.Z, appendToQueue, routes), cancellationToken);
+            target.X, target.Y, target.Z, appendToQueue, routes, formationFacingDegrees), cancellationToken);
     }
 
     public Task StopAsync(IEnumerable<Guid> unitIds, CancellationToken cancellationToken = default) =>

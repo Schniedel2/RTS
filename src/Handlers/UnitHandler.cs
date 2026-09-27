@@ -244,6 +244,11 @@ public class UnitHandler
         if (unit.IsEmbarked && unit.ContainerUnitId is Guid parentId)
             FindById(parentId)?.Occupancy?.TryRemove(unit.UnitId, out _);
 
+        if (unit is SquadLeader destroyedLeader)
+            foreach (Soldier member in Units.OfType<Soldier>().Where(
+                member => member.SquadLeaderId == destroyedLeader.UnitId))
+                member.SquadLeaderId = null;
+
         // An attack target may disappear before the next host simulation
         // tick. Clear every reference immediately, on host and clients alike.
         foreach (Unit other in Units)
@@ -384,6 +389,12 @@ public class UnitHandler
 
     private void RemoveImmediately(Unit unit)
     {
+        if (unit is SquadLeader leader)
+        {
+            foreach (Soldier member in Units.OfType<Soldier>().Where(
+                member => member.SquadLeaderId == leader.UnitId))
+                member.SquadLeaderId = null;
+        }
         Globals.World.GameGrid.Remove(unit);
         RemovePerkSource(unit.UnitId);
         lock (_unitsSync) _units.Remove(unit);

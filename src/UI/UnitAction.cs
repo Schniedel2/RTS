@@ -58,6 +58,8 @@ public enum UnitActionType
     AIStartEconomy,
     AIStartScouting,
     AIStopGoals,
+    AssembleSquad,
+    DisbandSquad,
     max
 
 }

@@ -8,10 +8,12 @@ using RTS.Network;
 
 namespace RTS;
 
-public sealed record MobileUnitState(float X, float Y, float Z, float YawDegrees, bool IsMoving);
+public sealed record MobileUnitState(float X, float Y, float Z, float YawDegrees, bool IsMoving,
+    Guid? SquadLeaderId = null);
 
 public class MobileUnit : Unit
 {
+    public Guid? SquadLeaderId { get; internal set; }
     public override string StateTypeId => "mobile-unit-state";
     public int _pathRequestId;
     public float MoveSpeed { get; set; } = 8.0f;
@@ -630,7 +632,7 @@ public class MobileUnit : Unit
         bool isMoving = CurrentCommand is not null || _plannedPath.Count > 0 || IsLeavingBuilding;
         return new UnitState(UnitId, StateRevision, StateTypeId, StateVersion,
             JsonSerializer.SerializeToUtf8Bytes(new MobileUnitState(
-                Position.X, Position.Y, Position.Z, yaw, isMoving), NetworkJson.Options));
+                Position.X, Position.Y, Position.Z, yaw, isMoving, SquadLeaderId), NetworkJson.Options));
     }
 
     public override void ApplyState(UnitState state)
@@ -647,6 +649,7 @@ public class MobileUnit : Unit
         transform.Translation = new Vector3(data.X, data.Y, data.Z);
         if (Globals.World.GameGrid.TryApplyAuthoritativeTransform(this, transform) && !data.IsMoving)
             ClearCommand();
+        SquadLeaderId = data.SquadLeaderId;
         StateRevision = state.Revision;
     }
 

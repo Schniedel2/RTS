@@ -2,6 +2,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace RTS;
 
@@ -404,6 +405,57 @@ public class DebugRenderer
             graphicsDevice.DepthStencilState = previousDepthStencilState;
             graphicsDevice.RasterizerState = previousRasterizerState;
         }
+    }
+
+    public void DrawSelectedSquadLeaders(
+        GameWorld world,
+        IReadOnlyList<Unit> selectedUnits,
+        Matrix view,
+        Matrix projection)
+    {
+        var vertices = new List<VertexPositionColor>();
+        foreach (SquadLeader leader in FindHighlightedSquadLeaders(world, selectedUnits))
+        {
+            float radius = Math.Max(0.75f,
+                Math.Max(leader.Width, leader.Length) * world.GameGrid.CellSize * 0.7f);
+            const int segments = 40;
+            for (int index = 0; index < segments; index++)
+            {
+                float firstAngle = MathHelper.TwoPi * index / segments;
+                float secondAngle = MathHelper.TwoPi * (index + 1) / segments;
+                vertices.Add(new VertexPositionColor(RingPoint(firstAngle), Color.Cyan));
+                vertices.Add(new VertexPositionColor(RingPoint(secondAngle), Color.Cyan));
+            }
+
+            Vector3 RingPoint(float angle)
+            {
+                float x = leader.Position.X + MathF.Cos(angle) * radius;
+                float z = leader.Position.Z + MathF.Sin(angle) * radius;
+                x = Math.Clamp(x, 0.0f, world.Terrain.Width - 1.001f);
+                z = Math.Clamp(z, 0.0f, world.Terrain.Height - 1.001f);
+                return new Vector3(x, world.Terrain.GetSurfaceHeight(x, z) + 0.12f, z);
+            }
+        }
+
+        if (vertices.Count > 0)
+            DrawLines(vertices.ToArray(), view, projection);
+    }
+
+    internal static IReadOnlyList<SquadLeader> FindHighlightedSquadLeaders(
+        GameWorld world,
+        IEnumerable<Unit> selectedUnits)
+    {
+        HashSet<Guid> leaderIds = selectedUnits.OfType<Soldier>()
+            .Where(member => member.SquadLeaderId is Guid leaderId && leaderId != member.UnitId)
+            .Select(member => member.SquadLeaderId!.Value)
+            .ToHashSet();
+        return leaderIds
+            .Select(world.Units.FindById)
+            .OfType<SquadLeader>()
+            .Where(leader => !leader.IsDying && !leader.IsEmbarked &&
+                world.Visibility.IsUnitVisibleToLocalPlayer(leader))
+            .OrderBy(leader => leader.UnitId)
+            .ToArray();
     }
 
     private static void AddLine(

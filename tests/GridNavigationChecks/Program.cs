@@ -74,7 +74,46 @@ groundWeaponUnit.AllowedTargetDomains = TargetDomain.Ground | TargetDomain.Air;
 Check(groundWeaponUnit.CanAttackDomain(TargetDomain.Ground) &&
       groundWeaponUnit.CanAttackDomain(TargetDomain.Air),
     "Combined target-domain weapons can engage ground and air targets");
+var formationLeader = Empty<SquadLeader>();
+var formationGunner = Empty<Gunner>();
+var formationRocket = Empty<RakZero>();
+Field(formationLeader, typeof(Unit), "<UnitId>k__BackingField", Guid.NewGuid());
+Field(formationGunner, typeof(Unit), "<UnitId>k__BackingField", Guid.NewGuid());
+Field(formationRocket, typeof(Unit), "<UnitId>k__BackingField", Guid.NewGuid());
+formationLeader.SetTransform(Matrix.CreateTranslation(5, 0, 15));
+IReadOnlyDictionary<Guid, Vector2> formation = SquadFormation.CreateAssignments(
+    formationLeader, [formationGunner, formationRocket], new Vector2(10, 10), 0.0f, 1.0f);
+Check(formation[formationGunner.UnitId].Y < formation[formationRocket.UnitId].Y &&
+      formation[formationRocket.UnitId].Y < formation[formationLeader.UnitId].Y,
+    "Squad formation places gunners in front, rocket soldiers in the middle and the leader behind");
+Check(Math.Abs(SquadFormation.ResolveFacingDegrees(
+          formationLeader, new Vector2(5, 5))) < 0.001f,
+    "Formation facing follows the squad leader's travel direction when no drag direction is supplied");
+formationGunner.OnHostAction(UnitActionType.AssembleSquad,
+    new UnitActionContext(TargetUnitId: formationLeader.UnitId));
+Check(formationGunner.SquadLeaderId == formationLeader.UnitId,
+    "Host-confirmed squad assembly assigns the leader on every peer");
+formationGunner.OnHostAction(UnitActionType.DisbandSquad,
+    new UnitActionContext(TargetUnitId: formationLeader.UnitId));
+Check(formationGunner.SquadLeaderId is null,
+    "Host-confirmed squad disband removes membership on every peer");
+NetworkMessage formationGoto = Wire(NetworkCommands.CreateGotoRequest(
+    Guid.NewGuid(), [formationLeader.UnitId], 10, 0, 10,
+    formationFacingDegrees: 90.0f));
+Check(Math.Abs(formationGoto.FormationFacingDegrees!.Value - 90.0f) < 0.001f,
+    "Formation facing survives network serialization");
 MobileUnit healthBarUnit = Mobile(Vector3.Zero);
+healthBarUnit.HitPoints = 40.0f;
+Field(healthBarUnit, typeof(Unit), "<MaxHitPoints>k__BackingField", 100.0f);
+Check(Math.Abs(healthBarUnit.Heal(15.0f) - 15.0f) < 0.001f &&
+      Math.Abs(healthBarUnit.HitPoints - 55.0f) < 0.001f &&
+      Math.Abs(healthBarUnit.Heal(100.0f) - 45.0f) < 0.001f &&
+      Math.Abs(healthBarUnit.HitPoints - 100.0f) < 0.001f,
+    "Host-side healing restores hit points without exceeding maximum health");
+Check(Medic.SearchRadiusInCells > Medic.HealingRadiusInCells &&
+      Math.Abs(Medic.HealingRadiusInCells - 2.5f) < 0.001f &&
+      Math.Abs(Medic.HealPulseSeconds - 1.0f) < 0.001f,
+    "Medics search broadly but heal only nearby soldiers at a bounded pulse rate");
 Check(HealthBarRenderer.ShouldDraw(healthBarUnit, HealthBarDisplayMode.Always) &&
       !HealthBarRenderer.ShouldDraw(healthBarUnit, HealthBarDisplayMode.Damaged) &&
       !HealthBarRenderer.ShouldDraw(healthBarUnit, HealthBarDisplayMode.Off),
@@ -1587,9 +1626,27 @@ Check(researchRequest.Type == NetworkMessageType.ResearchRequest &&
 var completedBarracks = new GDIBarracks(Vector3.Zero, Guid.NewGuid());
 completedBarracks.AdvanceConstruction(completedBarracks.TotalBuildingPointsNeeded);
 Check(EconomyCatalog.GetBasePrice(PurchasableType.Unit, "gunner") == 100 &&
+      EconomyCatalog.GetBasePrice(PurchasableType.Unit, "squad-leader") == 400 &&
+      EconomyCatalog.GetBasePrice(PurchasableType.Unit, "medic") == 300 &&
       completedBarracks.Actions.Any(action => action.Type == UnitActionType.TrainUnit &&
-          action.TargetObjectName == "gunner"),
-    "Central pricing quotes basic soldiers at 100 resources");
+          action.TargetObjectName == "gunner") &&
+      completedBarracks.Actions.Any(action => action.Type == UnitActionType.TrainUnit &&
+          action.TargetObjectName == "squad-leader") &&
+      completedBarracks.TryGetProductionDuration("medic", out float medicProductionSeconds) &&
+      Math.Abs(medicProductionSeconds - 5.0f) < 0.001f &&
+      completedBarracks.Actions.Any(action => action.Type == UnitActionType.TrainUnit &&
+          action.TargetObjectName == "medic"),
+    "Barracks offers centrally priced basic soldiers, medics and squad leaders");
+Globals.MeshHandler.Meshes["vehicle-factory-1"] = Globals.MeshHandler.Meshes["barracks-1"];
+var completedVehicleFactory = new VehicleFactory(
+    Vector3.Zero, Guid.NewGuid(), "vehicle-factory-1");
+completedVehicleFactory.AdvanceConstruction(completedVehicleFactory.TotalBuildingPointsNeeded);
+Check(completedVehicleFactory.TryGetProductionDuration("jeep", out float jeepProductionSeconds) &&
+      Math.Abs(jeepProductionSeconds - 7.0f) < 0.001f &&
+      completedVehicleFactory.TryQueueProduction(
+          Guid.NewGuid(), "jeep", Guid.NewGuid(), jeepProductionSeconds) &&
+      completedVehicleFactory.ProductionQueue.ActiveOrder?.UnitTypeId == "jeep",
+    "Vehicle factory accepts Jeep production and starts its queue progress");
 Guid refineryOwner = Guid.NewGuid();
 Check(refinery.TryQueueIncludedHarvester(refineryOwner) &&
     refinery.ProductionQueue.ActiveOrder?.UnitTypeId == "harvester",

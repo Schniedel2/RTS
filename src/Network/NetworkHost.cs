@@ -19,6 +19,9 @@ public sealed class NetworkHost
     private readonly Dictionary<Guid, Vector2> _gotoQueueEnds = [];
     private readonly Dictionary<Guid, HarvestJob> _harvestJobs = [];
     private readonly Dictionary<Guid, int> _startPositionWishes = [];
+    private readonly Dictionary<Guid, double> _nextPatientHealTimes = [];
+    private readonly Dictionary<Guid, MedicJob> _medicJobs = [];
+    private readonly HashSet<Guid> _medicsHoldingPosition = [];
     private const int MaximumQueuedRequests = 1024;
     private const int MaximumRequestsPerUpdate = 32;
     private const int MaximumStateUpdatesPerTick = 32;
@@ -40,6 +43,11 @@ public sealed class NetworkHost
         public float UnloadElapsed { get; set; }
         public bool ResumeAfterUnload { get; set; } = true;
         public Vector3? StorageApproach { get; set; }
+    }
+    private sealed class MedicJob(Guid patientId)
+    {
+        public Guid PatientId { get; } = patientId;
+        public bool MoveIssued { get; set; }
     }
     private const int HarvestSearchRadius = 24;
     private const float HarvestRatePerSecond = 18.0f;
@@ -174,7 +182,7 @@ public sealed class NetworkHost
             _world.Units.FindById(targetId) is not Unit target)
             return null;
 
-        Guid[] accepted = (request.UnitIds ?? Array.Empty<Guid>())
+        Guid[] accepted = ExpandSquadUnitIds(request.UnitIds ?? Array.Empty<Guid>())
             .Distinct()
             .Where(id => _world.Units.FindById(id) is Unit attacker &&
                 (request.SenderId == _networkHandler.LocalPeerId ||
@@ -189,7 +197,7 @@ public sealed class NetworkHost
 
     private NetworkMessage? TryCreateAttackGroundCommand(NetworkMessage request)
     {
-        Guid[] accepted = (request.UnitIds ?? Array.Empty<Guid>())
+        Guid[] accepted = ExpandSquadUnitIds(request.UnitIds ?? Array.Empty<Guid>())
             .Distinct()
             .Where(id => _world.Units.FindById(id) is Unit attacker &&
                 (request.SenderId == _networkHandler.LocalPeerId ||
@@ -288,6 +296,7 @@ public sealed class NetworkHost
             await PublishGroundMobileUnitsAsync();
             await PublishHarvestersAsync(gameTime);
             await PublishProjectileImpactsAsync();
+            await UpdateAndPublishMedicsAsync();
 
             for (int index = 0; index < MaximumRequestsPerUpdate; index++)
             {
@@ -298,6 +307,7 @@ public sealed class NetworkHost
                     NetworkMessageType.FollowRequest or NetworkMessageType.AttackTargetRequest or NetworkMessageType.AttackGroundRequest)
                     request = request with { UnitIds = (request.UnitIds ?? Array.Empty<Guid>()).Where(id =>
                         _world.Units.FindById(id) is not Helicopter helicopter || Globals.Game.Armies.CanControl(request.SenderId, helicopter.ArmyId)).ToArray() };
+                HandleMedicCommandOverride(request);
                 _earthworks.CancelForRequest(request);
                 if (request.Type is NetworkMessageType.GotoRequest or NetworkMessageType.MoveAwayRequest && request.UnitId is Guid singleId)
                     _harvestJobs.Remove(singleId);
@@ -378,7 +388,29 @@ public sealed class NetworkHost
         Point destination = _world.GameGrid.ToCell(new Vector3(target.X, 0, target.Y));
         if (!_world.GameGrid.Contains(destination)) return null;
         List<UnitRoute> routes = [];
-        MobileUnit[] units = (request.UnitIds ?? [])
+        Guid[] requestedIds = request.UnitIds ?? [];
+        Dictionary<Guid, Vector2> formationTargets = [];
+        foreach (SquadLeader leader in requestedIds.Distinct()
+            .Select(_world.Units.FindById)
+            .OfType<SquadLeader>()
+            .Where(leader => Globals.Game.Armies.CanControl(request.SenderId, leader.ArmyId)))
+        {
+            Soldier[] members = GetSquadMembers(leader).ToArray();
+            float? facingDegrees = request.FormationFacingDegrees;
+            if (facingDegrees is null && request.AppendToQueue &&
+                _gotoQueueEnds.TryGetValue(leader.UnitId, out Vector2 queuedLeaderEnd))
+            {
+                Vector2 direction = target - queuedLeaderEnd;
+                if (direction.LengthSquared() > 0.01f)
+                    facingDegrees = MathHelper.ToDegrees(
+                        MathF.Atan2(-direction.X, -direction.Y));
+            }
+            foreach ((Guid unitId, Vector2 position) in SquadFormation.CreateAssignments(
+                leader, members, target, facingDegrees, _world.GameGrid.CellSize))
+                formationTargets[unitId] = position;
+        }
+
+        MobileUnit[] units = ExpandSquadUnitIds(requestedIds)
             .Distinct()
             .Select(_world.Units.FindMobileUnitById)
             .Where(unit => unit is not null && Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId))
@@ -391,6 +423,11 @@ public sealed class NetworkHost
         foreach (MobileUnit unit in units)
         {
             Guid id = unit.UnitId;
+            Vector2 requestedTarget = formationTargets.GetValueOrDefault(id, target);
+            Point requestedDestination = _world.GameGrid.ToCell(
+                new Vector3(requestedTarget.X, 0.0f, requestedTarget.Y));
+            if (!_world.GameGrid.Contains(requestedDestination))
+                requestedDestination = destination;
 
             // Helicopters fly directly to their world-space destination.
             // Ground placement, occupied cells, slopes and terrain routes do
@@ -398,22 +435,22 @@ public sealed class NetworkHost
             // map bounds and fuel when the replicated command is applied.
             if (unit is Helicopter)
             {
-                routes.Add(new UnitRoute(id, [], target.X, target.Y));
-                _gotoQueueEnds[id] = target;
+                routes.Add(new UnitRoute(id, [], requestedTarget.X, requestedTarget.Y));
+                _gotoQueueEnds[id] = requestedTarget;
                 continue;
             }
 
-            Point[]? proposed = !distributeGroup
+            Point[]? proposed = !distributeGroup && formationTargets.Count == 0
                 ? request.Routes?.FirstOrDefault(route => route.UnitId == id)?.Cells
                 : null;
             bool plausible = proposed is { Length: <= 4096 } && proposed.All(_world.GameGrid.Contains) &&
-                (proposed.Length == 0 || proposed[^1] == destination);
-            Vector2 assignedTarget = target;
+                (proposed.Length == 0 || proposed[^1] == requestedDestination);
+            Vector2 assignedTarget = requestedTarget;
             if (plausible)
             {
-                reservedDestinations.Add(destination);
+                reservedDestinations.Add(requestedDestination);
             }
-            else if (!TryAssignGotoDestination(unit, target, destination, reservedDestinations,
+            else if (!TryAssignGotoDestination(unit, requestedTarget, requestedDestination, reservedDestinations,
                 request.AppendToQueue, distributeGroup, out assignedTarget, out proposed))
             {
                 // No useful position is reachable near the group destination.
@@ -482,12 +519,17 @@ public sealed class NetworkHost
 
     private NetworkMessage CreateStopCommand(NetworkMessage request)
     {
-        foreach (Guid id in request.UnitIds ?? [])
+        Guid[] ids = ExpandSquadUnitIds(request.UnitIds ?? [])
+            .Where(id => _world.Units.FindById(id) is Unit unit &&
+                Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId))
+            .ToArray();
+        foreach (Guid id in ids)
         {
             _gotoQueueEnds.Remove(id);
             _harvestJobs.Remove(id);
         }
-        return NetworkCommands.CreateStopCommand(_networkHandler.LocalPeerId, request);
+        return NetworkCommands.CreateStopCommand(
+            _networkHandler.LocalPeerId, request with { UnitIds = ids });
     }
 
     private NetworkMessage? TryCreateUnitActionCommand(NetworkMessage request)
@@ -510,6 +552,41 @@ public sealed class NetworkHost
             return null;
         if (actionType == UnitActionType.Stop)
             return CreateStopCommand(request with { UnitIds = acceptedIds });
+        if (actionType == UnitActionType.AssembleSquad)
+        {
+            SquadLeader? leader = acceptedIds.Select(_world.Units.FindById)
+                .OfType<SquadLeader>().FirstOrDefault();
+            if (leader is null || leader.ArmyId is not Guid armyId)
+                return null;
+
+            float radius = SquadFormation.AssembleRadiusInCells * _world.GameGrid.CellSize;
+            Soldier[] members = _world.Units.Units.OfType<Soldier>()
+                .Where(unit => unit != leader && unit is not SquadLeader && !unit.IsDying && !unit.IsEmbarked &&
+                    unit.ArmyId == armyId &&
+                    (unit.SquadLeaderId == leader.UnitId ||
+                     unit.SquadLeaderId is null &&
+                     Vector3.DistanceSquared(unit.Position, leader.Position) <= radius * radius))
+                .OrderBy(unit => unit.SquadLeaderId == leader.UnitId ? 0 : 1)
+                .ThenBy(unit => Vector3.DistanceSquared(unit.Position, leader.Position))
+                .ThenBy(unit => unit.UnitId)
+                .Take(SquadFormation.MaximumMembers)
+                .ToArray();
+            Guid[] squadIds = [leader.UnitId, .. members.Select(member => member.UnitId)];
+            UnitActionContext squadContext = context with { TargetUnitId = leader.UnitId };
+            return NetworkCommands.CreateUnitActionCommand(_networkHandler.LocalPeerId,
+                request with { UnitActionContext = squadContext }, squadIds);
+        }
+        if (actionType == UnitActionType.DisbandSquad)
+        {
+            SquadLeader? leader = acceptedIds.Select(_world.Units.FindById)
+                .OfType<SquadLeader>().FirstOrDefault();
+            if (leader is null)
+                return null;
+            Guid[] squadIds = [leader.UnitId, .. GetSquadMembers(leader).Select(member => member.UnitId)];
+            UnitActionContext squadContext = context with { TargetUnitId = leader.UnitId };
+            return NetworkCommands.CreateUnitActionCommand(_networkHandler.LocalPeerId,
+                request with { UnitActionContext = squadContext }, squadIds);
+        }
         if (actionType is UnitActionType.AIStartReactor or UnitActionType.AIStartRefinery or
             UnitActionType.AIStartEconomy or UnitActionType.AIStartScouting or UnitActionType.AIStopGoals)
         {
@@ -523,6 +600,19 @@ public sealed class NetworkHost
         }
         return NetworkCommands.CreateUnitActionCommand(_networkHandler.LocalPeerId, request, acceptedIds);
     }
+
+    private IEnumerable<Guid> ExpandSquadUnitIds(IEnumerable<Guid> requestedIds)
+    {
+        HashSet<Guid> result = requestedIds.ToHashSet();
+        foreach (SquadLeader leader in result.Select(_world.Units.FindById).OfType<SquadLeader>().ToArray())
+            foreach (Soldier member in GetSquadMembers(leader))
+                result.Add(member.UnitId);
+        return result;
+    }
+
+    private IEnumerable<Soldier> GetSquadMembers(SquadLeader leader) =>
+        _world.Units.Units.OfType<Soldier>().Where(unit =>
+            unit != leader && unit.SquadLeaderId == leader.UnitId && !unit.IsDying);
 
     private NetworkMessage? TryCreateHarvestCommand(NetworkMessage request)
     {
@@ -1115,7 +1205,6 @@ public sealed class NetworkHost
             UpdateProduction((float)HostSimulationInterval);
             UpdateContainerEntries();
             SimulateHostProjectiles((float)HostSimulationInterval);
-
             UpdateDefensiveTargets();
 
             foreach (Unit unit in _world.Units.Units.OfType<Unit>())
@@ -1171,6 +1260,166 @@ public sealed class NetworkHost
             constructionSite.MarkNetworkStateSent(_hostTime, StateHeartbeatInterval);
             sentUpdates++;
         }
+    }
+
+    private void HandleMedicCommandOverride(NetworkMessage request)
+    {
+        bool stop = request.Type == NetworkMessageType.StopRequest ||
+            request.Type == NetworkMessageType.UnitActionRequest && request.UnitActionType == UnitActionType.Stop;
+        bool overrideMovement = stop || request.Type is NetworkMessageType.GotoRequest or
+            NetworkMessageType.FollowRequest or NetworkMessageType.AttackTargetRequest or
+            NetworkMessageType.AttackGroundRequest or NetworkMessageType.MoveAwayRequest;
+        if (!overrideMovement)
+            return;
+
+        IEnumerable<Guid> ids = ExpandSquadUnitIds(request.UnitIds ?? []);
+        if (request.Type == NetworkMessageType.MoveAwayRequest && request.UnitId is Guid singleId)
+            ids = ids.Append(singleId);
+        foreach (Guid id in ids.Distinct())
+        {
+            if (_world.Units.FindById(id) is not Medic medic ||
+                !Globals.Game.Armies.CanControl(request.SenderId, medic.ArmyId))
+                continue;
+            _medicJobs.Remove(id);
+            if (stop)
+                _medicsHoldingPosition.Add(id);
+            else
+                _medicsHoldingPosition.Remove(id);
+        }
+    }
+
+    private async Task UpdateAndPublishMedicsAsync()
+    {
+        Medic[] medics = _world.Units.Units.OfType<Medic>()
+            .Where(medic => !medic.IsDying && !medic.IsEmbarked)
+            .ToArray();
+        HashSet<Guid> activeMedicIds = medics.Select(medic => medic.UnitId).ToHashSet();
+        foreach (Guid id in _medicJobs.Keys.Where(id => !activeMedicIds.Contains(id)).ToArray())
+            _medicJobs.Remove(id);
+        _medicsHoldingPosition.RemoveWhere(id => !activeMedicIds.Contains(id));
+
+        Soldier[] soldiers = _world.Units.Units.OfType<Soldier>()
+            .Where(patient => !patient.IsDying && !patient.IsEmbarked && patient.HitPoints > 0.0f)
+            .ToArray();
+        float healingRadius = Medic.HealingRadiusInCells * _world.GameGrid.CellSize;
+        float healingRadiusSquared = healingRadius * healingRadius;
+        float searchRadius = Medic.SearchRadiusInCells * _world.GameGrid.CellSize;
+        float searchRadiusSquared = searchRadius * searchRadius;
+
+        foreach (Medic medic in medics)
+        {
+            SquadLeader? leader = medic.SquadLeaderId is Guid leaderId &&
+                _world.Units.FindById(leaderId) is SquadLeader candidateLeader &&
+                !candidateLeader.IsDying && !candidateLeader.IsEmbarked && candidateLeader.ArmyId == medic.ArmyId
+                    ? candidateLeader
+                    : null;
+            if (leader is not null)
+            {
+                _medicJobs.Remove(medic.UnitId);
+                Soldier? squadPatient = SelectMedicPatient(medic, soldiers, healingRadiusSquared,
+                    patient => patient.UnitId == leader.UnitId || patient.SquadLeaderId == leader.UnitId);
+                if (squadPatient is not null)
+                    await HealPatientAsync(medic, squadPatient);
+                continue;
+            }
+
+            bool holdPosition = _medicsHoldingPosition.Contains(medic.UnitId);
+            float acquisitionRadiusSquared = holdPosition ? healingRadiusSquared : searchRadiusSquared;
+            MedicJob? job = _medicJobs.GetValueOrDefault(medic.UnitId);
+            Soldier? patient = job is null ? null : soldiers.FirstOrDefault(candidate => candidate.UnitId == job.PatientId);
+            if (!IsValidMedicPatient(medic, patient, acquisitionRadiusSquared))
+            {
+                bool cancelAutomaticMove = job?.MoveIssued == true && medic.CurrentCommand is not null;
+                _medicJobs.Remove(medic.UnitId);
+                job = null;
+                patient = null;
+                if (cancelAutomaticMove)
+                {
+                    NetworkMessage stop = CreateStopCommand(NetworkCommands.CreateStopRequest(
+                        GetMedicCommandSender(medic), [medic.UnitId]));
+                    await PublishAsync(stop);
+                    continue;
+                }
+            }
+
+            if (job is null)
+            {
+                if (medic.CurrentCommand is not null)
+                    continue;
+                patient = SelectMedicPatient(medic, soldiers, acquisitionRadiusSquared, _ => true);
+                if (patient is null)
+                    continue;
+                job = new MedicJob(patient.UnitId);
+                _medicJobs[medic.UnitId] = job;
+            }
+
+            float distanceSquared = HorizontalDistanceSquared(medic.Position, patient!.Position);
+            if (distanceSquared <= healingRadiusSquared)
+            {
+                if (job.MoveIssued && medic.CurrentCommand is not null)
+                {
+                    NetworkMessage stop = CreateStopCommand(NetworkCommands.CreateStopRequest(
+                        GetMedicCommandSender(medic), [medic.UnitId]));
+                    await PublishAsync(stop);
+                }
+                job.MoveIssued = false;
+                await HealPatientAsync(medic, patient);
+                continue;
+            }
+
+            if (holdPosition)
+            {
+                _medicJobs.Remove(medic.UnitId);
+                continue;
+            }
+            if (medic.CurrentCommand is not null && !job.MoveIssued)
+            {
+                _medicJobs.Remove(medic.UnitId);
+                continue;
+            }
+            if (!job.MoveIssued || medic.CurrentCommand is null)
+            {
+                NetworkMessage? move = TryCreateGotoCommand(NetworkCommands.CreateGotoRequest(
+                    GetMedicCommandSender(medic), [medic.UnitId], patient.Position.X, patient.Position.Y, patient.Position.Z));
+                if (move is null)
+                {
+                    _medicJobs.Remove(medic.UnitId);
+                    continue;
+                }
+                await PublishAsync(move);
+                job.MoveIssued = true;
+            }
+        }
+    }
+
+    private static bool IsValidMedicPatient(Medic medic, Soldier? patient, float radiusSquared) =>
+        patient is not null && !patient.IsDying && !patient.IsEmbarked && patient.HitPoints > 0.0f &&
+        patient.HitPoints < patient.MaxHitPoints && patient.ArmyId == medic.ArmyId &&
+        HorizontalDistanceSquared(medic.Position, patient.Position) <= radiusSquared;
+
+    private static Soldier? SelectMedicPatient(
+        Medic medic, IEnumerable<Soldier> soldiers, float radiusSquared, Func<Soldier, bool> filter) =>
+        soldiers.Where(patient => filter(patient) && IsValidMedicPatient(medic, patient, radiusSquared))
+            .OrderBy(patient => patient.HitPoints / Math.Max(1.0f, patient.MaxHitPoints))
+            .ThenBy(patient => HorizontalDistanceSquared(medic.Position, patient.Position))
+            .ThenBy(patient => patient.UnitId)
+            .FirstOrDefault();
+
+    private Guid GetMedicCommandSender(Medic medic) => medic.ArmyId is Guid armyId &&
+        Globals.Game.Armies.Find(armyId) is Army army && army.OwnerPlayerIds.Count > 0
+            ? army.OwnerPlayerIds.OrderBy(id => id).First()
+            : _networkHandler.LocalPeerId;
+
+    private async Task HealPatientAsync(Medic medic, Soldier patient)
+    {
+        if (_nextPatientHealTimes.GetValueOrDefault(patient.UnitId) > _hostTime)
+            return;
+        float healed = patient.Heal(Medic.HealAmountPerPulse);
+        if (healed <= 0.0f)
+            return;
+        _nextPatientHealTimes[patient.UnitId] = _hostTime + Medic.HealPulseSeconds;
+        await PublishAsync(NetworkCommands.CreateUnitHitCommand(
+            _networkHandler.LocalPeerId, patient.UnitId, medic.UnitId, patient.Position, -healed, patient.HitPoints));
     }
 
     private void UpdateProduction(float elapsedSeconds)

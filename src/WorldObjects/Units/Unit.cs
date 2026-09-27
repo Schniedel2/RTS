@@ -477,6 +477,16 @@ public abstract class Unit : WorldObject
         HitPoints = Math.Clamp(hitPoints, 0.0f, MaxHitPoints);
     }
 
+    /// <summary>Host-side healing. Returns the amount of hit points actually restored.</summary>
+    public float Heal(float amount)
+    {
+        if (IsDying || !float.IsFinite(amount) || amount <= 0.0f || HitPoints <= 0.0f)
+            return 0.0f;
+        float previous = HitPoints;
+        HitPoints = Math.Min(MaxHitPoints, HitPoints + amount);
+        return HitPoints - previous;
+    }
+
     public virtual void PlayHitEffects(HitInfo hit)
     {
     }

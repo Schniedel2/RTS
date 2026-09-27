@@ -253,7 +253,8 @@ public static class NetworkCommands
         float y,
         float z,
         bool appendToQueue = false,
-        UnitRoute[]? routes = null)
+        UnitRoute[]? routes = null,
+        float? formationFacingDegrees = null)
     {
         return new NetworkMessage(
             NetworkMessageType.GotoRequest,
@@ -264,6 +265,7 @@ public static class NetworkCommands
             Y: y,
             Z: z,
             AppendToQueue: appendToQueue,
+            FormationFacingDegrees: formationFacingDegrees,
             Routes: routes);
     }
 
@@ -281,6 +283,7 @@ public static class NetworkCommands
             Y: request.Y,
             Z: request.Z,
             AppendToQueue: request.AppendToQueue,
+            FormationFacingDegrees: request.FormationFacingDegrees,
             Routes: routes);
     }
 

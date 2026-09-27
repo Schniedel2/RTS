@@ -41,7 +41,8 @@ public static class EconomyCatalog
             PurchasableType.Unit => id switch
             {
                 "soldier" or "gunner" => new(100, []),
-                "rak-zero" or "engineer" => new(300, []),
+                "rak-zero" or "engineer" or "medic" => new(300, []),
+                "squad-leader" => new(400, []),
                 "harvester" => new(500, []),
                 "helicopter" or "heli" => new(1200, []),
                 _ => new(0, [])

@@ -24,6 +24,12 @@ public static class UnitFactory
             case "engineer":
                 unit = new Engineer(position, unitId);
                 break;
+            case "medic":
+                unit = new Medic(position, unitId);
+                break;
+            case "squad-leader":
+                unit = new SquadLeader(position, unitId);
+                break;
             case "car":
                 unit = new Car(position, unitId);
                 break;

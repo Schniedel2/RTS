@@ -94,15 +94,20 @@ public sealed class NetworkClient
         return _networkHandler.SendToHostAsync(request, cancellationToken);
     }
     
-    public Task RequestGotoAsync(List<Unit> units, Vector3 position, bool appendToQueue = false, UnitRoute[]? routes = null)
+    public Task RequestGotoAsync(List<Unit> units, Vector3 position, bool appendToQueue = false,
+        UnitRoute[]? routes = null, float? formationFacingDegrees = null)
     {
         Guid[] unitIds = units.Select(unit => unit.UnitId).ToArray();
-        return RequestGotoAsync(unitIds, position.X, position.Y, position.Z, CancellationToken.None, appendToQueue, routes);
+        return RequestGotoAsync(unitIds, position.X, position.Y, position.Z, CancellationToken.None,
+            appendToQueue, routes, formationFacingDegrees);
     }
 
-    public Task RequestGotoAsync(Guid[] unitIds, float x, float y, float z, CancellationToken cancellationToken = default, bool appendToQueue = false, UnitRoute[]? routes = null)
+    public Task RequestGotoAsync(Guid[] unitIds, float x, float y, float z,
+        CancellationToken cancellationToken = default, bool appendToQueue = false,
+        UnitRoute[]? routes = null, float? formationFacingDegrees = null)
     {
-        return _commands.GotoAsync(unitIds, new Vector3(x, y, z), appendToQueue, routes, cancellationToken);
+        return _commands.GotoAsync(unitIds, new Vector3(x, y, z), appendToQueue, routes,
+            cancellationToken, formationFacingDegrees);
     }
 
     public Task RequestBuildAsync(string buildingTypeName, Vector3 target, float targetAngleY, Guid unitId)

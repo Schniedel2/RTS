@@ -40,6 +40,8 @@ public class PlayerHandler
     public Point PressLeftScreenPosition { get; private set; }
     private bool IsMouseOnTerrain = false;
     private bool _isDrag = false;
+    private float? _formationFacingDegrees;
+    private bool _formationPlacementActive;
 
     private int _toolSize;
     private ToolShape _toolShape;    
@@ -277,32 +279,70 @@ public class PlayerHandler
 
         if (GetMode() == CurrentMode.SelectUnits)
         {
-            if (IsLeftButtonPressed(mouse))
-                PressLeftScreenPosition = mouse.Position;
-
-            if (mouse.LeftButton == ButtonState.Pressed)
+            SquadLeader? formationLeader = GetSelectedSquadLeader();
+            bool formationGoto = ActiveAction?.Type == UnitActionType.Goto && formationLeader is not null;
+            if (formationGoto)
             {
-                _currentSelectionRect = CreateSelectionRectangle(PressLeftScreenPosition, mouse.Position);
-                if (_currentSelectionRect.Width > 8 || _currentSelectionRect.Height > 8)
+                if (IsLeftButtonPressed(mouse) && IsMouseOnTerrain)
                 {
-                    _isSelectingUnits = true;
+                    PressLeftScreenPosition = mouse.Position;
+                    PressLeftWorldPosition = MouseWorldPosition;
+                    _formationFacingDegrees = null;
+                    _formationPlacementActive = true;
+                }
+                if (_formationPlacementActive && mouse.LeftButton == ButtonState.Pressed && IsMouseOnTerrain &&
+                    !IsClick(PressLeftScreenPosition, mouse.Position))
+                {
                     _isDrag = true;
+                    Vector2 direction = new(
+                        MouseWorldPosition.X - PressLeftWorldPosition.X,
+                        MouseWorldPosition.Z - PressLeftWorldPosition.Z);
+                    if (direction.LengthSquared() > 0.01f)
+                        _formationFacingDegrees = MathHelper.ToDegrees(
+                            MathF.Atan2(-direction.X, -direction.Y));
+                }
+                if (IsLeftButtonReleased(mouse))
+                {
+                    if (_formationPlacementActive && IsMouseOnTerrain)
+                    {
+                        _scouting.Stop(_selectedUnits);
+                        Globals.Game.NetworkClient.RequestGotoAsync(_selectedUnits, PressLeftWorldPosition,
+                            Keyboard.GetState().IsKeyDown(Keys.LeftShift) ||
+                            Keyboard.GetState().IsKeyDown(Keys.RightShift),
+                            formationFacingDegrees: _formationFacingDegrees);
+                    }
+                    _formationPlacementActive = false;
                 }
             }
-
-            if (IsLeftButtonReleased(mouse))
+            else
             {
-                if (SelectedUnits.Count == 0)
-                    if (!_isSelectingUnits)
-                        SelectUnits(camera, viewport, _currentSelectionRect, 1);
-                    
-                if (_isSelectingUnits)
-                    SelectUnits(camera, viewport, _currentSelectionRect, 99);
-                else
-                    if (IsMouseOnTerrain)
+                _formationPlacementActive = false;
+                if (IsLeftButtonPressed(mouse))
+                    PressLeftScreenPosition = mouse.Position;
+
+                if (mouse.LeftButton == ButtonState.Pressed)
+                {
+                    _currentSelectionRect = CreateSelectionRectangle(PressLeftScreenPosition, mouse.Position);
+                    if (_currentSelectionRect.Width > 8 || _currentSelectionRect.Height > 8)
+                    {
+                        _isSelectingUnits = true;
+                        _isDrag = true;
+                    }
+                }
+
+                if (IsLeftButtonReleased(mouse))
+                {
+                    if (SelectedUnits.Count == 0)
+                        if (!_isSelectingUnits)
+                            SelectUnits(camera, viewport, _currentSelectionRect, 1);
+
+                    if (_isSelectingUnits)
+                        SelectUnits(camera, viewport, _currentSelectionRect, 99);
+                    else if (IsMouseOnTerrain)
                         PerformClickAction(_selectedUnits, MouseWorldPosition, 0);
 
-                _isSelectingUnits = false;
+                    _isSelectingUnits = false;
+                }
             }
 
             if (IsRightButtonPressed(mouse))
@@ -470,6 +510,16 @@ public class PlayerHandler
     {
         _ = Globals.Game.NetworkClient.NotifyUnitsSelectedAsync(
             _selectedUnits.Select(unit => unit.UnitId).ToArray());
+    }
+
+    private SquadLeader? GetSelectedSquadLeader()
+    {
+        if (_selectedUnits.Count != 1 || _selectedUnits[0] is not SquadLeader leader)
+            return null;
+        return _map.Units.Units.OfType<Soldier>().Any(unit =>
+            unit != leader && unit.SquadLeaderId == leader.UnitId && !unit.IsDying)
+            ? leader
+            : null;
     }
 
     private bool IsLeftButtonPressed(MouseState mouse)
@@ -796,6 +846,29 @@ public class PlayerHandler
         //  render editor-tool
         if (IsMouseOnTerrain)
         {
+            if (ActiveAction?.Type == UnitActionType.Goto &&
+                GetSelectedSquadLeader() is SquadLeader formationLeader)
+            {
+                Vector3 anchorWorld = _isDrag ? PressLeftWorldPosition : MouseWorldPosition;
+                Vector2 anchor = new(anchorWorld.X, anchorWorld.Z);
+                Soldier[] members = _map.Units.Units.OfType<Soldier>()
+                    .Where(unit => unit != formationLeader &&
+                        unit.SquadLeaderId == formationLeader.UnitId && !unit.IsDying)
+                    .ToArray();
+                foreach (Vector2 position in SquadFormation.CreateAssignments(
+                    formationLeader, members, anchor,
+                    _isDrag ? _formationFacingDegrees : null, _map.GameGrid.CellSize).Values)
+                {
+                    Point cell = _map.GameGrid.ToCell(new Vector3(position.X, 0.0f, position.Y));
+                    if (!_map.GameGrid.Contains(cell))
+                        continue;
+                    int size = _map.GameGrid.CellSize;
+                    for (int z = cell.Y * size; z < (cell.Y + 1) * size; z++)
+                        for (int x = cell.X * size; x < (cell.X + 1) * size; x++)
+                            _map.Terrain.HighlightCell(camera, x, z,
+                                new Color(70, 180, 255, 120));
+                }
+            }
             if (GetMode() == CurrentMode.EditTerrain)
             {
                 //  render the terrain modification tool at the mouse world position

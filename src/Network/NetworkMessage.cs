@@ -198,6 +198,7 @@ public sealed record NetworkMessage(
     HelicopterOrder? HelicopterOrder = null,
     TiberiumSeedState? TiberiumSeed = null,
     bool AppendToQueue = false,
+    float? FormationFacingDegrees = null,
     UnitRoute[]? Routes = null,
     HarvestPhase? HarvestPhase = null,
     float CargoAmount = 0.0f,

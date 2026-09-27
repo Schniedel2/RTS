@@ -63,6 +63,16 @@ public class Soldier : MobileUnit
     protected float _minigunRotationMaxSpeed = 256.0f;
     protected float _minigunRotationAcceleration = 64.0f;
     private float _nextIdlePoseTimer = 0.0f;
+
+    public override void OnHostAction(UnitActionType actionType, UnitActionContext? context = null)
+    {
+        base.OnHostAction(actionType, context);
+        if (actionType == UnitActionType.AssembleSquad)
+            SquadLeaderId = context?.TargetUnitId;
+        else if (actionType == UnitActionType.DisbandSquad &&
+            (context?.TargetUnitId is null || SquadLeaderId == context.TargetUnitId))
+            SquadLeaderId = null;
+    }
     private float _launcherReloadRemaining;
     private bool _isDying;
     private float _deathElapsed;
