@@ -1900,6 +1900,8 @@ public sealed class NetworkHost
                 MathHelper.Clamp(horizontalDistance / impact.ExplosionRadius, 0.0f, 1.0f));
             float damage = DamageCalculator.Calculate(
                 impact.Damage * damageFactor, impact.DamageType, target.Armor);
+            damage = SquadBenefits.ApplyCombatModifiers(
+                _world, _world.Units.FindById(impact.AttackerId), target, damage);
             HitInfo hit = new(impact.AttackerId, impact.Position, damage);
             bool destroyed = target.OnHit(hit);
             NetworkMessage hitCommand = NetworkCommands.CreateUnitHitCommand(
@@ -1946,6 +1948,8 @@ public sealed class NetworkHost
             return;
 
         float damage = DamageCalculator.Calculate(baseDamage, damageType, target.Armor);
+        damage = SquadBenefits.ApplyCombatModifiers(
+            _world, _world.Units.FindById(attackerId), target, damage);
         HitInfo hit = new(attackerId, impactPosition, damage);
         bool destroyed = target.OnHit(hit);
         NetworkMessage hitCommand = NetworkCommands.CreateUnitHitCommand(

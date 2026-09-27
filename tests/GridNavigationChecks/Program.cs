@@ -65,6 +65,10 @@ Check(Math.Abs(DamageCalculator.Calculate(25.0f, DamageType.SmallArms, ArmorClas
       Math.Abs(DamageCalculator.Calculate(25.0f, DamageType.SmallArms, ArmorClass.LightVehicle) - 6.25f) < 0.001f &&
       Math.Abs(DamageCalculator.Calculate(25.0f, DamageType.SmallArms, ArmorClass.HeavyVehicle) - 1.25f) < 0.001f,
     "Small arms retain full infantry damage but are reduced by vehicle armor");
+Check(Math.Abs(SquadBenefits.OutgoingDamageMultiplier - 1.10f) < 0.001f &&
+      Math.Abs(SquadBenefits.IncomingDamageMultiplier - 0.90f) < 0.001f &&
+      Math.Abs(SquadBenefits.OutgoingDamageMultiplier * SquadBenefits.IncomingDamageMultiplier - 0.99f) < 0.001f,
+    "Squad cohesion grants small offensive and defensive bonuses without amplifying equal squad fights");
 Unit groundWeaponUnit = Unit();
 groundWeaponUnit.AllowedTargetDomains = TargetDomain.Ground;
 Check(groundWeaponUnit.CanAttackDomain(TargetDomain.Ground) &&
@@ -93,6 +97,25 @@ formationGunner.OnHostAction(UnitActionType.AssembleSquad,
     new UnitActionContext(TargetUnitId: formationLeader.UnitId));
 Check(formationGunner.SquadLeaderId == formationLeader.UnitId,
     "Host-confirmed squad assembly assigns the leader on every peer");
+Guid cohesionArmyId = Guid.NewGuid();
+Field(formationLeader, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)cohesionArmyId);
+Field(formationGunner, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)cohesionArmyId);
+formationGunner.SetTransform(Matrix.CreateTranslation(6, 0, 15));
+var cohesionUnits = new UnitHandler();
+UnitList(cohesionUnits).Add(formationLeader);
+UnitList(cohesionUnits).Add(formationGunner);
+var cohesionWorld = Empty<GameWorld>();
+Field(cohesionWorld, typeof(GameWorld), "<Units>k__BackingField", cohesionUnits);
+Field(cohesionWorld, typeof(GameWorld), "<GameGrid>k__BackingField", new GameGrid(64, 64, 1));
+Check(SquadBenefits.HasCohesion(formationLeader, cohesionWorld) &&
+      SquadBenefits.HasCohesion(formationGunner, cohesionWorld) &&
+      Math.Abs(SquadBenefits.ApplyCombatModifiers(
+          cohesionWorld, formationGunner, formationLeader, 100.0f) - 99.0f) < 0.001f,
+    "Nearby living squad members and their leader receive balanced cohesion combat bonuses");
+formationGunner.SetTransform(Matrix.CreateTranslation(40, 0, 40));
+Check(!SquadBenefits.HasCohesion(formationLeader, cohesionWorld) &&
+      !SquadBenefits.HasCohesion(formationGunner, cohesionWorld),
+    "Squad combat bonuses end when members leave cohesion range");
 formationGunner.OnHostAction(UnitActionType.DisbandSquad,
     new UnitActionContext(TargetUnitId: formationLeader.UnitId));
 Check(formationGunner.SquadLeaderId is null,
