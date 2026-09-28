@@ -8,7 +8,7 @@ namespace RTS;
 
 public class Silo : Building
 {
-    public override float ResourceCapacity => 2500.0f;
+    public override string GameplayTypeId => "silo";
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
 
     public Silo(
@@ -22,9 +22,7 @@ public class Silo : Building
     {
         SetMesh(meshName, deriveDimensions: true);
 
-        TotalBuildingPointsNeeded = 1500;
-        HitPoints = MaxHitPoints = 1500;
-        PowerConsumption = 5;
+        ApplyCatalogMetadata();
     }
 
     public override void Draw(Effect effect)

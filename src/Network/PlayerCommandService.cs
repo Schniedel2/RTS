@@ -116,6 +116,11 @@ public sealed class PlayerCommandService
         CancellationToken cancellationToken = default) =>
         SendAsync(NetworkCommands.CreateFollowRequest(PlayerId, unitIds.ToArray(), targetId), cancellationToken);
 
+    public Task EnterUnitAsync(Guid unitId, Guid containerId, OccupantRole? role = null,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(NetworkCommands.CreateEnterUnitRequest(PlayerId, unitId, containerId, role),
+            cancellationToken);
+
     public Task MoveAwayAsync(Guid unitId, Vector3 fromPosition,
         CancellationToken cancellationToken = default) =>
         SendAsync(new NetworkMessage(NetworkMessageType.MoveAwayRequest, PlayerId, UnitId: unitId,

@@ -6,6 +6,7 @@ namespace RTS;
 
 public sealed class Medic : Soldier
 {
+    public override string GameplayTypeId => "medic";
     public const float HealAmountPerPulse = 5.0f;
     public const float HealPulseSeconds = 1.0f;
     public const float SearchRadiusInCells = 12.0f;

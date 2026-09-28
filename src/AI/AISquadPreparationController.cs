@@ -23,8 +23,13 @@ public sealed class AISquadPreparationController(
     Guid playerId,
     Guid armyId,
     NetworkHandler network,
-    AIStrategyProfile? strategyProfile = null)
+    AIStrategyProfile? strategyProfile = null,
+    AIThreatAssessment? threatAssessment = null)
 {
+    private static readonly AIProductionNeed LeaderNeed = new(
+        AIUnitRole.Leader, AIMovementDomain.Infantry, Defense: 0.3f, Mobility: 0.2f);
+    private static readonly AIProductionNeed HealerNeed = new(
+        AIUnitRole.Healer, AIMovementDomain.Infantry, Mobility: 0.2f);
     public const int RequiredGunners = 3;
     private const float ThinkIntervalSeconds = 1.0f;
     private const float OrderRetrySeconds = 3.0f;
@@ -32,6 +37,7 @@ public sealed class AISquadPreparationController(
     private readonly PlayerCommandService _commands = new(network, playerId);
     private readonly AIStrategyProfile _profile = strategyProfile ??
         AIStrategyProfile.Create(0, armyId);
+    private readonly AIThreatAssessment _threat = threatAssessment ?? new(armyId);
     private float _thinkElapsed;
     private float _orderElapsed = OrderRetrySeconds;
 
@@ -68,53 +74,54 @@ public sealed class AISquadPreparationController(
         }
 
         SquadLeader? leader = world.Units.Units.OfType<SquadLeader>()
-            .Where(unit => IsAvailable(unit)).OrderBy(unit => unit.UnitId).FirstOrDefault();
-        Medic? medic = world.Units.Units.OfType<Medic>()
+            .Where(unit => IsAvailable(unit) && HasRole(unit, AIUnitRole.Leader))
+            .OrderBy(unit => unit.UnitId).FirstOrDefault();
+        Soldier? healer = world.Units.Units.OfType<Soldier>()
+            .Where(unit => HasRole(unit, AIUnitRole.Healer))
             .Where(unit => IsAvailableForLeader(unit, leader)).OrderBy(unit => unit.UnitId).FirstOrDefault();
-        Gunner[] gunners = world.Units.Units.OfType<Gunner>()
+        int requiredCombatSoldiers = _profile.RequiredGunners + _profile.RequiredRakZero;
+        Soldier[] combatSoldiers = world.Units.Units.OfType<Soldier>()
+            .Where(unit => HasRole(unit, AIUnitRole.Attacker) &&
+                !HasRole(unit, AIUnitRole.Leader) && !HasRole(unit, AIUnitRole.Healer))
             .Where(unit => IsAvailableForLeader(unit, leader) && unit.UnitId != reservedScoutId)
-            .OrderBy(unit => unit.UnitId).Take(_profile.RequiredGunners).ToArray();
-        RakZero[] rocketSoldiers = world.Units.Units.OfType<RakZero>()
-            .Where(unit => IsAvailableForLeader(unit, leader))
-            .OrderBy(unit => unit.UnitId).Take(_profile.RequiredRakZero).ToArray();
+            .OrderBy(unit => unit.UnitId).Take(requiredCombatSoldiers).ToArray();
 
         if (leader is null)
         {
             State = AISquadPreparationState.TrainingLeader;
-            TryOrderUnit(barracks, "squad-leader", "squad leader");
+            TryOrderRole(barracks, LeaderNeed, "squad leader");
             return;
         }
-        if (medic is null)
+        if (healer is null)
         {
             State = AISquadPreparationState.TrainingMedic;
-            TryOrderUnit(barracks, "medic", "medic");
+            TryOrderRole(barracks, HealerNeed, "healer");
             return;
         }
-        if (gunners.Length < _profile.RequiredGunners)
+        if (combatSoldiers.Length < requiredCombatSoldiers)
         {
-            State = AISquadPreparationState.TrainingGunners;
-            TryOrderUnit(barracks, "gunner", $"squad gunner {gunners.Length + 1}/{_profile.RequiredGunners}");
-            return;
-        }
-        if (rocketSoldiers.Length < _profile.RequiredRakZero)
-        {
-            State = AISquadPreparationState.TrainingRocketSoldiers;
-            TryOrderUnit(barracks, "rak-zero",
-                $"anti-armor soldier {rocketSoldiers.Length + 1}/{_profile.RequiredRakZero}");
+            float infantryBias = _profile.RequiredGunners / (float)Math.Max(1, requiredCombatSoldiers) * 0.5f;
+            float vehicleBias = _profile.RequiredRakZero / (float)Math.Max(1, requiredCombatSoldiers) * 0.5f;
+            AIProductionNeed combatNeed = _threat.CreateInfantryCombatNeed(infantryBias, vehicleBias);
+            State = _threat.Current.AntiVehicleNeed + vehicleBias >
+                    _threat.Current.AntiInfantryNeed + infantryBias
+                ? AISquadPreparationState.TrainingRocketSoldiers
+                : AISquadPreparationState.TrainingGunners;
+            TryOrderRole(barracks, combatNeed,
+                $"combat soldier {combatSoldiers.Length + 1}/{requiredCombatSoldiers}");
             return;
         }
 
-        if (medic.SquadLeaderId == leader.UnitId &&
-            gunners.All(gunner => gunner.SquadLeaderId == leader.UnitId) &&
-            rocketSoldiers.All(soldier => soldier.SquadLeaderId == leader.UnitId))
+        if (healer.SquadLeaderId == leader.UnitId &&
+            combatSoldiers.All(soldier => soldier.SquadLeaderId == leader.UnitId))
         {
             State = AISquadPreparationState.Ready;
             LastDecision = $"{_profile.DisplayName} squad ready: leader, medic, " +
-                $"{_profile.RequiredGunners} gunner(s) and {_profile.RequiredRakZero} rocket soldier(s).";
+                $"{requiredCombatSoldiers} threat-adapted combat soldier(s).";
             return;
         }
 
-        Soldier[] members = [medic, .. gunners, .. rocketSoldiers];
+        Soldier[] members = [healer, .. combatSoldiers];
         float assembleRadius = SquadFormation.AssembleRadiusInCells * world.GameGrid.CellSize;
         bool gathered = members.All(member =>
             HorizontalDistanceSquared(member.Position, leader.Position) <= assembleRadius * assembleRadius);
@@ -149,8 +156,16 @@ public sealed class AISquadPreparationController(
             world.Units.FindById(unit.SquadLeaderId.Value) is not SquadLeader previousLeader ||
             previousLeader.IsDying || previousLeader.ArmyId != armyId);
 
-    private void TryOrderUnit(GDIBarracks barracks, string unitTypeId, string description)
+    private void TryOrderRole(GDIBarracks barracks, AIProductionNeed need, string description)
     {
+        GameplayDefinition? selected = AIUnitSelector.SelectBest(
+            barracks.GameplayTypeId, need, CountOwnedCatalogUnits());
+        if (selected is null)
+        {
+            LastDecision = $"Barracks has no catalog unit for the squad's {description}.";
+            return;
+        }
+        string unitTypeId = selected.TypeId;
         int queued = barracks.ProductionQueue.Orders.Count(order =>
             string.Equals(order.UnitTypeId, unitTypeId, StringComparison.OrdinalIgnoreCase));
         if (queued > 0)
@@ -177,6 +192,17 @@ public sealed class AISquadPreparationController(
         _orderElapsed = 0.0f;
         LastDecision = $"Ordered the first squad's {description}.";
     }
+
+    private System.Collections.Generic.IReadOnlyDictionary<string, int> CountOwnedCatalogUnits() =>
+        world.Units.Units
+            .Where(unit => unit.ArmyId == armyId && !unit.IsDying &&
+                !string.IsNullOrWhiteSpace(unit.GameplayTypeId))
+            .GroupBy(unit => unit.GameplayTypeId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+
+    private static bool HasRole(Unit unit, AIUnitRole roles) =>
+        GameplayCatalog.Find(PurchasableType.Unit, unit.GameplayTypeId)?.AI is AIUnitMetadata ai &&
+        (ai.Roles & roles) == roles;
 
     private Vector3 FindFallbackRallyPoint(GDIBarracks barracks)
     {

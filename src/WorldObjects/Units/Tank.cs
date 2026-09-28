@@ -8,6 +8,7 @@ namespace RTS;
 
 public class Tank : MobileUnit
 {
+    public override string GameplayTypeId => "tank";
     public override ArmorClass Armor => ArmorClass.HeavyVehicle;
     public override bool UsesVehicleDeathSequence => true;
     // The turret angle is local to the hull.  Keeping it this way means that a

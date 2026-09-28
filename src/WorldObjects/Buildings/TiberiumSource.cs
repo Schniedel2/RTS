@@ -8,6 +8,7 @@ namespace RTS;
 /// <summary>Neutral map feature that keeps seeding Tiberium growth in its radius; itself not harvestable.</summary>
 public class TiberiumSource : Building
 {
+    public override string GameplayTypeId => "tiberium-source";
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
 
     internal const int SpreadRadius = 3;
@@ -26,8 +27,7 @@ public class TiberiumSource : Building
         // A source is an organic map feature and follows the terrain instead
         // of requiring the level foundation used by constructed buildings.
         MaximumTerrainHeightDifference = float.MaxValue;
-        TotalBuildingPointsNeeded = 0;
-        HitPoints = MaxHitPoints = 300;
+        ApplyCatalogMetadata();
     }
 
     // Only invoked on the host (see NetworkHost.UpdateHostSimulation); picks a candidate cell,

@@ -53,7 +53,7 @@ public sealed class AISquadRecoveryController(
             return;
         AverageHealthFraction = CalculateAverageHealth();
         Soldier[] survivors = GetSurvivors();
-        bool hasMedic = survivors.OfType<Medic>().Any();
+        bool hasMedic = survivors.Any(member => HasRole(member, AIUnitRole.Healer));
         bool disbandConfirmed = survivors
             .Where(unit => unit.UnitId != _leaderId)
             .All(unit => unit.SquadLeaderId is null);
@@ -89,4 +89,8 @@ public sealed class AISquadRecoveryController(
             ? 0.0f
             : survivors.Average(unit => unit.HitPoints / Math.Max(1.0f, unit.MaxHitPoints));
     }
+
+    private static bool HasRole(Unit unit, AIUnitRole roles) =>
+        GameplayCatalog.Find(PurchasableType.Unit, unit.GameplayTypeId)?.AI is AIUnitMetadata ai &&
+        (ai.Roles & roles) == roles;
 }

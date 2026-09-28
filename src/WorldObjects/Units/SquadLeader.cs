@@ -6,6 +6,7 @@ namespace RTS;
 
 public sealed class SquadLeader : Soldier
 {
+    public override string GameplayTypeId => "squad-leader";
     public SquadLeader(Vector3 position, Guid unitId)
         : base(position, unitId, new GroundMovementProfile(MovementModes.Walk, 50.0f))
     {

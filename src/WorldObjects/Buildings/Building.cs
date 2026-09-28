@@ -52,7 +52,8 @@ public class Building : Unit
     /// <summary>Draw a local cloth flag when the building mesh exposes <c>pivot:flag</c>.</summary>
     public bool ShowOwnerFlag { get; set; } = true;
     public ProductionQueue ProductionQueue { get; } = new();
-    public virtual float ResourceCapacity => 0.0f;
+    public virtual float ResourceCapacity => GameplayCatalog.Find(
+        PurchasableType.Building, GameplayTypeId)?.Building?.ResourceCapacity ?? 0.0f;
     public float StoredResources { get; private set; }
     public float AvailableResourceCapacity => Math.Max(0.0f, ResourceCapacity - StoredResources);
     public bool IncludedUnitGranted { get; protected set; }
@@ -98,6 +99,20 @@ public class Building : Unit
             OccupancyOwnershipMode.CaptureOnEntry);
         Occupancy.EntryEnabled = false;
         TotalBuildingPointsNeeded = 10000; // Default value, can be overridden by derived classes
+    }
+
+    /// <summary>Copies immutable catalog values into the synchronized runtime fields.</summary>
+    protected void ApplyCatalogMetadata()
+    {
+        BuildingMetadata? metadata = GameplayCatalog.Find(
+            PurchasableType.Building, GameplayTypeId)?.Building;
+        if (metadata is null)
+            return;
+
+        TotalBuildingPointsNeeded = metadata.ConstructionPoints;
+        HitPoints = MaxHitPoints = metadata.MaxHitPoints;
+        PowerProduction = metadata.PowerProduction;
+        PowerConsumption = metadata.PowerConsumption;
     }
 
     public bool IsCompleted => ConstructionProgress >= TotalBuildingPointsNeeded;
@@ -166,8 +181,8 @@ public class Building : Unit
     /// <summary>Returns this building's production time for a supported unit type.</summary>
     public virtual bool TryGetProductionDuration(string unitTypeId, out float durationSeconds)
     {
-        durationSeconds = 0.0f;
-        return false;
+        return GameplayCatalog.TryGetProductionDuration(
+            GameplayTypeId, PurchasableType.Unit, unitTypeId, out durationSeconds);
     }
 
     public bool TryQueueProduction(

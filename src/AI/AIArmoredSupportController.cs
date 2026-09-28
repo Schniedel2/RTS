@@ -20,12 +20,14 @@ public sealed class AIArmoredSupportController(
     GameWorld world,
     Player actor,
     NetworkHandler network,
-    AIStrategyProfile profile)
+    AIStrategyProfile profile,
+    AIThreatAssessment? threatAssessment = null)
 {
     public const int ResourceReserve = 800;
     private const float ThinkIntervalSeconds = 1.0f;
     private const float RequestTimeoutSeconds = 3.0f;
     private readonly PlayerCommandService _commands = new(network, actor.Id);
+    private readonly AIThreatAssessment _threat = threatAssessment ?? new(actor.ArmyId);
     private float _thinkElapsed;
     private float _requestElapsed;
     private Guid? _factoryId;
@@ -63,35 +65,63 @@ public sealed class AIArmoredSupportController(
             return;
         }
 
-        int tanks = world.Units.Units.Count(unit =>
-            unit is Tank && unit.ArmyId == actor.ArmyId && !unit.IsDying);
-        int queued = factory.ProductionQueue.Orders.Count(order =>
-            string.Equals(order.UnitTypeId, "tank", StringComparison.OrdinalIgnoreCase));
-        if (tanks + queued >= profile.RequiredTanks)
+        float vehicleBias = profile.Type == AIStrategyProfileType.AntiArmor ? 0.45f : 0.15f;
+        float infantryBias = profile.Type == AIStrategyProfileType.FastRecon ? 0.35f : 0.1f;
+        GameplayDefinition? selected = AIUnitSelector.SelectBest(factory.GameplayTypeId,
+            _threat.CreateGroundCombatNeed(infantryBias, vehicleBias), CountOwnedCatalogUnits());
+        if (selected is null)
         {
-            State = tanks >= profile.RequiredTanks
+            State = AIArmoredSupportState.WaitingForResources;
+            LastDecision = "Vehicle factory has no catalog unit suitable for armored support.";
+            return;
+        }
+
+        int vehicles = world.Units.Units.Count(unit => unit.ArmyId == actor.ArmyId &&
+            !unit.IsDying && IsArmoredSupport(unit));
+        int queued = factory.ProductionQueue.Orders.Count(order =>
+            GameplayCatalog.Find(PurchasableType.Unit, order.UnitTypeId)?.AI is AIUnitMetadata ai &&
+            IsArmoredSupport(ai));
+        if (vehicles + queued >= profile.RequiredTanks)
+        {
+            State = vehicles >= profile.RequiredTanks
                 ? AIArmoredSupportState.Ready
                 : AIArmoredSupportState.TrainingTanks;
-            LastDecision = tanks >= profile.RequiredTanks
-                ? $"Armored support ready ({tanks}/{profile.RequiredTanks} tanks)."
-                : $"Training armored support ({tanks}/{profile.RequiredTanks} ready, {queued} queued).";
+            LastDecision = vehicles >= profile.RequiredTanks
+                ? $"Armored support ready ({vehicles}/{profile.RequiredTanks} vehicles)."
+                : $"Training armored support ({vehicles}/{profile.RequiredTanks} ready, {queued} queued).";
             return;
         }
 
         PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
-            PurchasableType.Unit, "tank", actor.ArmyId, factory.UnitId));
+            PurchasableType.Unit, selected.TypeId, actor.ArmyId, factory.UnitId));
         Army? army = Globals.Game.Armies.Find(actor.ArmyId);
         if (!quote.IsAvailable || army is null || army.Resources < quote.FinalPrice + ResourceReserve)
         {
             State = AIArmoredSupportState.WaitingForResources;
-            LastDecision = $"Holding {ResourceReserve} resources in reserve before ordering tank {tanks + 1}/{profile.RequiredTanks}.";
+            LastDecision = $"Holding {ResourceReserve} resources in reserve before ordering " +
+                $"{selected.DisplayName} {vehicles + 1}/{profile.RequiredTanks}.";
             return;
         }
 
-        _ = _commands.TrainUnitAsync(factory.UnitId, "tank");
+        _ = _commands.TrainUnitAsync(factory.UnitId, selected.TypeId);
         State = AIArmoredSupportState.TrainingTanks;
-        LastDecision = $"Ordered tank {tanks + queued + 1}/{profile.RequiredTanks}.";
+        LastDecision = $"Ordered {selected.DisplayName} {vehicles + queued + 1}/{profile.RequiredTanks}.";
     }
+
+    private System.Collections.Generic.IReadOnlyDictionary<string, int> CountOwnedCatalogUnits() =>
+        world.Units.Units
+            .Where(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying &&
+                !string.IsNullOrWhiteSpace(unit.GameplayTypeId))
+            .GroupBy(unit => unit.GameplayTypeId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsArmoredSupport(Unit unit) =>
+        GameplayCatalog.Find(PurchasableType.Unit, unit.GameplayTypeId)?.AI is AIUnitMetadata ai &&
+        IsArmoredSupport(ai);
+
+    private static bool IsArmoredSupport(AIUnitMetadata ai) =>
+        ai.Movement == AIMovementDomain.GroundVehicle &&
+        ai.Roles.HasFlag(AIUnitRole.Attacker);
 
     private void BuildFactory()
     {

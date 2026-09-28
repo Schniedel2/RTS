@@ -1972,6 +1972,7 @@ public sealed class NetworkHost
             if (!destroyed)
                 continue;
 
+            Globals.Game.NotifyCombatLoss(target, _world.Units.FindById(impact.AttackerId));
             _world.Units.Destroy(target.UnitId);
             NetworkMessage destroyCommand = NetworkCommands.CreateDestroyUnitCommand(
                 _networkHandler.LocalPeerId,
@@ -2020,6 +2021,7 @@ public sealed class NetworkHost
         if (!destroyed)
             return;
 
+        Globals.Game.NotifyCombatLoss(target, _world.Units.FindById(attackerId));
         _world.Units.Destroy(target.UnitId);
         NetworkMessage destroyCommand = NetworkCommands.CreateDestroyUnitCommand(
             _networkHandler.LocalPeerId,

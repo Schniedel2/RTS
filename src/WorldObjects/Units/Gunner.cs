@@ -7,6 +7,7 @@ namespace RTS;
 
 public class Gunner : Soldier
 {
+    public override string GameplayTypeId => "gunner";
     public Gunner(
         Vector3 position,
         Guid unitId        

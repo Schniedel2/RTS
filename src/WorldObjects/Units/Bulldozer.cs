@@ -7,6 +7,7 @@ namespace RTS;
 
 public class GDIBulldozer : Car
 {
+    public override string GameplayTypeId => "gdi-bulldozer";
     public EarthworkOrder? EarthworkOrder { get; private set; }
     public int EarthworkSequence { get; private set; }
     private float _regularMoveSpeed, _regularArrivalRadius;

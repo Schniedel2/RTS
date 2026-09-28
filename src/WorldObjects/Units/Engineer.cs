@@ -7,6 +7,7 @@ namespace RTS;
 
 public class Engineer : Soldier
 {
+    public override string GameplayTypeId => "engineer";
     public Engineer(
         Vector3 position,
         Guid unitId        

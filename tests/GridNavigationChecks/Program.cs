@@ -125,6 +125,16 @@ groundWeaponUnit.AllowedTargetDomains = TargetDomain.Ground | TargetDomain.Air;
 Check(groundWeaponUnit.CanAttackDomain(TargetDomain.Ground) &&
       groundWeaponUnit.CanAttackDomain(TargetDomain.Air),
     "Combined target-domain weapons can engage ground and air targets");
+Helicopter landedHelicopter = Empty<Helicopter>();
+Check(landedHelicopter.Domain == TargetDomain.Ground &&
+      groundWeaponUnit.CanAttackTarget(landedHelicopter),
+    "A landed helicopter can be attacked by ordinary ground weapons");
+Field(landedHelicopter, typeof(Helicopter), "<FlightState>k__BackingField",
+    HelicopterFlightState.Flying);
+groundWeaponUnit.AllowedTargetDomains = TargetDomain.Ground;
+Check(landedHelicopter.Domain == TargetDomain.Air &&
+      !groundWeaponUnit.CanAttackTarget(landedHelicopter),
+    "A flying helicopter still requires an air-capable weapon");
 var formationLeader = Empty<SquadLeader>();
 var formationGunner = Empty<Gunner>();
 var formationRocket = Empty<RakZero>();
@@ -1789,4 +1799,197 @@ var mixedPlacement = new BuildingPlacement(
     [new PlacementCell(new Point(8, 8), PlacementIssue.Occupied | PlacementIssue.Blocked, 0, 0)], 0);
 Check(!mixedPlacement.TryGetMovableBlockers(clearGrid, _ => true, out _),
     "Move away is not offered when placement has additional terrain problems");
+var spacingUnits = new UnitHandler();
+Field(clearWorld, typeof(GameWorld), "<Units>k__BackingField", spacingUnits);
+Building existingDepot = new(new Vector3(5.5f, 0, 5.5f), Guid.NewGuid());
+Building depotPreview = new(Vector3.Zero, Guid.NewGuid());
+foreach (Building depot in new[] { existingDepot, depotPreview })
+{
+    Field(depot, typeof(Unit), "<Width>k__BackingField", 1);
+    Field(depot, typeof(Unit), "<Length>k__BackingField", 1);
+}
+UnitList(spacingUnits).Add(existingDepot);
+MethodInfo spacingCheck = typeof(ArmyGoalController).GetMethod(
+    "HasBuildingSpacing", BindingFlags.Static | BindingFlags.NonPublic)!;
+bool crowdedDepot = (bool)spacingCheck.Invoke(null,
+    [clearWorld, depotPreview, new Vector3(8.5f, 0, 5.5f), 0.0f,
+        ArmyGoalController.MinimumBuildingSpacingCells])!;
+bool accessibleDepot = (bool)spacingCheck.Invoke(null,
+    [clearWorld, depotPreview, new Vector3(9.5f, 0, 5.5f), 0.0f,
+        ArmyGoalController.MinimumBuildingSpacingCells])!;
+Check(!crowdedDepot && accessibleDepot,
+    "AI building sites retain a Harvester-wide vehicle access corridor");
+
+GameplayDefinition? catalogTank = GameplayCatalog.Find(PurchasableType.Unit, "tank");
+Check(catalogTank is { BasePrice: 1000 } &&
+    catalogTank.Producers.Any(producer => producer.TypeId == "vehicle-factory" &&
+        Math.Abs(producer.ProductionSeconds - 10.0f) < 0.001f) &&
+    catalogTank.AI?.Roles.HasFlag(AIUnitRole.AntiVehicle) == true,
+    "Gameplay catalog shares tank economy, production and AI metadata");
+Check(GameplayCatalog.TryGetProductionDuration("vehicle-factory", PurchasableType.Unit,
+        "tank", out float catalogTankSeconds) && Math.Abs(catalogTankSeconds - 10.0f) < 0.001f &&
+    !GameplayCatalog.TryGetProductionDuration("gdi-barracks", PurchasableType.Unit,
+        "tank", out _),
+    "Gameplay catalog validates products against their producer list");
+Check(GameplayCatalog.CreateProductionActions("gdi-barracks")
+        .Any(action => action.Type == UnitActionType.TrainUnit && action.TargetObjectName == "gunner") &&
+    GameplayCatalog.CreateResearchActions("gdi-base")
+        .Any(action => action.Type == UnitActionType.Research &&
+            action.TargetObjectName == ResearchProjects.AirTechnologyId) &&
+    GameplayCatalog.Find(PurchasableType.Unit, "heli")?.TypeId == "helicopter",
+    "Production UI actions and aliases come from the gameplay catalog");
+BuildingMetadata? refineryMetadata = GameplayCatalog.Find(
+    PurchasableType.Building, "tiberium-refinery")?.Building;
+BuildingMetadata? reactorMetadata = GameplayCatalog.Find(
+    PurchasableType.Building, "reaktor")?.Building;
+Check(refineryMetadata is
+        { MaxHitPoints: 2500, ConstructionPoints: 4500, PowerConsumption: 30,
+          ResourceCapacity: 5000 } &&
+    reactorMetadata is
+        { MaxHitPoints: 500, ConstructionPoints: 500, PowerProduction: 100 },
+    "Gameplay catalog owns building health, construction, power and storage values");
+GameplayDefinition? antiVehicleChoice = AIUnitSelector.SelectBest("vehicle-factory",
+    new AIProductionNeed(AIUnitRole.Attacker, AIMovementDomain.GroundVehicle,
+        AntiVehicle: 1.0f, Defense: 0.5f));
+GameplayDefinition? scoutVehicleChoice = AIUnitSelector.SelectBest("vehicle-factory",
+    new AIProductionNeed(AIUnitRole.Attacker, AIMovementDomain.GroundVehicle,
+        Mobility: 0.5f, Scouting: 1.0f));
+Check(antiVehicleChoice?.TypeId == "tank" && scoutVehicleChoice?.TypeId == "jeep",
+    "AI unit selector chooses different factory products for combat needs");
+Check(AIUnitSelector.SelectBest("gdi-barracks",
+        new AIProductionNeed(AIUnitRole.Attacker, AIMovementDomain.GroundVehicle)) is null,
+    "AI unit selector respects producer and movement requirements");
+Check(AIUnitSelector.SelectBest("gdi-barracks",
+        new AIProductionNeed(AIUnitRole.Leader, AIMovementDomain.Infantry))?.TypeId == "squad-leader" &&
+    AIUnitSelector.SelectBest("gdi-barracks",
+        new AIProductionNeed(AIUnitRole.Healer, AIMovementDomain.Infantry))?.TypeId == "medic" &&
+    AIUnitSelector.SelectBest("gdi-barracks",
+        new AIProductionNeed(AIUnitRole.Attacker | AIUnitRole.AntiInfantry,
+            AIMovementDomain.Infantry, AntiInfantry: 1.0f))?.TypeId == "gunner" &&
+    AIUnitSelector.SelectBest("gdi-barracks",
+        new AIProductionNeed(AIUnitRole.Attacker | AIUnitRole.AntiVehicle,
+            AIMovementDomain.Infantry, AntiVehicle: 1.0f))?.TypeId == "rak-zero",
+    "AI squad roles select leader, healer and matching infantry from barracks metadata");
+Check(AIUnitSelector.SelectBest("gdi-barracks",
+        new AIProductionNeed(AIUnitRole.Defender | AIUnitRole.AntiInfantry,
+            AIMovementDomain.Infantry, AntiInfantry: 1.0f))?.TypeId == "gunner" &&
+    GameplayCatalog.HasAIRoles("gunner", AIUnitRole.Scout | AIUnitRole.Defender),
+    "AI base defense and scouting use catalog roles instead of the Gunner class");
+Helicopter airborneThreat = Empty<Helicopter>();
+Field(airborneThreat, typeof(Helicopter), "<FlightState>k__BackingField",
+    HelicopterFlightState.Flying);
+AIThreatSnapshot mixedThreat = AIThreatAssessment.FromEnemies(
+    [Empty<Gunner>(), Empty<Tank>(), airborneThreat]);
+Check(mixedThreat.AntiInfantryNeed > AIThreatSnapshot.Baseline.AntiInfantryNeed &&
+      mixedThreat.AntiVehicleNeed > AIThreatSnapshot.Baseline.AntiVehicleNeed &&
+      mixedThreat.AntiAirNeed > AIThreatSnapshot.Baseline.AntiAirNeed,
+    "AI threat assessment distinguishes infantry, vehicle and air observations");
+Guid lossArmy = Guid.NewGuid();
+MobileUnit lostUnit = Unit();
+Field(lostUnit, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)lossArmy);
+var lossAssessment = new AIThreatAssessment(lossArmy);
+lossAssessment.RecordLoss(lostUnit, Empty<Tank>(), AICombatContext.BaseDefense);
+Check(lossAssessment.RecordedLosses == 1 &&
+      lossAssessment.LastLossContext == AICombatContext.BaseDefense,
+    "AI loss memory retains the combat context of an own casualty");
+GameplayDefinition? catalogAirDefense = AIUnitSelector.SelectBest(
+    "gdi-bulldozer",
+    new AIProductionNeed(AIUnitRole.Defender | AIUnitRole.AntiAir,
+        AIMovementDomain.Static, AntiAir: 1.0f),
+    productType: PurchasableType.Building);
+Check(catalogAirDefense is { TypeId: "turret-minigun" } &&
+      catalogAirDefense.Building?.PowerConsumption == 20 &&
+      catalogAirDefense.AI?.AntiAir > 0.8f,
+    "AI defense planner discovers powered Gatling defense through catalog metadata");
+Check(AIDefensePlanner.DesiredDefenseCount(0.5f) == 0 &&
+      AIDefensePlanner.DesiredDefenseCount(0.55f) == 1 &&
+      AIDefensePlanner.DesiredDefenseCount(1.30f) == 2 &&
+      AIDefensePlanner.DesiredDefenseCount(5.0f) == AIDefensePlanner.MaximumAirDefenses,
+    "Adaptive air-defense count scales with threat and remains bounded");
+GameplayDefinition plannedTurret = GameplayCatalog.Find(
+    PurchasableType.Building, "turret-minigun")!;
+AIProductionPlan turretPlan = AIProductionPlanner.CreatePlan(
+    plannedTurret, ["gdi-bulldozer", "gdi-base"], [PerkType.BaseEstablished],
+    currentPowerBalance: 0);
+Check(turretPlan.IsValid &&
+      turretPlan.Steps.Select(step => step.TypeId).SequenceEqual(["reaktor", "turret-minigun"]),
+    "Production planner inserts power before an underpowered defense building");
+GameplayDefinition plannedHelipad = GameplayCatalog.Find(PurchasableType.Building, "helipad")!;
+AIProductionPlan helipadPlan = AIProductionPlanner.CreatePlan(
+    plannedHelipad, ["gdi-bulldozer", "gdi-base"], [PerkType.BaseEstablished],
+    currentPowerBalance: 100);
+Check(helipadPlan.IsValid && helipadPlan.Steps.Count == 2 &&
+      helipadPlan.Steps[0] is
+        { Kind: AIProductionPlanStepKind.Research, TypeId: ResearchProjects.AirTechnologyId } &&
+      helipadPlan.Steps[1] is
+        { Kind: AIProductionPlanStepKind.BuildBuilding, TypeId: "helipad" },
+    "Production planner resolves research before a perk-gated building");
+GameplayDefinition plannedTank = GameplayCatalog.Find(PurchasableType.Unit, "tank")!;
+AIProductionPlan tankPlan = AIProductionPlanner.CreatePlan(
+    plannedTank, ["gdi-bulldozer"], [PerkType.BaseEstablished], currentPowerBalance: 100);
+Check(tankPlan.IsValid &&
+      tankPlan.Steps.Select(step => step.TypeId).SequenceEqual(["vehicle-factory", "tank"]),
+    "Production planner resolves a missing producer before training a unit");
+BuildingMetadata reactorCrewMetadata = GameplayCatalog.Find(
+    PurchasableType.Building, "reaktor")!.Building!;
+Check(reactorCrewMetadata.CrewCapacity == 4 &&
+      reactorCrewMetadata.PowerProductionPerCrew == 30 &&
+      GameplayCatalog.HasAIRoles("engineer", AIUnitRole.Crew),
+    "Reactor crew capacity, power bonus and Engineer capability share catalog metadata");
+Guid crewArmy = Guid.NewGuid();
+var crewWorld = Empty<GameWorld>();
+var crewUnits = new UnitHandler();
+Field(crewWorld, typeof(GameWorld), "<Units>k__BackingField", crewUnits);
+var crewReactor = Empty<Reaktor>();
+Field(crewReactor, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)crewArmy);
+crewReactor.TotalBuildingPointsNeeded = 1;
+Field(crewReactor, typeof(Building), "<ConstructionProgress>k__BackingField", 1.0f);
+var crewReactorOccupancy = new OccupancyComponent(crewReactor,
+    [new OccupantSlot(OccupantRole.Crew, 4, CanOccupy: unit => unit.IsCrewMember)],
+    OccupancyOwnershipMode.CaptureOnEntry);
+crewReactorOccupancy.EntryEnabled = true;
+Field(crewReactor, typeof(Unit), "<Occupancy>k__BackingField", crewReactorOccupancy);
+var availableEngineer = Empty<Engineer>();
+Field(availableEngineer, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)crewArmy);
+Field(availableEngineer, typeof(Unit), "<IsCrewMember>k__BackingField", true);
+UnitList(crewUnits).AddRange([crewReactor, availableEngineer]);
+AIPowerSolution assignCrew = AICrewPowerPlanner.Evaluate(crewWorld, crewArmy, 25);
+Check(assignCrew.Kind == AIPowerSolutionKind.AssignCrew && assignCrew.PowerGain == 30,
+    "Power planner assigns an available Engineer before constructing another reactor");
+UnitList(crewUnits).Remove(availableEngineer);
+var crewBarracks = Empty<GDIBarracks>();
+Field(crewBarracks, typeof(Unit), "<ArmyId>k__BackingField", (Guid?)crewArmy);
+crewBarracks.TotalBuildingPointsNeeded = 1;
+Field(crewBarracks, typeof(Building), "<ConstructionProgress>k__BackingField", 1.0f);
+Field(crewBarracks, typeof(Building), "<ProductionQueue>k__BackingField", new ProductionQueue());
+UnitList(crewUnits).Add(crewBarracks);
+AIPowerSolution trainCrew = AICrewPowerPlanner.Evaluate(crewWorld, crewArmy, 30);
+Check(trainCrew is { Kind: AIPowerSolutionKind.TrainCrew, CrewTypeId: "engineer", PowerGain: 30 },
+    "Power planner trains catalog-selected crew for a small remaining deficit");
+Check(AICrewPowerPlanner.Evaluate(crewWorld, crewArmy, 31).Kind == AIPowerSolutionKind.BuildPower,
+    "Power planner prefers a reactor when one new Engineer cannot cover the deficit");
+Guid plannedCrewId = Guid.NewGuid();
+Guid plannedReactorId = Guid.NewGuid();
+AIProductionPlanStep crewPlanStep = AIProductionPlanStep.AssignCrew(
+    plannedCrewId, plannedReactorId);
+Check(crewPlanStep is
+    {
+        Kind: AIProductionPlanStepKind.AssignCrew,
+        UnitId: not null,
+        TargetUnitId: not null,
+        OccupantRole: RTS.OccupantRole.Crew
+    } && crewPlanStep.UnitId == plannedCrewId && crewPlanStep.TargetUnitId == plannedReactorId,
+    "Production plans can express a concrete crew assignment");
+var planExecutor = Empty<AIProductionPlanExecutor>();
+var executorPlan = new AIProductionPlan([new AIProductionPlanStep(
+    AIProductionPlanStepKind.TrainUnit, "tank", "vehicle-factory")]);
+Check(planExecutor.Start(executorPlan) && planExecutor.IsBusy &&
+      planExecutor.State == AIPlanExecutionState.InProgress &&
+      planExecutor.CurrentStep?.TypeId == "tank" &&
+      !planExecutor.Start(executorPlan),
+    "Production plan executor owns one active plan and exposes its current step");
+planExecutor.Reset();
+Check(!planExecutor.IsBusy && planExecutor.State == AIPlanExecutionState.Idle &&
+      planExecutor.CurrentStep is null,
+    "Production plan executor resets its lifecycle state");
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");

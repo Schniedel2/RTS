@@ -14,47 +14,12 @@ public enum PurchasableType
 /// <summary>Single source for unmodified building and unit prices.</summary>
 public static class EconomyCatalog
 {
-    private static readonly IReadOnlyList<PerkType> BaseRequired = [PerkType.BaseEstablished];
-    private static readonly IReadOnlyList<PerkType> HelipadRequired =
-        [PerkType.BaseEstablished, PerkType.AirTechnology];
-
     public static PurchaseDefinition GetDefinition(PurchasableType type, string objectTypeId)
     {
-        if (string.IsNullOrWhiteSpace(objectTypeId)) return new(0, []);
-        string id = objectTypeId.Trim().ToLowerInvariant();
-        return type switch
-        {
-            PurchasableType.Building => id switch
-            {
-                "gdi-base" => new(1500, []),
-                "gdi-barracks" => new(800, BaseRequired),
-                "reaktor" => new(500, BaseRequired),
-                "communicationstower" => new(500, BaseRequired),
-                "helipad" => new(1500, HelipadRequired),
-                "silo" => new(1500, BaseRequired),
-                "tiberium-refinery" => new(1500, BaseRequired),
-                "vehicle-factory" => new(2000, BaseRequired),
-                "command-center" => new(0, BaseRequired),
-                "turret-minigun" => new(1000, BaseRequired),
-                _ => new(0, [])
-            },
-            PurchasableType.Unit => id switch
-            {
-                "soldier" or "gunner" => new(100, []),
-                "rak-zero" or "engineer" or "medic" => new(300, []),
-                "squad-leader" => new(400, []),
-                "harvester" => new(500, []),
-                "tank" => new(1000, []),
-                "helicopter" or "heli" => new(1200, []),
-                _ => new(0, [])
-            },
-            PurchasableType.Research => id switch
-            {
-                ResearchProjects.AirTechnologyId => new(1000, BaseRequired),
-                _ => new(0, [])
-            },
-            _ => new(0, [])
-        };
+        GameplayDefinition? definition = GameplayCatalog.Find(type, objectTypeId);
+        return definition is null
+            ? new PurchaseDefinition(0, [])
+            : new PurchaseDefinition(definition.BasePrice, definition.RequiredPerks);
     }
 
     public static int GetBasePrice(PurchasableType type, string objectTypeId)

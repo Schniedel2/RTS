@@ -719,7 +719,11 @@ public class ConsoleCommands
 
         foreach (AIPlayer aiPlayer in _rtsGame.AIPlayers)
             _console.Print($"AI {aiPlayer.Name} id={aiPlayer.Id.ToString("N")[..8]} team={aiPlayer.Player.TeamId} " +
-                $"status={aiPlayer.Status} goal={aiPlayer.Controller.Goal} decision=\"{aiPlayer.Controller.LastDecision}\"");
+                $"status={aiPlayer.Status} goal={aiPlayer.Controller.Goal} " +
+                $"threats=[inf:{aiPlayer.Controller.Threats.AntiInfantryNeed:0.00} " +
+                $"veh:{aiPlayer.Controller.Threats.AntiVehicleNeed:0.00} " +
+                $"air:{aiPlayer.Controller.Threats.AntiAirNeed:0.00}] " +
+                $"decision=\"{aiPlayer.Controller.LastDecision}\"");
     }
 
     private void Spawn(string[] args)

@@ -9,6 +9,7 @@ namespace RTS;
 /// </summary>
 public sealed class CommandCenter : Building
 {
+    public override string GameplayTypeId => "command-center";
     public override IReadOnlyList<UnitAction> Actions => IsCompleted
         ? WithSellAction(
         [
@@ -23,8 +24,7 @@ public sealed class CommandCenter : Building
     public CommandCenter(Vector3 position, Guid unitId, int purchasePrice = 0)
         : base(position, unitId, purchasePrice)
     {
-        TotalBuildingPointsNeeded = 0;
-        HitPoints = MaxHitPoints = 1000;
+        ApplyCatalogMetadata();
         SetMesh("building-1", deriveDimensions: true);
     }
 }

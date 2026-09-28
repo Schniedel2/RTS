@@ -7,6 +7,7 @@ namespace RTS;
 
 public class Turret : Building
 {
+    public override string GameplayTypeId => "turret-minigun";
     private const float InactivePitchDegrees = -45.0f;
     private const float MinimumPitchDegrees = -60.0f;
     private const float MaximumPitchDegrees = 45.0f;
@@ -36,10 +37,7 @@ public class Turret : Building
         SetMesh(meshName, deriveDimensions: true);
         _idleRandom = new Random(unitId.GetHashCode());
         ChooseNextIdlePose();
-        TotalBuildingPointsNeeded = 500;
-        HitPoints = MaxHitPoints = 500;
-        //PowerConsumption = 20;
-        PowerConsumption = 0;
+        ApplyCatalogMetadata();
         AttackRange = 22.0f;
         AttackDamage = 7.0f;
         AttackDamageType = DamageType.SmallArms;

@@ -181,6 +181,17 @@ public class RTSGame
             string.Equals(ai.Name, idOrName, StringComparison.OrdinalIgnoreCase));
     }
 
+    internal void NotifyCombatLoss(Unit lostUnit, Unit? attacker)
+    {
+        if (lostUnit.ArmyId is not Guid armyId)
+            return;
+        foreach (AIPlayer ai in _aiPlayers.Values.Where(candidate =>
+            candidate.Player.ArmyId == armyId))
+        {
+            ai.Controller.RecordCombatLoss(lostUnit, attacker);
+        }
+    }
+
     internal void PrepareAIPlayersForMatch(IEnumerable<MatchStartAssignment> assignments)
     {
         if (!Network.IsHost)

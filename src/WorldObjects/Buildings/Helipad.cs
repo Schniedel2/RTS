@@ -8,17 +8,12 @@ namespace RTS;
 
 public class Helipad : Building
 {
+    public override string GameplayTypeId => "helipad";
     public bool DeliveryPending { get; internal set; }
     public bool IsReservedForDelivery => DeliveryPending || ProductionQueue.ActiveOrder is not null;
     public bool CanOrderHelicopter(GameWorld world) => IsCompleted && !IsDying &&
         !IsReservedForDelivery && !world.Units.Units.OfType<Helicopter>().Any(h =>
             !h.IsDying && h.AssignedHelipadId == UnitId);
-
-    public override bool TryGetProductionDuration(string unitTypeId, out float durationSeconds)
-    {
-        durationSeconds = string.Equals(unitTypeId, "helicopter", StringComparison.OrdinalIgnoreCase) ? 10f : 0f;
-        return durationSeconds > 0;
-    }
 
     public bool TryQueueIncludedHelicopter(Guid ownerPlayerId)
     {
@@ -60,9 +55,7 @@ public class Helipad : Building
         SetMesh(meshName, deriveDimensions: true);
 
         ProductionQueue.Capacity = 1;
-        TotalBuildingPointsNeeded = 1500;
-        HitPoints = MaxHitPoints = 1500;
-        PowerConsumption = 15;
+        ApplyCatalogMetadata();
     }
 
     public override void Draw(Effect effect)
@@ -78,7 +71,7 @@ public class Helipad : Building
         {
             actions = 
             [
-                new(UnitActionType.TrainUnit, "Buy helicopter", 6, 1, "helicopter"),
+                .. GameplayCatalog.CreateProductionActions(GameplayTypeId),
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1),
             ];
         }

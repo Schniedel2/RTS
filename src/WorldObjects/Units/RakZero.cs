@@ -7,6 +7,7 @@ namespace RTS;
 
 public class RakZero : Soldier
 {
+    public override string GameplayTypeId => "rak-zero";
     public RakZero(
         Vector3 position,
         Guid unitId        

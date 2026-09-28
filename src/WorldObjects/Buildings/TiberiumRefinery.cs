@@ -8,7 +8,7 @@ namespace RTS;
 
 public class TiberiumRefinery : Building
 {
-    public override float ResourceCapacity => 5000.0f;
+    public override string GameplayTypeId => "tiberium-refinery";
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
 
     public TiberiumRefinery(
@@ -23,9 +23,7 @@ public class TiberiumRefinery : Building
         SetMesh(meshName, deriveDimensions: true);
 
         ProductionQueue.Capacity = 1;
-        TotalBuildingPointsNeeded = 4500;
-        HitPoints = MaxHitPoints = 2500;
-        PowerConsumption = 30;
+        ApplyCatalogMetadata();
     }
 
     public override void Draw(Effect effect)
@@ -52,14 +50,6 @@ public class TiberiumRefinery : Building
         return true;
     }
 
-    public override bool TryGetProductionDuration(string unitTypeId, out float durationSeconds)
-    {
-        durationSeconds = string.Equals(unitTypeId, "harvester", StringComparison.OrdinalIgnoreCase)
-            ? 10.0f
-            : 0.0f;
-        return durationSeconds > 0.0f;
-    }
-
     public IReadOnlyList<UnitAction> GetUnitActions()
     {
         IReadOnlyList<UnitAction> actions = Array.Empty<UnitAction>();
@@ -68,7 +58,7 @@ public class TiberiumRefinery : Building
         {
             actions = 
             [
-                new(UnitActionType.TrainUnit, "Harvester", 6, 1, "harvester"),
+                .. GameplayCatalog.CreateProductionActions(GameplayTypeId),
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1),
             ];
         }

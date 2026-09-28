@@ -7,6 +7,7 @@ namespace RTS;
 
 public class CommunicationsTower : Building, IPerkProvider
 {
+    public override string GameplayTypeId => "communicationstower";
     public const float DetailedHealthRadius = 50.0f;
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
 
@@ -19,9 +20,7 @@ public class CommunicationsTower : Building, IPerkProvider
             unitId, purchasePrice)
     {
         SightRange = 50;
-        TotalBuildingPointsNeeded = 500;
-        HitPoints = MaxHitPoints = 500;
-        PowerConsumption = 20;
+        ApplyCatalogMetadata();
 
         SetMesh("antenna-1", deriveDimensions: true);
     }

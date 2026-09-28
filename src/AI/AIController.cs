@@ -43,6 +43,9 @@ public enum AIArmyGoal
 /// </summary>
 public sealed class ArmyGoalController
 {
+    // Keep AI bases traversable even when a model has no authored pivot:clearance.
+    // Three empty grid cells match the Harvester's width and keep its routes usable.
+    public const int MinimumBuildingSpacingCells = 3;
     private const float ThinkIntervalSeconds = 1.0f;
     private const float BuildRequestTimeoutSeconds = 3.0f;
     private float _thinkElapsed;
@@ -269,10 +272,23 @@ public sealed class ArmyGoalController
             _rallyPointIssued = true;
         }
 
+        var defenderNeed = new AIProductionNeed(
+            AIUnitRole.Defender | AIUnitRole.AntiInfantry,
+            AIMovementDomain.Infantry, AntiInfantry: 1.0f, Defense: 0.5f);
+        GameplayDefinition? defenderType = AIUnitSelector.SelectBest(
+            barracks.GameplayTypeId, defenderNeed);
+        if (defenderType is null)
+        {
+            LastDecision = "Barracks has no catalog unit suitable for base defense.";
+            return;
+        }
         int soldiers = world.Units.Units.Count(unit =>
-            unit is Gunner && unit.ArmyId == actor.ArmyId && !unit.IsDying);
+            unit.ArmyId == actor.ArmyId && !unit.IsDying &&
+            GameplayCatalog.HasAIRoles(unit.GameplayTypeId,
+                AIUnitRole.Defender | AIUnitRole.AntiInfantry));
         int queued = barracks.ProductionQueue.Orders.Count(order =>
-            string.Equals(order.UnitTypeId, "gunner", StringComparison.OrdinalIgnoreCase));
+            GameplayCatalog.HasAIRoles(order.UnitTypeId,
+                AIUnitRole.Defender | AIUnitRole.AntiInfantry));
         if (soldiers + queued >= 3)
         {
             if (soldiers < 3)
@@ -291,7 +307,7 @@ public sealed class ArmyGoalController
         }
 
         PurchaseQuote soldierQuote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
-            PurchasableType.Unit, "gunner", actor.ArmyId, barracks.UnitId));
+            PurchasableType.Unit, defenderType.TypeId, actor.ArmyId, barracks.UnitId));
         int soldierPrice = soldierQuote.FinalPrice;
         Army? ownerArmy = Globals.Game.Armies.Find(actor.ArmyId);
         if (ownerArmy is null || ownerArmy.Resources < soldierPrice)
@@ -301,7 +317,7 @@ public sealed class ArmyGoalController
             return;
         }
 
-        _ = commands.TrainUnitAsync(barracks.UnitId, "gunner");
+        _ = commands.TrainUnitAsync(barracks.UnitId, defenderType.TypeId);
         Goal = AIGoalState.TrainingSoldiers;
         setStatus?.Invoke(AIPlayerStatus.Building);
         LastDecision = $"Ordered a base defender ({soldiers}/3 ready, {queued + 1} queued).";
@@ -493,7 +509,9 @@ public sealed class ArmyGoalController
                 continue;
             Vector3 candidate = world.GameGrid.ToWorldPosition(cell, 0.0f);
             candidate.Y = world.Terrain.GetSurfaceHeight(candidate.X, candidate.Z);
-            if (preview.EvaluatePlacement(world, candidate, 0.0f).IsAllowed)
+            if (preview.EvaluatePlacement(world, candidate, 0.0f).IsAllowed &&
+                HasBuildingSpacing(world, preview, candidate, 0.0f,
+                    MinimumBuildingSpacingCells))
             {
                 position = candidate;
                 return true;
@@ -502,6 +520,36 @@ public sealed class ArmyGoalController
 
         position = default;
         return false;
+    }
+
+    internal static bool HasBuildingSpacing(
+        GameWorld world,
+        Building preview,
+        Vector3 position,
+        float rotationDegrees,
+        int spacingCells)
+    {
+        if (spacingCells <= 0)
+            return true;
+
+        IReadOnlyList<Point> candidateCells = world.GameGrid.GetFootprintCells(
+            preview, position, rotationDegrees);
+        foreach (Building existing in world.Units.Units.OfType<Building>())
+        {
+            if (existing == preview || existing.IsDying)
+                continue;
+
+            float existingYaw = MathHelper.ToDegrees(MathF.Atan2(
+                -existing.Transform.Forward.X, -existing.Transform.Forward.Z));
+            IReadOnlyList<Point> existingCells = world.GameGrid.GetFootprintCells(
+                existing, existing.Position, existingYaw);
+            foreach (Point candidate in candidateCells)
+                foreach (Point occupied in existingCells)
+                    if (Math.Abs(candidate.X - occupied.X) <= spacingCells &&
+                        Math.Abs(candidate.Y - occupied.Y) <= spacingCells)
+                        return false;
+        }
+        return true;
     }
 
     internal static IEnumerable<Point> CandidateCells(Point center, int minimumRadius, int maximumRadius)
@@ -542,6 +590,8 @@ public sealed class AIController
     private AISquadRecoveryController? _squadRecovery;
     private AIArmoredSupportController? _armoredSupport;
     private AIInfrastructureController? _infrastructure;
+    private AIDefensePlanner? _defensePlanner;
+    private AIThreatAssessment? _threatAssessment;
     private SquadCyclePhase _squadCyclePhase;
     private AIStrategyProfile? _strategyProfile;
     private Guid? _scoutId;
@@ -552,6 +602,21 @@ public sealed class AIController
         : _goals.Goal;
     public string LastDecision => _scoutingDecision ?? _goals.LastDecision;
     public AIStrategyProfile? StrategyProfile => _strategyProfile;
+    public AIThreatSnapshot Threats => _threatAssessment?.Current ?? AIThreatSnapshot.Baseline;
+
+    public void RecordCombatLoss(Unit lostUnit, Unit? attacker)
+    {
+        AICombatContext context = lostUnit.UnitId == _scoutId
+            ? AICombatContext.Scouting
+            : lostUnit is Harvester
+                ? AICombatContext.ResourceOperation
+                : _baseDefense?.IsEngaging == true
+                    ? AICombatContext.BaseDefense
+                    : _squadAssault?.HasActiveMission == true
+                        ? AICombatContext.Offensive
+                        : AICombatContext.Unknown;
+        _threatAssessment?.RecordLoss(lostUnit, attacker, context);
+    }
 
     public void BeginMatch(int matchSeed, Guid armyId)
     {
@@ -562,6 +627,8 @@ public sealed class AIController
         _squadRecovery = null;
         _armoredSupport = null;
         _infrastructure = null;
+        _defensePlanner = null;
+        _threatAssessment = new AIThreatAssessment(armyId);
         _squadCyclePhase = SquadCyclePhase.InitialPreparation;
         _scoutId = null;
         _scoutingDecision = null;
@@ -579,29 +646,34 @@ public sealed class AIController
             return;
 
         _strategyProfile ??= AIStrategyProfile.Create(0, ai.Player.ArmyId);
+        _threatAssessment ??= new AIThreatAssessment(ai.Player.ArmyId);
+        _threatAssessment.Update(gameTime, world);
         _baseDefense ??= new AIBaseDefenseController(
             world, ai.Player.Id, ai.Player.ArmyId, network, _strategyProfile.DefenseRadiusInCells);
         _squadPreparation ??= new AISquadPreparationController(
-            world, ai.Player.Id, ai.Player.ArmyId, network, _strategyProfile);
+            world, ai.Player.Id, ai.Player.ArmyId, network, _strategyProfile, _threatAssessment);
         _squadAssault ??= new AISquadAssaultController(
             world, ai.Player.Id, ai.Player.ArmyId, network, _strategyProfile);
         _squadRecovery ??= new AISquadRecoveryController(
             world, ai.Player.Id, ai.Player.ArmyId, network);
         _armoredSupport ??= new AIArmoredSupportController(
-            world, ai.Player, network, _strategyProfile);
+            world, ai.Player, network, _strategyProfile, _threatAssessment);
         _infrastructure ??= new AIInfrastructureController(world, ai.Player, network);
+        _defensePlanner ??= new AIDefensePlanner(
+            world, ai.Player, network, _threatAssessment);
 
         _scouting ??= new ScoutingController(world, ai.Player.Id, network);
-        Gunner? scout = _scoutId is Guid scoutId
-            ? world.Units.FindById(scoutId) as Gunner
+        MobileUnit? scout = _scoutId is Guid scoutId
+            ? world.Units.FindById(scoutId) as MobileUnit
             : null;
         if (scout is null || scout.IsDying || scout.IsEmbarked || scout.ArmyId != ai.Player.ArmyId)
         {
             if (scout is not null)
                 _scouting.Stop([scout]);
 
-            scout = world.Units.Units.OfType<Gunner>()
-                .Where(unit => unit.ArmyId == ai.Player.ArmyId && !unit.IsDying && !unit.IsEmbarked)
+            scout = world.Units.Units.OfType<MobileUnit>()
+                .Where(unit => unit.ArmyId == ai.Player.ArmyId && !unit.IsDying && !unit.IsEmbarked &&
+                    GameplayCatalog.HasAIRoles(unit.GameplayTypeId, AIUnitRole.Scout))
                 .OrderBy(unit => unit.UnitId)
                 .FirstOrDefault();
             _scoutId = scout?.UnitId;
@@ -613,9 +685,10 @@ public sealed class AIController
 
             _scouting.Start([scout]);
             int defenders = world.Units.Units.Count(unit =>
-                unit is Gunner && unit.UnitId != scout.UnitId &&
+                unit.UnitId != scout.UnitId && GameplayCatalog.HasAIRoles(unit.GameplayTypeId,
+                    AIUnitRole.Defender) &&
                 unit.ArmyId == ai.Player.ArmyId && !unit.IsDying && !unit.IsEmbarked);
-            _scoutingDecision = $"Gunner {scout.UnitId.ToString()[..8]} is scouting unexplored terrain; " +
+            _scoutingDecision = $"Scout {scout.UnitId.ToString()[..8]} is exploring unknown terrain; " +
                 $"{defenders} soldier(s) remain at the base.";
         }
 
@@ -623,7 +696,11 @@ public sealed class AIController
         _baseDefense.Update(gameTime, _scoutId);
         _armoredSupport.Update(gameTime);
         if (_armoredSupport.IsReady)
-            _infrastructure.Update(gameTime);
+        {
+            _defensePlanner.Update(gameTime);
+            if (!_defensePlanner.IsBusy)
+                _infrastructure.Update(gameTime);
+        }
         if (_squadCyclePhase == SquadCyclePhase.Combat &&
             _squadAssault.State == AISquadAssaultState.MissionComplete)
         {
@@ -673,10 +750,12 @@ public sealed class AIController
         else if (_squadCyclePhase == SquadCyclePhase.Combat)
             _scoutingDecision = _squadAssault.LastDecision;
         else if (scout is not null)
-            _scoutingDecision = $"Gunner {scout.UnitId.ToString()[..8]} is scouting unexplored terrain; " +
+            _scoutingDecision = $"Scout {scout.UnitId.ToString()[..8]} is exploring unknown terrain; " +
                 "the first squad is assembled at the base and awaits orders.";
         if (!_armoredSupport.IsReady)
             _scoutingDecision = $"{_scoutingDecision} | {_armoredSupport.LastDecision}";
+        else if (_defensePlanner.IsBusy)
+            _scoutingDecision = $"{_scoutingDecision} | {_defensePlanner.LastDecision}";
         else if (!_infrastructure.IsAirSupportReady)
             _scoutingDecision = $"{_scoutingDecision} | {_infrastructure.LastDecision}";
     }

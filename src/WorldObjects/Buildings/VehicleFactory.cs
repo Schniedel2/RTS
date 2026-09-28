@@ -7,6 +7,7 @@ namespace RTS;
 
 public class VehicleFactory : Building
 {
+    public override string GameplayTypeId => "vehicle-factory";
     public override bool SupportsRallyPoint => true;
 
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
@@ -20,9 +21,7 @@ public class VehicleFactory : Building
             position,
             unitId, purchasePrice)
     {
-        TotalBuildingPointsNeeded = 2500;
-        HitPoints = MaxHitPoints = 2500;
-        PowerConsumption = 30;
+        ApplyCatalogMetadata();
 
         SetMesh(meshName, deriveDimensions: true);
     }
@@ -30,17 +29,6 @@ public class VehicleFactory : Building
     public override void Draw(Effect effect)
     {
         base.Draw(effect);
-    }
-
-    public override bool TryGetProductionDuration(string unitTypeId, out float durationSeconds)
-    {
-        durationSeconds = unitTypeId.ToLowerInvariant() switch
-        {
-            "tank" => 10.0f,
-            "jeep" => 7.0f,
-            _ => 0.0f
-        };
-        return durationSeconds > 0.0f;
     }
 
     public IReadOnlyList<UnitAction> GetUnitActions()
@@ -56,8 +44,7 @@ public class VehicleFactory : Building
             actions = 
             [
                 new(UnitActionType.SetRallyPoint, "Set rally point", 0, 1),
-                new(UnitActionType.TrainUnit, "Tank", 6, 1, "tank"),
-                new(UnitActionType.TrainUnit, "Jeep", 6, 1, "jeep"),
+                .. GameplayCatalog.CreateProductionActions(GameplayTypeId),
                 new(UnitActionType.ClearRallyPoint, "Clear rally point", 7, 1),
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1),
             ];

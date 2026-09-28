@@ -8,6 +8,7 @@ namespace RTS;
 
 public class Jeep : Car
 {
+    public override string GameplayTypeId => "jeep";
     // The turret angle is local to the hull.  Keeping it this way means that a
     // rotating hull does not automatically drag the turret around in world space.
     public override IReadOnlyList<UnitAction> Actions =>

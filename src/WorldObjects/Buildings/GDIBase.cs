@@ -8,6 +8,7 @@ namespace RTS;
 
 public class GDIBase : Building, IPerkProvider
 {
+    public override string GameplayTypeId => "gdi-base";
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
     private float RadarAngleDegree = 0.0f;
     private float RadarSpeedDegreePerSecond = 180.0f;
@@ -23,9 +24,7 @@ public class GDIBase : Building, IPerkProvider
     {
         SetMesh("gdi-base", deriveDimensions: true);
 
-        TotalBuildingPointsNeeded = 2500;
-        HitPoints = MaxHitPoints = 2500;
-        PowerConsumption = 40;
+        ApplyCatalogMetadata();
     }
 
     public override void Draw(Effect effect)
@@ -65,7 +64,7 @@ public class GDIBase : Building, IPerkProvider
         {
             List<UnitAction> completedActions =
             [
-                new(UnitActionType.TrainUnit, "Bulldozer", 6, 1),
+                .. GameplayCatalog.CreateProductionActions(GameplayTypeId),
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1)
             ];
             bool researched = ArmyId is Guid armyId &&
@@ -73,8 +72,7 @@ public class GDIBase : Building, IPerkProvider
             bool queued = ProductionQueue.Orders.Any(order => string.Equals(
                 order.UnitTypeId, ResearchProjects.AirTechnologyId, StringComparison.OrdinalIgnoreCase));
             if (!researched && !queued)
-                completedActions.Add(new(UnitActionType.Research, "Research Air Technology", 4, 4,
-                    ResearchProjects.AirTechnologyId, RequiresTarget: false));
+                completedActions.AddRange(GameplayCatalog.CreateResearchActions(GameplayTypeId));
             actions = completedActions;
         }
         
@@ -83,9 +81,10 @@ public class GDIBase : Building, IPerkProvider
 
     public override bool TryGetProductionDuration(string unitTypeId, out float durationSeconds)
     {
-        durationSeconds = string.Equals(unitTypeId, ResearchProjects.AirTechnologyId,
-            StringComparison.OrdinalIgnoreCase) ? 15.0f : 0.0f;
-        return durationSeconds > 0.0f;
+        return GameplayCatalog.TryGetProductionDuration(
+                   GameplayTypeId, PurchasableType.Unit, unitTypeId, out durationSeconds) ||
+               GameplayCatalog.TryGetProductionDuration(
+                   GameplayTypeId, PurchasableType.Research, unitTypeId, out durationSeconds);
     }
 
     public override void Update(GameTime gameTime)

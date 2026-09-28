@@ -155,8 +155,8 @@ public sealed class AISquadAssaultController(
             State = AISquadAssaultState.Advancing;
         }
 
-        Tank[] escortTanks = FindMissionTanks();
-        Unit? immediateThreat = SelectImmediateThreat(leader, members, escortTanks);
+        MobileUnit[] escortVehicles = FindMissionVehicles();
+        Unit? immediateThreat = SelectImmediateThreat(leader, members, escortVehicles);
         if (!UpdateProgressWatch(leader, immediateThreat ?? target))
         {
             BeginRetreat(leader, members,
@@ -170,13 +170,13 @@ public sealed class AISquadAssaultController(
             _issuedAttackTargetId = desiredTargetId;
             _orderElapsed = 0.0f;
             _ = AdvanceAndAttackAsync(
-                [leader.UnitId, .. escortTanks.Select(tank => tank.UnitId)],
+                [leader.UnitId, .. escortVehicles.Select(vehicle => vehicle.UnitId)],
                 target.Position, desiredTargetId);
         }
 
         LastDecision = immediateThreat is not null
-            ? $"First squad with {escortTanks.Length} tank(s) is engaging {Describe(immediateThreat)} on the way to {Describe(target)}."
-            : $"First squad with {escortTanks.Length} tank(s) is advancing on {Describe(target)} " +
+            ? $"First squad with {escortVehicles.Length} escort vehicle(s) is engaging {Describe(immediateThreat)} on the way to {Describe(target)}."
+            : $"First squad with {escortVehicles.Length} escort vehicle(s) is advancing on {Describe(target)} " +
                 $"(no progress: {_secondsWithoutProgress:0}/{_profile.AssaultStallTimeoutSeconds:0}s).";
     }
 
@@ -185,9 +185,10 @@ public sealed class AISquadAssaultController(
         .OrderByDescending(leader => FindLivingMembers(leader).Count())
         .ThenBy(leader => leader.UnitId)
         .FirstOrDefault(leader =>
-            FindLivingMembers(leader).OfType<Medic>().Any() &&
-            FindLivingMembers(leader).OfType<Gunner>().Count() >= _profile.RequiredGunners &&
-            FindLivingMembers(leader).OfType<RakZero>().Count() >= _profile.RequiredRakZero);
+            FindLivingMembers(leader).Any(member => HasRole(member, AIUnitRole.Healer)) &&
+            FindLivingMembers(leader).Count(member => HasRole(member, AIUnitRole.Attacker) &&
+                !HasRole(member, AIUnitRole.Leader) && !HasRole(member, AIUnitRole.Healer)) >=
+                _profile.RequiredGunners + _profile.RequiredRakZero);
 
     private IEnumerable<Soldier> FindLivingMembers(SquadLeader leader) =>
         world.Units.Units.OfType<Soldier>().Where(member =>
@@ -211,11 +212,11 @@ public sealed class AISquadAssaultController(
     private Unit? SelectImmediateThreat(
         SquadLeader leader,
         IReadOnlyCollection<Soldier> members,
-        IReadOnlyCollection<Tank> escortTanks)
+        IReadOnlyCollection<MobileUnit> escortVehicles)
     {
         float radius = ImmediateThreatRadiusInCells * world.GameGrid.CellSize;
         float radiusSquared = radius * radius;
-        Unit[] attackers = [leader, .. members, .. escortTanks];
+        Unit[] attackers = [leader, .. members, .. escortVehicles];
         return world.Units.Units.Where(candidate =>
                 candidate is not Building && candidate.CanBeTargeted && IsEnemy(candidate) &&
                 HorizontalDistanceSquared(candidate.Position, leader.Position) <= radiusSquared &&
@@ -235,7 +236,7 @@ public sealed class AISquadAssaultController(
             reason = "The squad leader was lost";
             return true;
         }
-        if (!members.OfType<Medic>().Any())
+        if (!members.Any(member => HasRole(member, AIUnitRole.Healer)))
         {
             reason = "The squad medic was lost";
             return true;
@@ -284,10 +285,10 @@ public sealed class AISquadAssaultController(
             return;
         }
         bool leaderSurvives = leader is not null && !leader.IsDying && !leader.IsEmbarked;
-        Tank[] tanks = FindMissionTanks();
+        MobileUnit[] escortVehicles = FindMissionVehicles();
         Unit[] survivors = leaderSurvives
-            ? [leader!, .. members, .. tanks]
-            : [.. members, .. tanks];
+            ? [leader!, .. members, .. escortVehicles]
+            : [.. members, .. escortVehicles];
         Vector3 destination = home.RallyPoint ?? home.Position;
         float radius = StagingRadiusInCells * world.GameGrid.CellSize;
         if (survivors.Length == 0 || AllWithin(survivors, destination, radius))
@@ -310,7 +311,7 @@ public sealed class AISquadAssaultController(
         Building? home = FindHomeBuilding();
         if (home is null)
             return;
-        Guid[] tankIds = FindMissionTanks().Select(tank => tank.UnitId).ToArray();
+        Guid[] tankIds = FindMissionVehicles().Select(vehicle => vehicle.UnitId).ToArray();
         Guid[] ids = leader is null || leader.IsDying || leader.IsEmbarked
             ? [.. members.Select(member => member.UnitId), .. tankIds]
             : [leader.UnitId, .. tankIds];
@@ -337,21 +338,31 @@ public sealed class AISquadAssaultController(
         .ThenBy(building => building.UnitId)
         .FirstOrDefault();
 
-    private Tank[] FindAvailableTanks() => world.Units.Units.OfType<Tank>()
-        .Where(tank => tank.ArmyId == armyId && !tank.IsDying && !tank.IsEmbarked &&
-            tank.Occupancy?.IsOperational != false)
-        .OrderBy(tank => tank.UnitId)
+    private MobileUnit[] FindAvailableTanks() => world.Units.Units.OfType<MobileUnit>()
+        .Where(vehicle => vehicle.ArmyId == armyId && !vehicle.IsDying && !vehicle.IsEmbarked &&
+            vehicle.Occupancy?.IsOperational != false && IsArmoredEscort(vehicle))
+        .OrderBy(vehicle => vehicle.UnitId)
         .ToArray();
 
-    private Tank[] FindMissionTanks()
+    private MobileUnit[] FindMissionVehicles()
     {
         HashSet<Guid> ids = _escortTankIds.ToHashSet();
-        return world.Units.Units.OfType<Tank>()
-            .Where(tank => ids.Contains(tank.UnitId) && tank.ArmyId == armyId &&
-                !tank.IsDying && !tank.IsEmbarked && tank.Occupancy?.IsOperational != false)
-            .OrderBy(tank => tank.UnitId)
+        return world.Units.Units.OfType<MobileUnit>()
+            .Where(vehicle => ids.Contains(vehicle.UnitId) && vehicle.ArmyId == armyId &&
+                !vehicle.IsDying && !vehicle.IsEmbarked && vehicle.Occupancy?.IsOperational != false &&
+                IsArmoredEscort(vehicle))
+            .OrderBy(vehicle => vehicle.UnitId)
             .ToArray();
     }
+
+    private static bool IsArmoredEscort(Unit unit) =>
+        GameplayCatalog.Find(PurchasableType.Unit, unit.GameplayTypeId)?.AI is AIUnitMetadata ai &&
+        ai.Movement == AIMovementDomain.GroundVehicle &&
+        ai.Roles.HasFlag(AIUnitRole.Attacker) && ai.AntiVehicle > 0.0f;
+
+    private static bool HasRole(Unit unit, AIUnitRole roles) =>
+        GameplayCatalog.Find(PurchasableType.Unit, unit.GameplayTypeId)?.AI is AIUnitMetadata ai &&
+        (ai.Roles & roles) == roles;
 
     private bool IsEnemy(Unit candidate) => world.Units.Units
         .FirstOrDefault(unit => unit.ArmyId == armyId)?.IsEnemy(candidate) == true;

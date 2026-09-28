@@ -7,10 +7,12 @@ namespace RTS;
 
 public class Reaktor : Building
 {
-    private const int EngineerPowerBonus = 30;
+    public override string GameplayTypeId => "reaktor";
     public override IReadOnlyList<UnitAction> Actions => GetUnitActions();
     public override int EffectivePowerProduction =>
-        PowerProduction + (Occupancy?.Count(OccupantRole.Crew) ?? 0) * EngineerPowerBonus;
+        PowerProduction + (Occupancy?.Count(OccupantRole.Crew) ?? 0) *
+        (GameplayCatalog.Find(PurchasableType.Building, GameplayTypeId)?
+            .Building?.PowerProductionPerCrew ?? 0);
 
     public Reaktor(
         Vector3 position,
@@ -20,9 +22,7 @@ public class Reaktor : Building
             position,
             unitId, purchasePrice)
     {
-        TotalBuildingPointsNeeded = 500;
-        HitPoints = MaxHitPoints = 500;
-        PowerProduction = 100;
+        ApplyCatalogMetadata();
 
         SetMesh("reaktor", deriveDimensions: true);
     }

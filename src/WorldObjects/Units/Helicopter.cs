@@ -18,7 +18,10 @@ public sealed record HelicopterState(float X, float Y, float Z, float Yaw, Helic
 /// <summary>Air movement and supplies are simulated by the host; clients animate replicated state.</summary>
 public class Helicopter : MobileUnit
 {
-    public override TargetDomain Domain => TargetDomain.Air;
+    public override string GameplayTypeId => "helicopter";
+    // On its landing gear the helicopter can be hit by ordinary ground weapons.
+    // Air-target capability is required again as soon as it leaves the ground.
+    public override TargetDomain Domain => IsLanded ? TargetDomain.Ground : TargetDomain.Air;
     public override ArmorClass Armor => ArmorClass.LightVehicle;
     public override bool UsesVehicleDeathSequence => true;
     public override string StateTypeId => "helicopter";

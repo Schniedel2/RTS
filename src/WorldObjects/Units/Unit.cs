@@ -14,6 +14,8 @@ public enum UnitBehavior
 
 public abstract class Unit : WorldObject
 {
+    /// <summary>Stable id connecting this runtime instance to its gameplay definition.</summary>
+    public virtual string GameplayTypeId => string.Empty;
     public enum UnitActionState
     {
         Idle,
