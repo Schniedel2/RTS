@@ -112,6 +112,7 @@ public sealed class ArmyGoalController
         _baseId = homeBase.UnitId;
         if (!homeBase.IsCompleted)
         {
+            EnsureConstruction(world, actor, commands, homeBase);
             Goal = AIGoalState.ConstructingBase;
             setStatus?.Invoke(AIPlayerStatus.Building);
             LastDecision = $"Constructing base ({homeBase.ConstructionPercentage * 100.0f:0}%).";
@@ -136,6 +137,7 @@ public sealed class ArmyGoalController
             _reactorId = reactor.UnitId;
             if (!reactor.IsCompleted && ActiveGoal is AIArmyGoal.BuildReactor or AIArmyGoal.EstablishEconomy)
             {
+                EnsureConstruction(world, actor, commands, reactor);
                 Goal = AIGoalState.ConstructingReactor;
                 setStatus?.Invoke(AIPlayerStatus.Building);
                 LastDecision = $"Constructing reactor ({reactor.ConstructionPercentage * 100.0f:0}%).";
@@ -160,6 +162,7 @@ public sealed class ArmyGoalController
         _refineryId = refinery.UnitId;
         if (!refinery.IsCompleted)
         {
+            EnsureConstruction(world, actor, commands, refinery);
             Goal = AIGoalState.ConstructingRefinery;
             setStatus?.Invoke(AIPlayerStatus.Building);
             LastDecision = $"Constructing refinery ({refinery.ConstructionPercentage * 100.0f:0}%).";
@@ -260,6 +263,7 @@ public sealed class ArmyGoalController
         _barracksId = barracks.UnitId;
         if (!barracks.IsCompleted)
         {
+            EnsureConstruction(world, actor, commands, barracks);
             Goal = AIGoalState.ConstructingBarracks;
             setStatus?.Invoke(AIPlayerStatus.Building);
             LastDecision = $"Constructing barracks ({barracks.ConstructionPercentage * 100.0f:0}%).";
@@ -484,6 +488,20 @@ public sealed class ArmyGoalController
     internal static GDIBulldozer? FindBulldozer(GameWorld world, Guid armyId) =>
         world.Units.Units.OfType<GDIBulldozer>()
             .FirstOrDefault(unit => unit.ArmyId == armyId && !unit.IsDying);
+
+    private static void EnsureConstruction(
+        GameWorld world,
+        Player actor,
+        PlayerCommandService commands,
+        Building constructionSite)
+    {
+        GDIBulldozer? builder = FindBulldozer(world, actor.ArmyId);
+        if (builder is null || builder.IsBuilding ||
+            builder.TargetBuildingId == constructionSite.UnitId)
+            return;
+
+        _ = commands.ConstructAsync([builder.UnitId], constructionSite.UnitId);
+    }
 
     internal static void PreparePreview(Building preview, Player actor)
     {

@@ -23,7 +23,7 @@ public class Car : MobileUnit
     private bool _isManeuvering;
 
     public float ReverseSpeed { get; set; } = 2.0f;
-    public float ReplanAngle { get; set; } = MathHelper.ToRadians(45.0f);
+    public float ReplanAngle { get; set; } = MathHelper.ToRadians(10.0f);
 
     public Car(
         Vector3 position,
@@ -70,7 +70,16 @@ public class Car : MobileUnit
             return;
         }
 
+        // Align with the first path segment, not with the final command target.
+        // The latter may lie behind a building which the calculated route is
+        // deliberately leading around. Reversing towards that final target can
+        // otherwise wedge a vehicle into the building before it starts its path.
         Vector2 target = CurrentCommand.Value.Target;
+        if (PlannedPath.Count > 0)
+        {
+            Vector3 waypoint = Globals.World.GameGrid.ToWorldPosition(PlannedPath[0], Position.Y);
+            target = new Vector2(waypoint.X, waypoint.Z);
+        }
         Vector3 desiredDirection = new(
             target.X - Position.X,
             0.0f,
@@ -98,6 +107,9 @@ public class Car : MobileUnit
 
         float movementDistance = ReverseSpeed *
             (float)gameTime.ElapsedGameTime.TotalSeconds;
-        TryMoveTo(Position - forward * movementDistance);
+        // Reversing is only a visual maneuvering aid. If the space behind the
+        // vehicle is occupied, keep rotating instead of repeatedly driving
+        // into the blocker. TurnTowards above still advances the heading.
+        _ = TryMoveTo(Position - forward * movementDistance);
     }
 }

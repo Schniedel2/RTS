@@ -19,7 +19,6 @@ public class CommunicationsTower : Building, IPerkProvider
             position,
             unitId, purchasePrice)
     {
-        SightRange = 50;
         ApplyCatalogMetadata();
 
         SetMesh("antenna-1", deriveDimensions: true);

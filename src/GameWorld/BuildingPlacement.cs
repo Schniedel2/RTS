@@ -24,12 +24,11 @@ public sealed record BuildingPlacement(IReadOnlyList<PlacementCell> Cells, float
         foreach (PlacementCell cell in Cells)
         {
             if (cell.Issues == PlacementIssue.None) continue;
-            if (!IsMovableBlocker(cell, grid, canMove))
+            if (!TryCollectMovableBlockers(cell, grid, canMove, result))
             {
                 blockers = [];
                 return false;
             }
-            result.Add((MobileUnit)grid.GetOccupant(cell.Cell)!);
         }
         blockers = result.ToArray();
         return blockers.Length > 0;
@@ -39,8 +38,42 @@ public sealed record BuildingPlacement(IReadOnlyList<PlacementCell> Cells, float
         PlacementCell cell,
         GameGrid grid,
         Func<MobileUnit, bool> canMove) =>
-        cell.Issues == PlacementIssue.Occupied &&
-        grid.GetOccupant(cell.Cell) is MobileUnit mobile && canMove(mobile);
+        TryCollectMovableBlockers(cell, grid, canMove, []);
+
+    private static bool TryCollectMovableBlockers(
+        PlacementCell cell,
+        GameGrid grid,
+        Func<MobileUnit, bool> canMove,
+        HashSet<MobileUnit> result)
+    {
+        const PlacementIssue movableIssues = PlacementIssue.Occupied | PlacementIssue.Reserved;
+        if (cell.Issues == PlacementIssue.None || (cell.Issues & ~movableIssues) != PlacementIssue.None)
+            return false;
+
+        bool found = false;
+        if (cell.Issues.HasFlag(PlacementIssue.Occupied))
+        {
+            if (grid.GetOccupant(cell.Cell) is not MobileUnit occupant || !canMove(occupant))
+                return false;
+            result.Add(occupant);
+            found = true;
+        }
+
+        if (cell.Issues.HasFlag(PlacementIssue.Reserved))
+        {
+            Unit[] owners = grid.GetClearanceOwners(cell.Cell).ToArray();
+            if (owners.Length == 0)
+                return false;
+            foreach (Unit owner in owners)
+            {
+                if (owner is not MobileUnit mobile || !canMove(mobile))
+                    return false;
+                result.Add(mobile);
+                found = true;
+            }
+        }
+        return found;
+    }
 
     public static BuildingPlacement Evaluate(GameWorld world, Unit unit, Vector3 position, float rotation, float tolerance)
     {

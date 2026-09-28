@@ -36,7 +36,7 @@ public class Jeep : Car
 
         AttackCooldown = 2.0f;
 
-        _meshSet = new MeshSet(Globals.MeshHandler.Meshes["blue-pick-up-truck"]);
+        SetMesh("blue-pick-up-truck");
         //_meshSet.SetAttachment("pivot:turret", Globals.MeshHandler.Meshes["TankTurret-1"]);
         //_meshSet.SetAttachmentPath("pivot:turret/pivot:barrel", Globals.MeshHandler.Meshes["TankBarrel-2"]);
 

@@ -440,6 +440,22 @@ Check(ReferenceEquals(grid.GetOccupant(4, 3), car) && grid.GetOccupant(5, 3) is 
 grid.Remove(car);
 Check(grid.GetOccupant(4, 3) is null, "Remove clears occupancy");
 
+var turningGrid = new GameGrid(12, 12, 1);
+turningGrid.BindTerrain(Terrain(12, 12));
+MobileUnit longVehicle = Unit(width: 3, length: 4);
+longVehicle.SetPosition(new Vector3(5.5f, 0, 5.5f));
+Check(turningGrid.TryMove(longVehicle, new Point(5, 5)),
+    "Long vehicle registers its initial movement footprint");
+Building cornerBuilding = new(new Vector3(7.5f, 0, 5.5f), Guid.NewGuid());
+Check(turningGrid.TryPlace(cornerBuilding, cornerBuilding.Position, 0),
+    "Corner obstacle occupies a cell outside the validated vehicle footprint");
+longVehicle.SetRotationYDegrees(90);
+Check(turningGrid.TryUpdateFootprint(longVehicle) &&
+      ReferenceEquals(turningGrid.GetOccupant(7, 5), cornerBuilding),
+    "Visual vehicle turns preserve the footprint orientation used by pathfinding");
+Check(turningGrid.TryMove(longVehicle, new Point(5, 4)),
+    "A rotated vehicle continues along its validated corridor past a building corner");
+
 var constructionSite = new Building(new Vector3(5.5f, 0, 5.5f), Guid.NewGuid());
 var builder = Mobile(new Vector3(4.5f, 0, 5.5f));
 Check(grid.GetFootprintCells(constructionSite, constructionSite.Position, 0).Count == 1,
@@ -451,7 +467,8 @@ builder.SetPosition(new Vector3(2.5f, 0, 5.5f));
 Check(!grid.AreFootprintsAdjacent(builder, constructionSite), "A one-cell gap is outside construction range");
 
 grid.GetCell(3, 2).AllowedMovement = MovementModes.Walk;
-Check(!grid.CanPlace(Unit(width: 2), new Point(2, 2)), "All footprint cells enforce access rules");
+Check(!grid.IsPathfindingAllowed(Unit(width: 2), new Point(2, 2)),
+    "Mobile clearance cells enforce terrain access during pathfinding");
 grid.GetCell(3, 2).MovementCost = 4;
 Check(grid.GetMovementCost(Unit(width: 2), new Point(2, 2)) == 4, "Footprint cost includes expensive edge");
 foreach (float invalid in new[] { 0, -1, float.NaN, float.PositiveInfinity, 0.5f })
@@ -626,11 +643,11 @@ Check(grid.TryMove(blockedMover, grid.ToCell(blockedMover.Position)) &&
     "Blocked movement fixtures occupy adjacent cells");
 blockedMover.ReceiveCommand(new GotoCommand(new Vector2(3.5f, 2.5f)));
 blockedMover.SetPlannedPath([new Point(3, 2)]);
-blockedMover.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.3)));
+blockedMover.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(1.0)));
 Check(blockedMover.CurrentCommand is not null, "A temporary blocker is tolerated briefly");
-blockedMover.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.3)));
+blockedMover.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(1.1)));
 Check(blockedMover.CurrentCommand is null && blockedMover.PlannedPath.Count == 0,
-    "A persistently blocked unit stops instead of retaining its run command");
+    "A unit blocked for two seconds stops instead of retaining its run command");
 grid.Remove(blockedMover);
 grid.Remove(movementBlocker);
 
@@ -1589,6 +1606,55 @@ Building clearanceCandidate = Empty<Building>();
 Field(clearanceCandidate, typeof(Unit), "<Width>k__BackingField", 1);
 Field(clearanceCandidate, typeof(Unit), "<Length>k__BackingField", 1);
 Check(!clearanceGrid.CanPlace(clearanceCandidate, new Vector3(12.5f, 0, 10.5f), 0), "Clearance blocks a new building footprint");
+
+// Mobile BBModel footprint is hard occupancy; mobile clearance is a soft avoidance reservation.
+MobileUnit authoredVehicle = Unit(width: 3, length: 5);
+Field(authoredVehicle, typeof(Unit), "<FootprintRegions>k__BackingField", new BoundingBox[]
+{
+    new(new Vector3(-0.4f, 0, -0.4f), new Vector3(0.4f, 1, 0.4f))
+});
+Field(authoredVehicle, typeof(Unit), "<ClearanceRegions>k__BackingField", new BoundingBox[]
+{
+    new(new Vector3(1.6f, 0, -0.4f), new Vector3(2.4f, 1, 0.4f))
+});
+authoredVehicle.SetPosition(new Vector3(15.5f, 0, 15.5f));
+Check(clearanceGrid.TryMove(authoredVehicle, new Point(15, 15)) &&
+      ReferenceEquals(clearanceGrid.GetOccupant(15, 15), authoredVehicle) &&
+      clearanceGrid.GetOccupant(17, 15) is null,
+    "Authored mobile footprint occupies only its hard BBModel core");
+MobileUnit avoidanceProbe = Unit();
+Check(clearanceGrid.CanPlace(avoidanceProbe, new Point(17, 15)) &&
+      clearanceGrid.GetMovementCost(avoidanceProbe, new Point(17, 15)) >=
+        GameGrid.MobileClearanceMovementCost,
+    "Other units may cross mobile clearance but pathfinding strongly avoids it");
+Building vehicleClearanceCandidate = Empty<Building>();
+Field(vehicleClearanceCandidate, typeof(Unit), "<Width>k__BackingField", 1);
+Field(vehicleClearanceCandidate, typeof(Unit), "<Length>k__BackingField", 1);
+Check(!clearanceGrid.CanPlace(vehicleClearanceCandidate,
+        new Vector3(17.5f, 0, 15.5f), 0),
+    "Mobile clearance prevents a building from sealing a vehicle corridor");
+MobileUnit fractionalClearanceVehicle = Unit(width: 3, length: 5);
+Field(fractionalClearanceVehicle, typeof(Unit), "<ClearanceRegions>k__BackingField", new BoundingBox[]
+{
+    // Bulldozer-1.bbmodel: 3.2 x 4.8 world units, shifted 0.3 units backwards.
+    new(new Vector3(-1.6f, 0, -2.7f), new Vector3(1.6f, 1, 2.1f))
+});
+fractionalClearanceVehicle.SetPosition(new Vector3(15.5f, 0, 15.5f));
+IReadOnlyList<Point> fractionalClearance = clearanceGrid.GetMovementClearanceCells(
+    fractionalClearanceVehicle, new Point(15, 15));
+Check(fractionalClearance.Count == 15,
+    "Fractional mobile clearance samples cell centers instead of inflating to every touched cell");
+authoredVehicle.SetRotationYDegrees(90);
+Check(clearanceGrid.TryUpdateFootprint(authoredVehicle) &&
+      ReferenceEquals(clearanceGrid.GetOccupant(15, 15), authoredVehicle),
+    "Rotating authored mobile clearance leaves the hard core footprint stable");
+Point rotatedClearanceCell = clearanceGrid
+    .GetMovementClearanceCells(authoredVehicle, new Point(15, 15))
+    .First(cell => cell != new Point(15, 15));
+Vector3 rotatedClearancePosition = clearanceGrid.ToWorldPosition(rotatedClearanceCell, 0);
+Check(!clearanceGrid.CanPlace(vehicleClearanceCandidate,
+        rotatedClearancePosition, 0),
+    "Building placement follows a vehicle's rotated authored clearance");
 Building clearanceB = Empty<Building>();
 Field(clearanceB, typeof(Unit), "<Width>k__BackingField", 1);
 Field(clearanceB, typeof(Unit), "<Length>k__BackingField", 1);
@@ -1799,6 +1865,21 @@ var mixedPlacement = new BuildingPlacement(
     [new PlacementCell(new Point(8, 8), PlacementIssue.Occupied | PlacementIssue.Blocked, 0, 0)], 0);
 Check(!mixedPlacement.TryGetMovableBlockers(clearGrid, _ => true, out _),
     "Move away is not offered when placement has additional terrain problems");
+MobileUnit clearanceBlocker = Unit();
+Field(clearanceBlocker, typeof(Unit), "<ClearanceRegions>k__BackingField", new BoundingBox[]
+{
+    new(new Vector3(0.6f, 0, -0.4f), new Vector3(1.4f, 1, 0.4f))
+});
+Check(clearGrid.TryMove(clearanceBlocker, new Point(7, 8)),
+    "Mobile clearance blocker registered beside occupied footprint cell");
+var combinedMobilePlacement = new BuildingPlacement(
+    [new PlacementCell(new Point(8, 8), PlacementIssue.Occupied | PlacementIssue.Reserved, 0, 0)], 0);
+Check(combinedMobilePlacement.TryGetMovableBlockers(clearGrid, _ => true,
+        out MobileUnit[] combinedBlockers) &&
+      combinedBlockers.ToHashSet().SetEquals(new[] { friendlyBlocker, clearanceBlocker }) &&
+      BuildingPlacement.IsMovableBlocker(combinedMobilePlacement.Cells[0], clearGrid, _ => true),
+    "Footprint cells occupied and reserved by controllable mobile units are shown as clearable");
+clearGrid.Remove(clearanceBlocker);
 var spacingUnits = new UnitHandler();
 Field(clearWorld, typeof(GameWorld), "<Units>k__BackingField", spacingUnits);
 Building existingDepot = new(new Vector3(5.5f, 0, 5.5f), Guid.NewGuid());
@@ -1842,6 +1923,10 @@ BuildingMetadata? refineryMetadata = GameplayCatalog.Find(
     PurchasableType.Building, "tiberium-refinery")?.Building;
 BuildingMetadata? reactorMetadata = GameplayCatalog.Find(
     PurchasableType.Building, "reaktor")?.Building;
+BuildingMetadata? communicationsMetadata = GameplayCatalog.Find(
+    PurchasableType.Building, "communicationstower")?.Building;
+Check(communicationsMetadata?.VisionRange == 50,
+    "Communications tower exposes its strategic vision range through the gameplay catalog");
 Check(refineryMetadata is
         { MaxHitPoints: 2500, ConstructionPoints: 4500, PowerConsumption: 30,
           ResourceCapacity: 5000 } &&

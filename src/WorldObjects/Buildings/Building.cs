@@ -113,6 +113,8 @@ public class Building : Unit
         HitPoints = MaxHitPoints = metadata.MaxHitPoints;
         PowerProduction = metadata.PowerProduction;
         PowerConsumption = metadata.PowerConsumption;
+        if (metadata.VisionRange > 0)
+            SightRange = metadata.VisionRange;
     }
 
     public bool IsCompleted => ConstructionProgress >= TotalBuildingPointsNeeded;

@@ -2,6 +2,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace RTS;
 
@@ -195,6 +196,18 @@ public sealed class DecalHandler
         if (_scorchMarks.Count == 0 && _rubbleMarks.Count == 0)
             return;
 
+        Player? localPlayer = Globals.Game.Players.FirstOrDefault(
+            player => player.Id == Globals.Game.Network.LocalPeerId);
+        bool revealAll = !Globals.FogOfWarEnabled || Globals.World.IsEditorActive || localPlayer is null;
+        bool IsVisible(ScorchDecal decal) => revealAll ||
+            Globals.World.Visibility.IsTerrainCurrentlyVisible(
+                localPlayer!.ArmyId, Globals.World.GameGrid.ToCell(decal.Position));
+
+        ScorchDecal[] visibleScorchMarks = _scorchMarks.Where(IsVisible).ToArray();
+        ScorchDecal[] visibleRubbleMarks = _rubbleMarks.Where(IsVisible).ToArray();
+        if (visibleScorchMarks.Length == 0 && visibleRubbleMarks.Length == 0)
+            return;
+
         GraphicsDevice graphicsDevice = Globals.GraphicsDevice;
         BlendState previousBlend = graphicsDevice.BlendState;
         DepthStencilState previousDepth = graphicsDevice.DepthStencilState;
@@ -206,9 +219,9 @@ public sealed class DecalHandler
         effect.Parameters["PlayerSkinStrength"]?.SetValue(0.0f);
         try
         {
-            foreach (ScorchDecal decal in _scorchMarks)
+            foreach (ScorchDecal decal in visibleScorchMarks)
                 decal.Draw(effect);
-            foreach (ScorchDecal decal in _rubbleMarks)
+            foreach (ScorchDecal decal in visibleRubbleMarks)
                 decal.Draw(effect);
         }
         finally

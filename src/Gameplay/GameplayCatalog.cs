@@ -51,7 +51,8 @@ public sealed record BuildingMetadata(
     int PowerConsumption = 0,
     float ResourceCapacity = 0.0f,
     int CrewCapacity = 0,
-    int PowerProductionPerCrew = 0);
+    int PowerProductionPerCrew = 0,
+    int VisionRange = 0);
 
 /// <summary>
 /// Static data shared by production UI, host validation, economy and AI.
@@ -84,7 +85,8 @@ public static class GameplayCatalog
         Building("reaktor", "Reactor", 500, BaseRequired,
             new(500, 500, PowerProduction: 100, CrewCapacity: 4,
                 PowerProductionPerCrew: 30)),
-        Building("communicationstower", "Communications Tower", 500, BaseRequired, new(500, 500, PowerConsumption: 20)),
+        Building("communicationstower", "Communications Tower", 500, BaseRequired,
+            new(500, 500, PowerConsumption: 20, VisionRange: 50)),
         Building("helipad", "Helipad", 1500, HelipadRequired, new(1500, 1500, PowerConsumption: 15)),
         Building("silo", "Silo", 1500, BaseRequired, new(1500, 1500, PowerConsumption: 5, ResourceCapacity: 2500)),
         Building("tiberium-refinery", "Tiberium Refinery", 1500, BaseRequired, new(2500, 4500, PowerConsumption: 30, ResourceCapacity: 5000)),

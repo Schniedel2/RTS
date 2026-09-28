@@ -127,13 +127,15 @@ public class GDIBulldozer : Car
         RotationSpeed = 4.0f;
         WaypointArrivalRadius = 1.5f;
         CanOnlyMoveForward = true;
-        CanTurnInPlace = false;
+        // A tracked bulldozer can counter-rotate. Waiting until it faces the
+        // next path segment prevents its 3x3 core from cutting building corners.
+        CanTurnInPlace = true;
 
         Length = 4;
         Width = 3;
         Height = 1.5f;
 
-        _meshSet = new MeshSet(Globals.MeshHandler.Meshes["bulldozer-1"]);
+        SetMesh("bulldozer-1");
     }
 
     public override void Draw(Effect effect)

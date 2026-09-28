@@ -101,7 +101,12 @@ public class MobileUnit : Unit
     private Vector2? _lastFollowApproachTarget;
     private bool _followPathActive;
     private float _blockedMovementSeconds;
-    private const float BlockedMovementGraceSeconds = 0.5f;
+    private Point? _progressWaypoint;
+    private float _bestWaypointDistanceSquared = float.PositiveInfinity;
+    private float _withoutPathProgressSeconds;
+    public const float MovementStallTimeoutSeconds = 2.0f;
+    private const float MinimumProgressDistance = 0.05f;
+    private const float BlockedMovementGraceSeconds = MovementStallTimeoutSeconds;
 
     public override string GetDebugCommandText()
     {
@@ -189,7 +194,11 @@ public class MobileUnit : Unit
         Point nextCell = _plannedPath[0];
         Point currentCell = Globals.World.GameGrid.ToCell(Position);
 
-        if (HeadingSnapAngle > 0.0f && currentCell == nextCell)
+        // The grid has already validated the transition into this route cell.
+        // Do not force a steering vehicle to hit the exact cell center: with a
+        // finite turning radius it can otherwise orbit around that point and
+        // continually steer from one side to the other.
+        if (currentCell == nextCell)
         {
             CompleteWaypoint();
             return;
@@ -207,9 +216,19 @@ public class MobileUnit : Unit
         // wobble around ordinary destinations. At the final construction
         // waypoint that radius could finish the route before the vehicle has
         // entered the selected approach cell and actually touches the site.
-        float arrivalRadius = TargetBuildingId is not null && _plannedPath.Count == 1
-            ? Math.Min(WaypointArrivalRadius, 0.15f)
-            : WaypointArrivalRadius;
+        bool isFinalWaypoint = _plannedPath.Count == 1;
+        // Grid waypoints are only one cell apart. A vehicle arrival radius can
+        // intentionally be larger at its final destination, but using that
+        // radius for intermediate points skips entire cells and makes a large
+        // footprint cut straight across building corners.
+        float intermediateRadius = Math.Max(
+            0.05f,
+            Globals.World.GameGrid.CellSize * 0.15f);
+        float arrivalRadius = !isFinalWaypoint
+            ? Math.Min(WaypointArrivalRadius, intermediateRadius)
+            : TargetBuildingId is not null
+                ? Math.Min(WaypointArrivalRadius, 0.15f)
+                : WaypointArrivalRadius;
         if (distanceToTarget <= arrivalRadius)
         {
             CompleteWaypoint();
@@ -232,15 +251,18 @@ public class MobileUnit : Unit
             steeringDirection = GetPathDirection(currentCell, nextCell);
 
         if (CanTurnInPlace &&
-                Vector3.Dot(forward, steeringDirection) < ForwardMovementDotThreshold)
+            Vector3.Dot(forward, steeringDirection) < ForwardMovementDotThreshold)
         {
-                TurnTowards(steeringDirection, gameTime);
+            TurnTowards(steeringDirection, gameTime);
             return;
         }
 
-        if (!CanTurnInPlace)
-                forward = TurnTowards(steeringDirection, gameTime);
+        // Keep correcting the heading while moving. Previously units which
+        // could turn in place stopped steering as soon as they crossed the
+        // coarse forward threshold, producing a left/right zig-zag.
+        forward = TurnTowards(steeringDirection, gameTime);
 
+        movementDistance = Math.Min(movementDistance, distanceToTarget);
         TrackMovementAttempt(TryMoveTo(Position + forward * movementDistance), gameTime);
     }
 
@@ -275,9 +297,8 @@ public class MobileUnit : Unit
 
             Matrix previousTransform = Transform;
             Transform = Matrix.CreateRotationY(appliedTurn) * Transform;
-            // At the 45° threshold the grid footprint may switch from
-            // Width×Length to Length×Width. Do not visually turn into cells
-            // which are blocked by another unit or a building.
+            // Rotation updates the soft movement clearance. The hard core footprint
+            // remains stable, so a visual turn cannot invalidate an accepted route.
             if (!Globals.World.GameGrid.TryUpdateFootprint(this))
                 Transform = previousTransform;
 
@@ -595,12 +616,14 @@ public class MobileUnit : Unit
     {
         _plannedPath.Clear();
         _plannedPath.AddRange(path);
+        ResetMovementProgressWatchdog();
         PathDebug($"path applied waypoints={_plannedPath.Count}");
     }
 
     public override void ClearCommand()
     {
         _blockedMovementSeconds = 0.0f;
+        ResetMovementProgressWatchdog();
         _commandQueue?.Clear();
         if (CurrentCommand is not null || _plannedPath.Count > 0)
             PathDebug($"command cleared remainingWaypoints={_plannedPath.Count}");
@@ -631,6 +654,7 @@ public class MobileUnit : Unit
         UpdateAttackMovement(gameTime);
         UpdateConstructionMovement();
         MoveAlongPath(gameTime);
+        UpdateMovementProgressWatchdog(gameTime);
         AlignToTerrain(gameTime);
         base.Update(gameTime);
     }
@@ -685,6 +709,50 @@ public class MobileUnit : Unit
         CurrentCommand = null;
         IsBuilding = true;
         PathDebug("construction footprints are adjacent; building starts");
+    }
+
+    private void UpdateMovementProgressWatchdog(GameTime gameTime)
+    {
+        if (CurrentCommand is null || _plannedPath.Count == 0 || IsBuilding || IsLeavingBuilding)
+        {
+            ResetMovementProgressWatchdog();
+            return;
+        }
+
+        Point waypoint = _plannedPath[0];
+        Vector3 target = Globals.World.GameGrid.ToWorldPosition(waypoint, Position.Y);
+        float distanceSquared = HorizontalDistanceSquared(Position, target);
+        float minimumImprovementSquared = MinimumProgressDistance * MinimumProgressDistance;
+        if (_progressWaypoint != waypoint ||
+            distanceSquared < _bestWaypointDistanceSquared - minimumImprovementSquared)
+        {
+            _progressWaypoint = waypoint;
+            _bestWaypointDistanceSquared = distanceSquared;
+            _withoutPathProgressSeconds = 0.0f;
+            return;
+        }
+
+        _withoutPathProgressSeconds += Math.Max(0.0f,
+            (float)gameTime.ElapsedGameTime.TotalSeconds);
+        if (_withoutPathProgressSeconds < MovementStallTimeoutSeconds)
+            return;
+
+        PathDebug($"movement watchdog cancelled stalled route at cell=({waypoint.X},{waypoint.Y})");
+        ClearCommand();
+    }
+
+    private void ResetMovementProgressWatchdog()
+    {
+        _progressWaypoint = null;
+        _bestWaypointDistanceSquared = float.PositiveInfinity;
+        _withoutPathProgressSeconds = 0.0f;
+    }
+
+    private static float HorizontalDistanceSquared(Vector3 first, Vector3 second)
+    {
+        float x = first.X - second.X;
+        float z = first.Z - second.Z;
+        return x * x + z * z;
     }
 
     private static float GetYawDegrees(Matrix transform)

@@ -7,6 +7,7 @@ namespace RTS;
 
 public class GameGrid
 {
+    public const float MobileClearanceMovementCost = 6.0f;
     private readonly Unit?[,] _occupants;
     private readonly GridCell[,] _cells;
     private Terrain? _terrain;
@@ -47,26 +48,30 @@ public class GameGrid
 
     public bool IsPathfindingAllowed(Unit unit, Point centerCell, Point? startingCell = null)
     {
-        Rectangle footprint = GetFootprint(unit, centerCell);
-        Rectangle? startingFootprint = startingCell is Point start ? GetFootprint(unit, start) : null;
-        for (int y = footprint.Top; y < footprint.Bottom; y++)
-            for (int x = footprint.Left; x < footprint.Right; x++)
-            {
-                Point cell = new(x, y);
-                if (!Contains(cell) || (GetCell(cell).ExcludeFromPathfinding &&
-                    !(startingFootprint?.Contains(cell) ?? false)))
-                    return false;
-            }
-        return true;
+        HashSet<Point>? startingFootprint = startingCell is Point start
+            ? GetMovementFootprintCells(unit, start).ToHashSet()
+            : null;
+        foreach (Point cell in GetMovementFootprintCells(unit, centerCell))
+            if (!Contains(cell) || (GetCell(cell).ExcludeFromPathfinding &&
+                !(startingFootprint?.Contains(cell) ?? false)))
+                return false;
+        return unit is not MobileUnit mobile || CanUseMovementClearance(mobile, centerCell);
     }
 
     public float GetMovementCost(Unit unit, Point centerCell)
     {
         float cost = 1.0f;
-        Rectangle footprint = GetFootprint(unit, centerCell);
-        for (int y = footprint.Top; y < footprint.Bottom; y++)
-            for (int x = footprint.Left; x < footprint.Right; x++)
-                cost = Math.Max(cost, GetCell(new Point(x, y)).MovementCost);
+        foreach (Point cell in GetMovementFootprintCells(unit, centerCell))
+            cost = Math.Max(cost, GetCell(cell).MovementCost);
+        if (unit is MobileUnit mobile)
+            foreach (Point cell in GetMovementClearanceCells(mobile, centerCell))
+            {
+                if (Contains(cell))
+                    cost = Math.Max(cost, GetCell(cell).MovementCost);
+                if (_clearanceOwners.TryGetValue(cell, out HashSet<Unit>? owners) &&
+                    owners.Any(owner => owner != unit && owner is MobileUnit))
+                    cost = Math.Max(cost, MobileClearanceMovementCost);
+            }
         return cost;
     }
 
@@ -80,13 +85,8 @@ public class GameGrid
     public int Width { get; }
     public int Height { get; }
     public int CellSize { get; }
-    // Store the exact rectangle that was occupied. A mobile unit may rotate
-    // before it leaves a cell, so recalculating this from its current angle
-    // when clearing would otherwise leave stale occupied cells behind.
-    private readonly Dictionary<Unit, Rectangle> _occupiedFootprints = [];
-    // Buildings may have arbitrary yaw, so a rectangle is not sufficient for
-    // their occupancy. Keep the exact set that was placed, so Remove can
-    // reliably release precisely those cells later.
+    // Keep exact hard footprints so authored masks and square mobile cores can
+    // be released without recalculating them from a later visual rotation.
     private readonly Dictionary<Unit, IReadOnlyList<Point>> _occupiedCells = [];
     private readonly Dictionary<Point, HashSet<Unit>> _clearanceOwners = [];
     private readonly Dictionary<Unit, IReadOnlyList<Point>> _clearanceCells = [];
@@ -107,20 +107,6 @@ public class GameGrid
 
     private void Clear(Unit unit)
     {
-        if (_occupiedFootprints.TryGetValue(unit, out Rectangle footprint))
-        {
-            for (int y = footprint.Top; y < footprint.Bottom; y++)
-            {
-                for (int x = footprint.Left; x < footprint.Right; x++)
-                {
-                    if (_occupants[x, y] == unit)
-                        _occupants[x, y] = null;
-                }
-            }
-
-            _occupiedFootprints.Remove(unit);
-        }
-
         if (_occupiedCells.TryGetValue(unit, out IReadOnlyList<Point>? cells))
         {
             foreach (Point cell in cells)
@@ -132,68 +118,85 @@ public class GameGrid
             _occupiedCells.Remove(unit);
         }
 
-        if (_clearanceCells.Remove(unit, out IReadOnlyList<Point>? clearance))
-            foreach (Point cell in clearance)
-                if (_clearanceOwners.TryGetValue(cell, out HashSet<Unit>? owners))
-                {
-                    owners.Remove(unit);
-                    if (owners.Count == 0) _clearanceOwners.Remove(cell);
-                }
+        ClearClearance(unit);
+    }
+
+    private void ClearClearance(Unit unit)
+    {
+        if (!_clearanceCells.Remove(unit, out IReadOnlyList<Point>? clearance)) return;
+        foreach (Point cell in clearance)
+            if (_clearanceOwners.TryGetValue(cell, out HashSet<Unit>? owners))
+            {
+                owners.Remove(unit);
+                if (owners.Count == 0) _clearanceOwners.Remove(cell);
+            }
+    }
+
+    private void RegisterClearance(Unit unit, IReadOnlyList<Point> clearance)
+    {
+        ClearClearance(unit);
+        Point[] valid = clearance.Where(Contains).Distinct().ToArray();
+        foreach (Point cell in valid)
+        {
+            if (!_clearanceOwners.TryGetValue(cell, out HashSet<Unit>? owners))
+                _clearanceOwners[cell] = owners = [];
+            owners.Add(unit);
+        }
+        _clearanceCells[unit] = valid;
     }
 
     /// <summary>True when another building requires this cell to remain free of building footprints.</summary>
     public bool IsReservedForBuilding(Point cell, Unit? prospectiveOwner = null) =>
         _clearanceOwners.TryGetValue(cell, out HashSet<Unit>? owners) &&
-        owners.Any(owner => owner != prospectiveOwner);
+        owners.Any(owner => owner != prospectiveOwner &&
+            !(owner is MobileUnit && GetOccupant(cell) == owner));
+
+    public IReadOnlyList<Unit> GetClearanceOwners(Point cell) =>
+        _clearanceOwners.TryGetValue(cell, out HashSet<Unit>? owners)
+            ? owners.ToArray()
+            : Array.Empty<Unit>();
 
     public bool CanPlace(Unit unit, Point centerCell)
     {
-        Rectangle footprint = GetFootprint(unit, centerCell);
-        int left = footprint.Left;
-        int top = footprint.Top;
-        int right = footprint.Right - 1;
-        int bottom = footprint.Bottom - 1;
-
-        if (left < 0 || top < 0 || right >= Width || bottom >= Height)
+        IReadOnlyList<Point> footprintCells = GetMovementFootprintCells(unit, centerCell);
+        if (footprintCells.Count == 0 || footprintCells.Any(cell => !Contains(cell)))
             return false;
+        Rectangle footprint = BoundsOf(footprintCells);
 
         HashSet<Unit>? testedBuildings = unit is MobileUnit ? [] : null;
-        for (int y = top; y <= bottom; y++)
+        foreach (Point cell in footprintCells)
         {
-            for (int x = left; x <= right; x++)
-            {
-                Unit? occupant = _occupants[x, y];
+            Unit? occupant = _occupants[cell.X, cell.Y];
 
-                // Terrain can change underneath a registered unit (most
-                // notably while a bulldozer levels its own footprint). Let it
-                // retain/leave those already occupied cells even if their new
-                // slope is temporarily outside its movement profile. Newly
-                // entered cells still have to pass the full terrain check.
-                if (!AllowsUnit(unit, new Point(x, y)) && occupant != unit)
-                    return false;
-
-                if (occupant is null || occupant == unit)
-                    continue;
-
-                // A rotated building deliberately occupies every touched grid
-                // cell. That is conservative for A*, but it must not turn a
-                // geometrically clear, edge-hugging route into a collision.
-                // Test the real rectangles once per building before rejecting
-                // a mobile unit's candidate cell.
-                if (unit is MobileUnit mobileUnit && occupant is Building building)
-                {
-                    if (building.HasAuthoredFootprint)
-                        return false;
-                    if (testedBuildings!.Add(building) &&
-                        MobileFootprintIntersectsBuilding(mobileUnit, footprint, building))
-                    {
-                        return false;
-                    }
-                    continue;
-                }
-
+            // Terrain can change underneath a registered unit (most
+            // notably while a bulldozer levels its own footprint). Let it
+            // retain/leave those already occupied cells even if their new
+            // slope is temporarily outside its movement profile. Newly
+            // entered cells still have to pass the full terrain check.
+            if (!AllowsUnit(unit, cell) && occupant != unit)
                 return false;
+
+            if (occupant is null || occupant == unit)
+                continue;
+
+            // A rotated building deliberately occupies every touched grid
+            // cell. That is conservative for A*, but it must not turn a
+            // geometrically clear, edge-hugging route into a collision.
+            // Test the real rectangles once per building before rejecting
+            // a mobile unit's candidate cell.
+            if (unit is MobileUnit mobileUnit && occupant is Building building)
+            {
+                if (building.HasAuthoredFootprint)
+                    return false;
+                if (testedBuildings!.Add(building) &&
+                    MobileFootprintIntersectsBuilding(mobileUnit, footprint, building))
+                {
+                    return false;
+                }
+                continue;
             }
+
+            return false;
         }
 
         return true;
@@ -206,13 +209,14 @@ public class GameGrid
         foreach (Point cell in cells)
             if (Contains(cell)) _occupants[cell.X, cell.Y] = unit;
         _occupiedCells[unit] = cells;
+        RegisterClearance(unit, GetMovementClearanceCells(unit, ToCell(unit.Position)));
     }
 
     public bool TryMove(MobileUnit unit, Point centerCell)
     {
         Point start = ToCell(unit.Position);
         // New registrations (spawn/disembark) only validate their destination.
-        int steps = _occupiedFootprints.ContainsKey(unit)
+        int steps = IsRegistered(unit)
             ? Math.Max(Math.Abs(centerCell.X - start.X), Math.Abs(centerCell.Y - start.Y))
             : 0;
         Point previous = start;
@@ -227,9 +231,9 @@ public class GameGrid
                 return false;
             previous = next;
         }
-        Rectangle newFootprint = GetFootprint(unit, centerCell);
-        if (_occupiedFootprints.TryGetValue(unit, out Rectangle oldFootprint) &&
-            oldFootprint == newFootprint)
+        IReadOnlyList<Point> newFootprint = GetMovementFootprintCells(unit, centerCell);
+        if (_occupiedCells.TryGetValue(unit, out IReadOnlyList<Point>? oldFootprint) &&
+            oldFootprint.ToHashSet().SetEquals(newFootprint))
         {
             return true;
         }
@@ -290,16 +294,7 @@ public class GameGrid
             _occupants[cell.X, cell.Y] = unit;
         _occupiedCells[unit] = cells;
         if (unit is Building)
-        {
-            IReadOnlyList<Point> clearance = GetClearanceCells(unit, position, rotationDegrees);
-            foreach (Point cell in clearance)
-            {
-                if (!_clearanceOwners.TryGetValue(cell, out HashSet<Unit>? owners))
-                    _clearanceOwners[cell] = owners = [];
-                owners.Add(unit);
-            }
-            _clearanceCells[unit] = clearance;
-        }
+            RegisterClearance(unit, GetClearanceCells(unit, position, rotationDegrees));
         return true;
     }
 
@@ -365,8 +360,6 @@ public class GameGrid
     {
         if (_occupiedCells.TryGetValue(unit, out IReadOnlyList<Point>? cells))
             return cells;
-        if (_occupiedFootprints.TryGetValue(unit, out Rectangle footprint))
-            return EnumerateCells(footprint);
         return GetGridFootprintCells(unit, unit.Position, GetYawDegrees(unit.Transform));
     }
 
@@ -376,16 +369,7 @@ public class GameGrid
         if (unit is not MobileUnit)
             return GetFootprintCells(unit, position, rotationDegrees);
 
-        Point centerCell = ToCell(position);
-        int footprintWidth = unit.Width;
-        int footprintHeight = unit.Length;
-        float radians = MathHelper.ToRadians(rotationDegrees);
-        if (MathF.Abs(MathF.Sin(radians)) > MathF.Abs(MathF.Cos(radians)))
-            (footprintWidth, footprintHeight) = (footprintHeight, footprintWidth);
-
-        int left = centerCell.X - (footprintWidth - 1) / 2;
-        int top = centerCell.Y - (footprintHeight - 1) / 2;
-        return EnumerateCells(new Rectangle(left, top, footprintWidth, footprintHeight));
+        return GetMovementFootprintCells(unit, ToCell(position));
     }
 
     private static IReadOnlyList<Point> EnumerateCells(Rectangle footprint)
@@ -395,6 +379,73 @@ public class GameGrid
             for (int x = footprint.Left; x < footprint.Right; x++)
                 cells.Add(new Point(x, y));
         return cells;
+    }
+
+    private bool IsRegistered(Unit unit) => _occupiedCells.ContainsKey(unit);
+
+    /// <summary>Hard occupancy used by movement. Unauthored mobile units use a square core.</summary>
+    private IReadOnlyList<Point> GetMovementFootprintCells(Unit unit, Point centerCell)
+    {
+        if (unit is MobileUnit mobile)
+        {
+            if (mobile.HasAuthoredFootprint)
+            {
+                Vector3 position = ToWorldPosition(centerCell, mobile.Position.Y);
+                // The authored core is deliberately fixed in grid space. Vehicle
+                // rotation is represented by its soft clearance instead.
+                return GetAuthoredFootprintCells(
+                    mobile, position, 0.0f);
+            }
+
+            int side = Math.Max(1, Math.Min(mobile.Width, mobile.Length));
+            int left = centerCell.X - (side - 1) / 2;
+            int top = centerCell.Y - (side - 1) / 2;
+            return EnumerateCells(new Rectangle(left, top, side, side));
+        }
+
+        int buildingLeft = centerCell.X - (unit.Width - 1) / 2;
+        int buildingTop = centerCell.Y - (unit.Length - 1) / 2;
+        return EnumerateCells(new Rectangle(
+            buildingLeft, buildingTop, unit.Width, unit.Length));
+    }
+
+    /// <summary>Soft mobile reservation. Authored clearance wins; legacy units use Width x Length.</summary>
+    public IReadOnlyList<Point> GetMovementClearanceCells(MobileUnit unit, Point centerCell)
+    {
+        Vector3 position = ToWorldPosition(centerCell, unit.Position.Y);
+        float yaw = GetYawDegrees(unit.Transform);
+        if (unit.HasAuthoredClearance)
+            return GetClearanceCells(unit, position, yaw);
+
+        int width = unit.Width;
+        int length = unit.Length;
+        float radians = MathHelper.ToRadians(yaw);
+        if (MathF.Abs(MathF.Sin(radians)) > MathF.Abs(MathF.Cos(radians)))
+            (width, length) = (length, width);
+        int left = centerCell.X - (width - 1) / 2;
+        int top = centerCell.Y - (length - 1) / 2;
+        return EnumerateCells(new Rectangle(left, top, width, length));
+    }
+
+    private bool CanUseMovementClearance(MobileUnit unit, Point centerCell)
+    {
+        foreach (Point cell in GetMovementClearanceCells(unit, centerCell))
+        {
+            if (!Contains(cell) || !AllowsUnit(unit, cell))
+                return false;
+            if (GetOccupant(cell) is Building)
+                return false;
+        }
+        return true;
+    }
+
+    private static Rectangle BoundsOf(IReadOnlyList<Point> cells)
+    {
+        int left = cells.Min(cell => cell.X);
+        int top = cells.Min(cell => cell.Y);
+        return new Rectangle(left, top,
+            cells.Max(cell => cell.X) - left + 1,
+            cells.Max(cell => cell.Y) - top + 1);
     }
 
     private static bool AreCellSetsAdjacent(
@@ -422,7 +473,12 @@ public class GameGrid
     /// <summary>Returns cells which must remain free of building footprints but remain traversable.</summary>
     public IReadOnlyList<Point> GetClearanceCells(Unit unit, Vector3 position, float rotationDegrees) =>
         unit.HasAuthoredClearance
-            ? GetAuthoredRegionCells(unit.ClearanceRegions, unit is MobileUnit, position, rotationDegrees)
+            ? GetAuthoredRegionCells(
+                unit.ClearanceRegions,
+                unit is MobileUnit,
+                position,
+                rotationDegrees,
+                sampleCellCenters: unit is MobileUnit)
             : Array.Empty<Point>();
 
     private IReadOnlyList<Point> GetAuthoredFootprintCells(Unit unit, Vector3 position, float rotationDegrees)
@@ -434,7 +490,8 @@ public class GameGrid
         IReadOnlyList<BoundingBox> regions,
         bool snapRotation,
         Vector3 position,
-        float rotationDegrees)
+        float rotationDegrees,
+        bool sampleCellCenters = false)
     {
         float yawDegrees = snapRotation
             ? MathF.Round(rotationDegrees / 90.0f) * 90.0f
@@ -456,51 +513,37 @@ public class GameGrid
             float extentY = MathF.Abs(right.Y) * halfWidth + MathF.Abs(forward.Y) * halfLength;
             for (int y = (int)MathF.Floor(center.Y - extentY) - 1; y <= (int)MathF.Floor(center.Y + extentY) + 1; y++)
                 for (int x = (int)MathF.Floor(center.X - extentX) - 1; x <= (int)MathF.Floor(center.X + extentX) + 1; x++)
-                    if (IntersectsCell(center, right, forward, halfWidth, halfLength, x, y))
+                    if (sampleCellCenters
+                        ? ContainsCellCenter(center, right, forward, halfWidth, halfLength, x, y)
+                        : IntersectsCell(center, right, forward, halfWidth, halfLength, x, y))
                         cells.Add(new Point(x, y));
         }
         return cells.ToArray();
     }
 
-    /// <summary>
-    /// Updates a registered mobile unit's discrete 0°/90° footprint after a
-    /// body turn. Returns false when the newly required cells are blocked.
-    /// </summary>
+    private static bool ContainsCellCenter(
+        Vector2 rectangleCenter,
+        Vector2 right,
+        Vector2 forward,
+        float halfWidth,
+        float halfLength,
+        int cellX,
+        int cellY)
+    {
+        const float epsilon = 0.00001f;
+        Vector2 delta = new(cellX + 0.5f - rectangleCenter.X, cellY + 0.5f - rectangleCenter.Y);
+        return MathF.Abs(Vector2.Dot(delta, right)) <= halfWidth + epsilon &&
+            MathF.Abs(Vector2.Dot(delta, forward)) <= halfLength + epsilon;
+    }
+
+    /// <summary>Updates a mobile unit's soft clearance after a visual body turn.</summary>
     public bool TryUpdateFootprint(MobileUnit unit)
     {
-        if (!_occupiedFootprints.ContainsKey(unit))
+        if (!IsRegistered(unit))
             return true;
-
-        Point centerCell = ToCell(unit.Position);
-        Point start = ToCell(unit.Position);
-        // New registrations (spawn/disembark) only validate their destination.
-        int steps = _occupiedFootprints.ContainsKey(unit)
-            ? Math.Max(Math.Abs(centerCell.X - start.X), Math.Abs(centerCell.Y - start.Y))
-            : 0;
-        Point previous = start;
-        for (int step = 1; step <= steps; step++)
-        {
-            Point next = new(
-                start.X + (int)MathF.Round((centerCell.X - start.X) * (float)step / steps),
-                start.Y + (int)MathF.Round((centerCell.Y - start.Y) * (float)step / steps));
-            if (!CanPlace(unit, next) ||
-                (next.X != previous.X && next.Y != previous.Y &&
-                 (!CanPlace(unit, new Point(next.X, previous.Y)) || !CanPlace(unit, new Point(previous.X, next.Y)))))
-                return false;
-            previous = next;
-        }
-        Rectangle newFootprint = GetFootprint(unit, centerCell);
-        if (_occupiedFootprints.TryGetValue(unit, out Rectangle oldFootprint) && oldFootprint == newFootprint)
-            return true;
-
-        // Only crossing the 45° orientation threshold changes a vehicle's
-        // discrete grid footprint. Until then a smooth visual turn needs no
-        // collision query at all.
-        if (!CanPlace(unit, centerCell))
-            return false;
-
-        Clear(unit);
-        Occupy(unit, centerCell);
+        // The core remains unchanged while the best-effort clearance follows
+        // the rendered heading. Clearance overlap never blocks its owner.
+        RegisterClearance(unit, GetMovementClearanceCells(unit, ToCell(unit.Position)));
         return true;
     }
 
@@ -509,7 +552,7 @@ public class GameGrid
     {
         Matrix previousTransform = unit.Transform;
         Point previousCell = ToCell(unit.Position);
-        bool wasRegistered = _occupiedFootprints.ContainsKey(unit) || _occupiedCells.ContainsKey(unit);
+        bool wasRegistered = IsRegistered(unit);
         Clear(unit);
         unit.SetTransform(authoritativeTransform);
         if (!wasRegistered)
@@ -555,37 +598,12 @@ public class GameGrid
 
     private void Occupy(Unit unit, Point centerCell)
     {
-        Rectangle footprint = GetFootprint(unit, centerCell);
-
-        for (int y = footprint.Top; y < footprint.Bottom; y++)
-        {
-            for (int x = footprint.Left; x < footprint.Right; x++)
-                _occupants[x, y] = unit;
-        }
-
-        _occupiedFootprints[unit] = footprint;
-    }
-
-    private static Rectangle GetFootprint(Unit unit, Point centerCell)
-    {
-        int footprintWidth = unit.Width;
-        int footprintHeight = unit.Length;
-        if (unit is MobileUnit)
-        {
-            Vector3 forward = unit.Transform.Forward;
-            forward.Y = 0.0f;
-            // The grid has two orientations. At 45° the closest axis takes
-            // over, so visual movement stays smooth while occupancy is stable.
-            if (MathF.Abs(forward.X) > MathF.Abs(forward.Z))
-            {
-                footprintWidth = unit.Length;
-                footprintHeight = unit.Width;
-            }
-        }
-
-        int left = centerCell.X - (footprintWidth - 1) / 2;
-        int top = centerCell.Y - (footprintHeight - 1) / 2;
-        return new Rectangle(left, top, footprintWidth, footprintHeight);
+        IReadOnlyList<Point> footprint = GetMovementFootprintCells(unit, centerCell);
+        foreach (Point cell in footprint)
+            _occupants[cell.X, cell.Y] = unit;
+        _occupiedCells[unit] = footprint;
+        if (unit is MobileUnit mobile)
+            RegisterClearance(mobile, GetMovementClearanceCells(mobile, centerCell));
     }
 
     /// <summary>

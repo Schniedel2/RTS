@@ -42,8 +42,12 @@ public sealed class Harvester : Car
         Width = 3;
         Height = 2.0f;
         MoveSpeed = 5.0f;
+        // The harvester's large 3x3 core cannot reliably follow tight grid
+        // routes with the generic car turning circle. Let it align before it
+        // enters the next route cell, just like the tracked bulldozer.
+        CanTurnInPlace = true;
         HitPoints = MaxHitPoints = 900.0f;
-        _meshSet = new MeshSet(Globals.MeshHandler.Meshes["harvester-1"]);
+        SetMesh("harvester-1");
     }
 
     internal void ApplyHarvestState(HarvestPhase phase, float cargoAmount)

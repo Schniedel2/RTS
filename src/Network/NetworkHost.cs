@@ -701,16 +701,23 @@ public sealed class NetworkHost
                 continue;
             if (job.Phase == HarvestPhase.DrivingToField)
             {
-                if (harvester.CargoAmount >= harvester.CargoCapacity - 0.001f || !TryFindTiberium(job.FieldCenter, out Point resourceCell))
+                if (harvester.CargoAmount >= harvester.CargoCapacity - 0.001f)
                 {
-                    if (harvester.CargoAmount <= 0.001f)
-                    {
-                        DelayHarvestRetry(job);
-                        continue;
-                    }
                     await BeginReturnAsync(harvester, job); continue;
                 }
-                job.ResourceCell = resourceCell;
+                if (job.ResourceCell is not Point resourceCell ||
+                    !_world.Tiberium.Cells.TryGetValue(resourceCell, out TiberiumCell? resource) ||
+                    resource.Amount <= 0.001f)
+                {
+                    if (!TryFindTiberium(job.FieldCenter, out resourceCell))
+                    {
+                        if (harvester.CargoAmount <= 0.001f) DelayHarvestRetry(job);
+                        else await BeginReturnAsync(harvester, job);
+                        continue;
+                    }
+                    job.ResourceCell = resourceCell;
+                    job.MoveIssued = false;
+                }
                 Vector3 target = _world.GameGrid.ToWorldPosition(resourceCell, 0);
                 if (HorizontalDistanceSquared(harvester.Position, target) <= 4.0f)
                 {
@@ -721,8 +728,15 @@ public sealed class NetworkHost
                 }
                 if (!job.MoveIssued)
                 {
-                    job.MoveIssued = await PublishHarvesterGotoAsync(harvester, target);
-                    if (!job.MoveIssued) DelayHarvestRetry(job);
+                    if (await TryPublishReachableHarvestGotoAsync(harvester, job, resourceCell))
+                        job.MoveIssued = true;
+                    else
+                    {
+                        // Do not retry the same inaccessible crystal forever.
+                        // The next pass chooses another resource cell.
+                        job.ResourceCell = null;
+                        DelayHarvestRetry(job);
+                    }
                     continue;
                 }
                 if (harvester.CurrentCommand is null)
@@ -847,6 +861,57 @@ public sealed class NetworkHost
             .Select(pair => (Point?)pair.Key).FirstOrDefault();
         cell = nearest ?? default;
         return nearest.HasValue;
+    }
+
+    private async Task<bool> TryPublishReachableHarvestGotoAsync(
+        Harvester harvester,
+        HarvestJob job,
+        Point preferredResource)
+    {
+        IEnumerable<Point> resources = _world.Tiberium.Cells
+            .Where(pair => pair.Value.Amount > 0.001f &&
+                Math.Abs(pair.Key.X - job.FieldCenter.X) <= HarvestSearchRadius &&
+                Math.Abs(pair.Key.Y - job.FieldCenter.Y) <= HarvestSearchRadius)
+            .OrderBy(pair => pair.Key == preferredResource ? 0 : 1)
+            .ThenBy(pair => Math.Abs(pair.Key.X - job.FieldCenter.X) +
+                Math.Abs(pair.Key.Y - job.FieldCenter.Y))
+            .Select(pair => pair.Key)
+            .Take(16);
+
+        foreach (Point resource in resources)
+        {
+            // Harvesting works within two world units. Try the resource cell
+            // first, then nearby cells in increasing distance so a large
+            // footprint can work beside crystals near cliffs or buildings.
+            foreach (Point approach in HarvestApproachCells(resource))
+            {
+                if (!_world.GameGrid.Contains(approach) ||
+                    !harvester.MovementProfile.CanEnter(_world, harvester, approach) ||
+                    !_world.GameGrid.IsPathfindingAllowed(harvester, approach))
+                    continue;
+
+                Vector3 target = _world.GameGrid.ToWorldPosition(approach, harvester.Position.Y);
+                if (HorizontalDistanceSquared(target,
+                        _world.GameGrid.ToWorldPosition(resource, target.Y)) > 4.0f)
+                    continue;
+                if (!await PublishHarvesterGotoAsync(harvester, target))
+                    continue;
+
+                job.ResourceCell = resource;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static IEnumerable<Point> HarvestApproachCells(Point resource)
+    {
+        yield return resource;
+        for (int radius = 1; radius <= 2; radius++)
+            for (int y = -radius; y <= radius; y++)
+                for (int x = -radius; x <= radius; x++)
+                    if (Math.Max(Math.Abs(x), Math.Abs(y)) == radius)
+                        yield return resource + new Point(x, y);
     }
 
     private Building? FindNearestSilo(Harvester harvester) => _world.Units.Units.OfType<Building>()

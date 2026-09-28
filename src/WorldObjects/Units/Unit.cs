@@ -81,6 +81,10 @@ public abstract class Unit : WorldObject
     public Vector3 FootprintLocalCenter { get; protected set; }
     public IReadOnlyList<BoundingBox> FootprintRegions { get; private set; } = Array.Empty<BoundingBox>();
     public bool HasAuthoredFootprint => FootprintRegions?.Count > 0;
+    /// <summary>
+    /// Authored <c>pivot:clearance</c> regions. Buildings reserve these cells for
+    /// access; MobileUnits use them as a soft, rotating movement envelope.
+    /// </summary>
     public IReadOnlyList<BoundingBox> ClearanceRegions { get; private set; } = Array.Empty<BoundingBox>();
     public bool HasAuthoredClearance => ClearanceRegions?.Count > 0;
     public bool IsSelected { get; set; }
@@ -370,15 +374,15 @@ public abstract class Unit : WorldObject
         _nextDamageSmokePivot = 0;
         BoundingBox bounds = meshSet.GetBounds();
         _selectionBounds = bounds;
-        if (!deriveDimensions)
-            return;
-
         FootprintRegions = meshSet.RootMesh.FootprintBounds
             .Select(region => TransformBounds(region, meshSet.RootMesh.LocalTransform))
             .ToArray();
         ClearanceRegions = meshSet.RootMesh.ClearanceBounds
             .Select(region => TransformBounds(region, meshSet.RootMesh.LocalTransform))
             .ToArray();
+        if (!deriveDimensions)
+            return;
+
         BoundingBox footprintBounds = FootprintRegions.Count > 0
             ? new BoundingBox(
                 FootprintRegions.Select(region => region.Min).Aggregate(Vector3.Min),

@@ -12,6 +12,7 @@ public enum AIInfrastructureState
     AssigningPowerCrew,
     TrainingPowerCrew,
     BuildingPower,
+    BuildingVision,
     ResearchingAirTechnology,
     BuildingHelipad,
     WaitingForHelicopter,
@@ -54,6 +55,14 @@ public sealed class AIInfrastructureController(
         {
             State = AIInfrastructureState.BuildingSilo;
             StartCatalogPlan(PurchasableType.Building, "silo", gameTime);
+            return;
+        }
+
+        GameplayDefinition? visionBuilding = FindPreferredVisionBuilding();
+        if (visionBuilding is not null && !HasOwnedVisionBuilding(visionBuilding.TypeId))
+        {
+            State = AIInfrastructureState.BuildingVision;
+            StartCatalogPlan(PurchasableType.Building, visionBuilding.TypeId, gameTime);
             return;
         }
 
@@ -151,6 +160,20 @@ public sealed class AIInfrastructureController(
             Harvester.DefaultCargoCapacity, capacity * StorageFreeFractionThreshold);
     }
 
+    private static GameplayDefinition? FindPreferredVisionBuilding() =>
+        GameplayCatalog.All
+            .Where(definition => definition.Type == PurchasableType.Building &&
+                definition.Building?.VisionRange > 0 &&
+                definition.Producers.Any(producer => string.Equals(
+                    producer.TypeId, "gdi-bulldozer", StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(definition => definition.Building!.VisionRange)
+            .ThenBy(definition => definition.BasePrice)
+            .FirstOrDefault();
+
+    private bool HasOwnedVisionBuilding(string typeId) =>
+        world.Units.Units.Any(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying &&
+            string.Equals(unit.GameplayTypeId, typeId, StringComparison.OrdinalIgnoreCase));
+
     private void StartCatalogPlan(PurchasableType type, string typeId, GameTime gameTime)
     {
         GameplayDefinition? target = GameplayCatalog.Find(type, typeId);
@@ -199,6 +222,10 @@ public sealed class AIInfrastructureController(
             AIProductionPlanStepKind.BuildBuilding when
                 string.Equals(step.TypeId, "helipad", StringComparison.OrdinalIgnoreCase) =>
                     AIInfrastructureState.BuildingHelipad,
+            AIProductionPlanStepKind.BuildBuilding when
+                GameplayCatalog.Find(PurchasableType.Building, step.TypeId)?
+                    .Building?.VisionRange > 0 =>
+                    AIInfrastructureState.BuildingVision,
             AIProductionPlanStepKind.BuildBuilding => AIInfrastructureState.BuildingPower,
             _ => AIInfrastructureState.MonitoringStorage
         };

@@ -76,6 +76,8 @@ public sealed class AIProductionPlanExecutor(
         }
         if (_requestSent && IsStepAcknowledged(step))
         {
+            if (step.Kind == AIProductionPlanStepKind.BuildBuilding)
+                EnsureAcknowledgedBuildingHasWorker(step);
             State = AIPlanExecutionState.InProgress;
             return;
         }
@@ -173,6 +175,27 @@ public sealed class AIProductionPlanExecutor(
         _unitCountBeforeRequest = CountUnits(step.TypeId);
         _ = _commands.TrainUnitAsync(producer.UnitId, step.TypeId);
         MarkRequest($"Requested training of {step.TypeId} in {step.ProducerTypeId}.");
+    }
+
+    private void EnsureAcknowledgedBuildingHasWorker(AIProductionPlanStep step)
+    {
+        if (_requestedBuildingId is not Guid siteId ||
+            world.Units.FindById(siteId) is not Building { IsCompleted: false } site)
+            return;
+
+        MobileUnit? builder = world.Units.Units.OfType<MobileUnit>()
+            .Where(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying && !unit.IsEmbarked &&
+                unit.BuildRate > 0.0f && string.Equals(unit.GameplayTypeId,
+                    step.ProducerTypeId, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(unit => unit.UnitId)
+            .FirstOrDefault();
+        if (builder is null || builder.IsBuilding || builder.TargetBuildingId == siteId ||
+            _retryElapsed < RetrySeconds)
+            return;
+
+        _ = _commands.ConstructAsync([builder.UnitId], site.UnitId);
+        _retryElapsed = 0.0f;
+        LastDecision = $"Reissued construction route to stalled builder for {step.TypeId}.";
     }
 
     private void ExecuteResearch(AIProductionPlanStep step)
