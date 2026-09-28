@@ -11,6 +11,7 @@ public sealed class GameHud
     private readonly Minimap _minimap;
     private readonly ActionPanel _actionPanel;
     private readonly GameStatusPanel _statusPanel = new();
+    private readonly ProductionQueuePanel _productionPanel = new();
     private readonly GameWorld _world;
     private float _minimapRefreshElapsed;
     private bool _showMinimap;
@@ -64,6 +65,8 @@ public sealed class GameHud
             _minimap.Draw(spriteBatch, camera, Layout.Minimap);
         if (Layout.ShowStatusPanel && localArmy is not null)
             _statusPanel.Draw(spriteBatch, Layout.StatusPanel, localArmy, world);
+        if (Layout.ShowProductionPanel && localArmy is not null)
+            _productionPanel.Draw(spriteBatch, Layout.ProductionPanel, localArmy, world);
         if (Layout.ShowActionPanel)
             _actionPanel.Draw(spriteBatch);
     }

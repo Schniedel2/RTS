@@ -26,6 +26,7 @@ public sealed class AIInfrastructureController(
     NetworkHandler network)
 {
     public const float StorageFreeFractionThreshold = 0.15f;
+    public const int OperationalPowerHeadroom = 10;
     public const int HelipadPowerHeadroom = 15;
     private const float ThinkIntervalSeconds = 1.0f;
     private readonly AIProductionPlanExecutor _executor = new(world, actor, network);
@@ -33,6 +34,9 @@ public sealed class AIInfrastructureController(
 
     public AIInfrastructureState State { get; private set; } = AIInfrastructureState.MonitoringStorage;
     public bool IsAirSupportReady => State == AIInfrastructureState.AirSupportReady;
+    public bool RequiresImmediatePower =>
+        ArmyPowerStatus.Calculate(world.Units.Units, actor.ArmyId).Balance <
+            OperationalPowerHeadroom;
     public string LastDecision { get; private set; } = "Monitoring storage and air-technology requirements.";
 
     public void Update(GameTime gameTime)
@@ -51,6 +55,27 @@ public sealed class AIInfrastructureController(
             return;
         _thinkElapsed %= ThinkIntervalSeconds;
 
+        ArmyPowerStatus power = ArmyPowerStatus.Calculate(world.Units.Units, actor.ArmyId);
+        int immediatePowerNeed = Math.Max(0, OperationalPowerHeadroom - power.Balance);
+        if (immediatePowerNeed > 0)
+        {
+            AIPowerSolution solution = AICrewPowerPlanner.Evaluate(
+                world, actor.ArmyId, immediatePowerNeed);
+            if (HandleCrewPowerSolution(solution, gameTime))
+                return;
+
+            GameplayDefinition? powerBuilding = FindPreferredPowerBuilding();
+            if (powerBuilding is null)
+            {
+                State = AIInfrastructureState.BuildingPower;
+                LastDecision = $"Power deficit is {immediatePowerNeed}, but the catalog has no power producer.";
+                return;
+            }
+            State = AIInfrastructureState.BuildingPower;
+            StartCatalogPlan(PurchasableType.Building, powerBuilding.TypeId, gameTime);
+            return;
+        }
+
         if (NeedsAdditionalStorage())
         {
             State = AIInfrastructureState.BuildingSilo;
@@ -66,7 +91,6 @@ public sealed class AIInfrastructureController(
             return;
         }
 
-        ArmyPowerStatus power = ArmyPowerStatus.Calculate(world.Units.Units, actor.ArmyId);
         Helipad? helipad = world.Units.Units.OfType<Helipad>()
             .FirstOrDefault(building => building.ArmyId == actor.ArmyId && !building.IsDying);
         int helipadConsumption = helipad is null
@@ -167,6 +191,14 @@ public sealed class AIInfrastructureController(
                 definition.Producers.Any(producer => string.Equals(
                     producer.TypeId, "gdi-bulldozer", StringComparison.OrdinalIgnoreCase)))
             .OrderByDescending(definition => definition.Building!.VisionRange)
+            .ThenBy(definition => definition.BasePrice)
+            .FirstOrDefault();
+
+    private static GameplayDefinition? FindPreferredPowerBuilding() =>
+        GameplayCatalog.All
+            .Where(definition => definition.Type == PurchasableType.Building &&
+                definition.Building?.PowerProduction > 0)
+            .OrderByDescending(definition => definition.Building!.PowerProduction)
             .ThenBy(definition => definition.BasePrice)
             .FirstOrDefault();
 

@@ -246,13 +246,17 @@ Check(basicHealthArmy.Perks.TryGetNearestSourcePosition(
       homePosition == new Vector3(30, 0, 40),
     "Home perk resolves its provider position for the HUD hotkey");
 HudLayout gameHudLayout = HudLayout.Calculate(new Viewport(0, 0, 1280, 720), HudLayoutMode.Game);
-Check(gameHudLayout.ShowMinimap && gameHudLayout.ShowStatusPanel && gameHudLayout.ShowActionPanel &&
+Check(gameHudLayout.ShowMinimap && gameHudLayout.ShowStatusPanel &&
+      gameHudLayout.ShowProductionPanel && gameHudLayout.ShowActionPanel &&
       gameHudLayout.Minimap.Right == 1268 && gameHudLayout.Minimap.Bottom == 708 &&
-      gameHudLayout.StatusPanel.X == gameHudLayout.Minimap.X,
-    "Game HUD centrally lays out minimap, status and action areas");
+      gameHudLayout.StatusPanel.X == gameHudLayout.Minimap.X &&
+      gameHudLayout.ProductionPanel.Top > gameHudLayout.StatusPanel.Bottom &&
+      gameHudLayout.ProductionPanel.Bottom < gameHudLayout.Minimap.Top,
+    "Game HUD centrally lays out minimap, status, production and action areas");
 HudLayout editorHudLayout = HudLayout.Calculate(new Viewport(0, 0, 1280, 720), HudLayoutMode.Editor);
-Check(editorHudLayout.ShowMinimap && !editorHudLayout.ShowStatusPanel && editorHudLayout.ShowActionPanel,
-    "Editor HUD layout hides game economy status");
+Check(editorHudLayout.ShowMinimap && !editorHudLayout.ShowStatusPanel &&
+      !editorHudLayout.ShowProductionPanel && editorHudLayout.ShowActionPanel,
+    "Editor HUD layout hides game economy and production status");
 Guid teamPlayerId = Guid.NewGuid();
 Player teamPlayer = new(teamPlayerId, "team-test", teamId: 1, skin: PlayerSkin.Blue);
 NetworkMessage teamRequest = NetworkCommands.CreatePlayerTeamUpdateRequest(teamPlayer, 7);

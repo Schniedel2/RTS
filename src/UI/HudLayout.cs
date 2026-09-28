@@ -15,14 +15,17 @@ public readonly record struct HudLayout(
     HudLayoutMode Mode,
     Rectangle Minimap,
     Rectangle StatusPanel,
+    Rectangle ProductionPanel,
     Rectangle ActionPanel,
     bool ShowMinimap,
     bool ShowStatusPanel,
+    bool ShowProductionPanel,
     bool ShowActionPanel)
 {
     private const int Margin = 12;
     private const int MinimapSize = 220;
     private const int StatusHeight = 66;
+    private const int ProductionWidth = 340;
     private const int ActionWidth = 536;
     private const int ActionHeight = 216;
 
@@ -38,6 +41,13 @@ public readonly record struct HudLayout(
             Margin,
             MinimapSize,
             StatusHeight);
+        int productionTop = status.Bottom + 8;
+        int productionBottom = minimap.Top - 8;
+        Rectangle production = new(
+            viewport.Width - ProductionWidth - Margin,
+            productionTop,
+            ProductionWidth,
+            Math.Max(0, productionBottom - productionTop));
         Rectangle actions = new(
             0,
             viewport.Height - ActionHeight,
@@ -46,9 +56,12 @@ public readonly record struct HudLayout(
 
         return mode switch
         {
-            HudLayoutMode.Game => new(mode, minimap, status, actions, true, true, true),
-            HudLayoutMode.Editor => new(mode, minimap, Rectangle.Empty, actions, true, false, true),
-            _ => new(mode, Rectangle.Empty, Rectangle.Empty, Rectangle.Empty, false, false, false)
+            HudLayoutMode.Game => new(mode, minimap, status, production, actions,
+                true, true, true, true),
+            HudLayoutMode.Editor => new(mode, minimap, Rectangle.Empty, Rectangle.Empty, actions,
+                true, false, false, true),
+            _ => new(mode, Rectangle.Empty, Rectangle.Empty, Rectangle.Empty, Rectangle.Empty,
+                false, false, false, false)
         };
     }
 }

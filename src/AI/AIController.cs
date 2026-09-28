@@ -87,8 +87,7 @@ public sealed class ArmyGoalController
     public void Update(GameTime gameTime, Player actor, GameWorld world, NetworkHandler network,
         Action<AIPlayerStatus>? setStatus = null)
     {
-        if (!network.IsHost || ActiveGoal == AIArmyGoal.None ||
-            Goal is AIGoalState.WaitingForMatch or AIGoalState.BaseDefenseReady)
+        if (!network.IsHost || Goal == AIGoalState.WaitingForMatch)
             return;
 
         float seconds = (float)gameTime.ElapsedGameTime.TotalSeconds;
@@ -101,6 +100,18 @@ public sealed class ArmyGoalController
             return;
         _thinkElapsed %= ThinkIntervalSeconds;
         var commands = new PlayerCommandService(network, actor.Id);
+
+        if (ActiveGoal == AIArmyGoal.None)
+        {
+            if (Goal != AIGoalState.BaseDefenseReady ||
+                !NeedsCoreMaintenance(world, actor.ArmyId))
+                return;
+
+            ActiveGoal = AIArmyGoal.EstablishEconomy;
+            Goal = AIGoalState.FindingBulldozer;
+            _requestElapsed = 0.0f;
+            LastDecision = "Core infrastructure or base defense was lost; restarting the maintenance plan.";
+        }
 
         GDIBase? homeBase = FindOwnedBuilding<GDIBase>(world, actor.ArmyId, _baseId);
         if (homeBase is null)
@@ -122,6 +133,22 @@ public sealed class ArmyGoalController
         {
             Goal = AIGoalState.ConstructingBase;
             LastDecision = "Base completed; waiting for its construction network to become operational.";
+            return;
+        }
+
+        GDIBulldozer? availableBulldozer = FindBulldozer(world, actor.ArmyId);
+        if (availableBulldozer is null)
+        {
+            bool queued = homeBase.ProductionQueue.Orders.Any(order => string.Equals(
+                GameplayCatalog.Canonicalize(order.UnitTypeId), "gdi-bulldozer",
+                StringComparison.OrdinalIgnoreCase));
+            if (!queued)
+                _ = commands.TrainUnitAsync(homeBase.UnitId, "gdi-bulldozer");
+            Goal = AIGoalState.FindingBulldozer;
+            setStatus?.Invoke(AIPlayerStatus.Building);
+            LastDecision = queued
+                ? "Waiting for a replacement bulldozer."
+                : "Ordered a replacement bulldozer from the base.";
             return;
         }
 
@@ -179,9 +206,16 @@ public sealed class ArmyGoalController
             .FirstOrDefault(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying);
         if (harvester is null)
         {
+            bool queued = refinery.ProductionQueue.Orders.Any(order => string.Equals(
+                GameplayCatalog.Canonicalize(order.UnitTypeId), "harvester",
+                StringComparison.OrdinalIgnoreCase));
+            if (!queued)
+                _ = commands.TrainUnitAsync(refinery.UnitId, "harvester");
             Goal = AIGoalState.WaitingForHarvester;
             setStatus?.Invoke(AIPlayerStatus.Building);
-            LastDecision = "Refinery complete; waiting for its included harvester.";
+            LastDecision = queued
+                ? "Waiting for a replacement harvester."
+                : "Ordered a replacement harvester from the refinery.";
             return;
         }
 
@@ -485,6 +519,41 @@ public sealed class ArmyGoalController
             .FirstOrDefault(unit => unit.ArmyId == armyId && !unit.IsDying);
     }
 
+    private bool NeedsCoreMaintenance(GameWorld world, Guid armyId)
+    {
+        bool HasCompleted<TBuilding>() where TBuilding : Building =>
+            world.Units.Units.OfType<TBuilding>().Any(building =>
+                building.ArmyId == armyId && building.IsCompleted && !building.IsDying);
+
+        if (!HasCompleted<GDIBase>())
+        {
+            _baseId = null;
+            return true;
+        }
+        if (FindBulldozer(world, armyId) is null)
+            return true;
+        if (!HasCompleted<TiberiumRefinery>())
+        {
+            _refineryId = null;
+            _harvestOrderIssued = false;
+            return true;
+        }
+        if (!HasCompleted<GDIBarracks>())
+        {
+            _barracksId = null;
+            _rallyPointIssued = false;
+            return true;
+        }
+        if (!world.Units.Units.OfType<Harvester>().Any(unit =>
+                unit.ArmyId == armyId && !unit.IsDying))
+            return true;
+
+        int defenders = world.Units.Units.Count(unit => unit.ArmyId == armyId &&
+            !unit.IsDying && GameplayCatalog.HasAIRoles(unit.GameplayTypeId,
+                AIUnitRole.Defender | AIUnitRole.AntiInfantry));
+        return defenders < 3;
+    }
+
     internal static GDIBulldozer? FindBulldozer(GameWorld world, Guid armyId) =>
         world.Units.Units.OfType<GDIBulldozer>()
             .FirstOrDefault(unit => unit.ArmyId == armyId && !unit.IsDying);
@@ -680,6 +749,13 @@ public sealed class AIController
         _defensePlanner ??= new AIDefensePlanner(
             world, ai.Player, network, _threatAssessment);
 
+        bool infrastructureUpdated = false;
+        if (_infrastructure.RequiresImmediatePower)
+        {
+            _infrastructure.Update(gameTime);
+            infrastructureUpdated = true;
+        }
+
         _scouting ??= new ScoutingController(world, ai.Player.Id, network);
         MobileUnit? scout = _scoutId is Guid scoutId
             ? world.Units.FindById(scoutId) as MobileUnit
@@ -716,7 +792,7 @@ public sealed class AIController
         if (_armoredSupport.IsReady)
         {
             _defensePlanner.Update(gameTime);
-            if (!_defensePlanner.IsBusy)
+            if (!_defensePlanner.IsBusy && !infrastructureUpdated)
                 _infrastructure.Update(gameTime);
         }
         if (_squadCyclePhase == SquadCyclePhase.Combat &&
