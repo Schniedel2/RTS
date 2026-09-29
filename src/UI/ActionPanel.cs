@@ -51,19 +51,18 @@ public sealed class ActionPanel
 
         IEnumerable<UnitAction> actions = selectedUnits
             .SelectMany(unit => unit.Actions)
-            .GroupBy(action => action.Name)
-            .Where(group => group.Count() == selectedUnits.Count)
+            .GroupBy(action => (action.Type, action.TargetObjectName, action.MarkerType))
             .Select(group => group.First());
 
         List<UnitAction> availableActions = actions.ToList();
-        if (_activeAction is null)
-            if (availableActions.Count > 0)
-                _activeAction = availableActions[0];
+        _activeAction = Globals.LocalPlayer.ActiveAction;
 
         int index = 0;
         foreach (UnitAction action in availableActions)
         {
-            PurchaseQuote? quote = GetActionQuote(action, selectedUnits);
+            var recipients = PlayerHandler.Recipients(selectedUnits, action);
+            if (PlayerHandler.SingleActor(action) && recipients.Count != 1) _disabledActions.Add(action);
+            PurchaseQuote? quote = GetActionQuote(action, recipients);
             int cost = quote?.FinalPrice ?? action.ResourceCost;
             _actionCosts[action] = cost;
             if (quote is not null)
@@ -105,7 +104,9 @@ public sealed class ActionPanel
             if (bounds.Contains(mouse.Position))
             {
                 _hoverAction = action;
-                _tooltipText = _hoverAction!.Name;
+                int count = PlayerHandler.Recipients(selectedUnits, _hoverAction).Count;
+                _tooltipText = $"{_hoverAction.Name} ({count}/{selectedUnits.Count})";
+                if (PlayerHandler.SingleActor(_hoverAction) && count != 1) _tooltipText += " - Select one eligible unit";
                 if (_actionCosts.GetValueOrDefault(_hoverAction) is int cost && cost > 0)
                     _tooltipText += $" ({cost} resources)";
                 if (_missingPerks.GetValueOrDefault(_hoverAction) is { Count: > 0 } missing)

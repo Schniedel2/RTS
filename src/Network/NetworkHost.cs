@@ -28,6 +28,7 @@ public sealed class NetworkHost
     private const int MaximumGotoPathAttemptsPerUnit = 12;
     private const double HostSimulationInterval = 0.1;
     private const double StateHeartbeatInterval = 3.0;
+    private int _groundStateCursor;
     private double _hostTime;
     private double _simulationAccumulator;
     /// <summary>Authoritative simulation time, shared with clients via NetworkHandler.EstimatedHostTime.</summary>
@@ -128,17 +129,26 @@ public sealed class NetworkHost
 
     private async Task PublishGroundMobileUnitsAsync()
     {
+        if (!_networkHandler.IsHost) return;
         int sentUpdates = 0;
-        foreach (MobileUnit unit in _world.Units.Units.OfType<MobileUnit>().ToArray())
+        MobileUnit[] units = _world.Units.Units.OfType<MobileUnit>().ToArray();
+        int first = units.Length == 0 ? 0 : _groundStateCursor % units.Length;
+        for (int visited = 0; visited < units.Length && sentUpdates < MaximumStateUpdatesPerTick; visited++)
         {
-            if (sentUpdates >= MaximumStateUpdatesPerTick)
-                break;
+            int index = (first + visited) % units.Length;
+            MobileUnit unit = units[index];
+            _groundStateCursor = (index + 1) % units.Length;
             if (unit is Helicopter || unit.IsEmbarked || unit.IsDying || unit.IsLeavingBuilding ||
                 _hostTime < unit.NextNetworkUpdateTime)
                 continue;
 
+            long navigationRevision = unit.NavigationRevision;
+            bool includeNavigation = unit.HasUnpublishedNavigation || _hostTime >= unit.NextNavigationHeartbeat;
+            UnitState state = unit.GetMovementState(includeNavigation);
             await _networkHandler.BroadcastAsync(
-                NetworkCommands.CreateUnitStateCommand(_networkHandler.LocalPeerId, unit.GetState()));
+                NetworkCommands.CreateUnitStateCommand(_networkHandler.LocalPeerId, state));
+            unit.MarkNavigationPublished(navigationRevision);
+            if (includeNavigation) unit.NextNavigationHeartbeat = _hostTime + StateHeartbeatInterval;
             unit.NextNetworkUpdateTime = _hostTime + HostSimulationInterval;
             sentUpdates++;
         }
@@ -1001,6 +1011,9 @@ public sealed class NetworkHost
         ArmyResourceService.TrySpend(army, _world, building.PurchasePrice);
         return NetworkCommands.CreateBuildCommand(_networkHandler.LocalPeerId,
             request with { UnitId = unitId, PlayerId = request.SenderId, Y = position.Y,
+                UnitIds = (request.UnitIds ?? Array.Empty<Guid>()).Distinct().Where(id =>
+                    _world.Units.FindById(id) is MobileUnit worker && worker.BuildRate > 0 &&
+                    worker.IsSelectable && Globals.Game.Armies.CanControl(request.SenderId, worker.ArmyId)).ToArray(),
                 ArmyId = armyId, ResourceAmount = army.Resources, PurchasePrice = quote.FinalPrice });
     }
 

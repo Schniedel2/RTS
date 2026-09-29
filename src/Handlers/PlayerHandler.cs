@@ -52,8 +52,13 @@ public class PlayerHandler
     private EarthworkPreview? _earthworkPreview;
     private readonly ScoutingController _scouting;
 
+    public static bool SingleActor(UnitAction a) => a.Type is UnitActionType.TrainUnit or UnitActionType.Research or UnitActionType.AssembleSquad or UnitActionType.DisbandSquad or UnitActionType.LeaveContainer;
+    public static List<Unit> Recipients(IEnumerable<Unit> units, UnitAction a) => units.Where(u => u.Actions.Any(b => b.Type == a.Type && b.TargetObjectName == a.TargetObjectName && b.MarkerType == a.MarkerType)).ToList();
+
     public bool SelectAction(UnitAction action, bool alternateAction)
     {
+        var recipients = Recipients(_selectedUnits, action);
+        if (recipients.Count == 0 || SingleActor(action) && recipients.Count != 1) return false;
         //  single-use actions are handled immediately / current action-selection remains unchanged
        switch (action.Type)
         {
@@ -97,28 +102,28 @@ public class PlayerHandler
                 return false;
             case UnitActionType.TakeOff:
             case UnitActionType.ReturnToHelipad:
-                foreach (Helicopter helicopter in _selectedUnits.OfType<Helicopter>())
+                foreach (Helicopter helicopter in recipients.OfType<Helicopter>())
                     _ = Globals.Game.NetworkClient.RequestHelicopterOrderAsync(helicopter.UnitId,
                         action.Type == UnitActionType.TakeOff ? HelicopterOrder.TakeOff : HelicopterOrder.ReturnToHelipad, helicopter.Position);
                 return false;
             case UnitActionType.Stop:
                 {
-                    _scouting.Stop(_selectedUnits);
+                    _scouting.Stop(recipients);
                     if (action.Type == UnitActionType.Stop)
-                        _ = Globals.Game.NetworkClient.RequestStopAsync(_selectedUnits);
+                        _ = Globals.Game.NetworkClient.RequestStopAsync(recipients);
                     return false;
                 }
             case UnitActionType.Scouting:
-                _scouting.Start(_selectedUnits);
+                _scouting.Start(recipients);
                 return false;
             case UnitActionType.ReturnToStorage:
-                foreach (Harvester harvester in _selectedUnits.OfType<Harvester>())
+                foreach (Harvester harvester in recipients.OfType<Harvester>())
                     _ = Globals.Game.NetworkClient.RequestHarvesterReturnAsync(harvester.UnitId);
                 return false;
             case UnitActionType.TrainUnit:
                 {
-                    Building? building = _selectedUnits.Count == 1
-                        ? _selectedUnits[0] as Building
+                    Building? building = recipients.Count == 1
+                        ? recipients[0] as Building
                         : null;
                     if (building is not null && !string.IsNullOrWhiteSpace(action.TargetObjectName))
                     {
@@ -129,19 +134,19 @@ public class PlayerHandler
                     return false;
                 }
             case UnitActionType.ClearRallyPoint:
-                foreach (Unit unit in _selectedUnits.Where(unit => unit.SupportsRallyPoint))
+                foreach (Unit unit in recipients.Where(unit => unit.SupportsRallyPoint))
                     _ = Globals.Game.NetworkClient.RequestSetRallyPointAsync(unit.UnitId, null);
                 return false;
             case UnitActionType.LeaveContainer:
                 {
-                    if (_selectedUnits.Count == 1 && _selectedUnits[0].Occupancy is not null)
-                        _ = Globals.Game.NetworkClient.RequestLeaveContainerAsync(_selectedUnits[0].UnitId);
+                    if (recipients.Count == 1 && recipients[0].Occupancy is not null)
+                        _ = Globals.Game.NetworkClient.RequestLeaveContainerAsync(recipients[0].UnitId);
                     return false;
                 }
             case UnitActionType.Research:
                 {
-                    Building? building = _selectedUnits.Count == 1
-                        ? _selectedUnits[0] as Building
+                    Building? building = recipients.Count == 1
+                        ? recipients[0] as Building
                         : null;
                     if (building is not null && !string.IsNullOrWhiteSpace(action.TargetObjectName))
                         _ = Globals.Game.NetworkClient.RequestResearchAsync(
@@ -149,19 +154,19 @@ public class PlayerHandler
                     return false;
                 }
             case UnitActionType.SellBuilding:
-                foreach (Building building in _selectedUnits.OfType<Building>().Where(
+                foreach (Building building in recipients.OfType<Building>().Where(
                     building => building is not GenericBuilding &&
                         Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, building.ArmyId)))
                     _ = RequestSellBuildingAsync(building);
                 return false;
             case UnitActionType.CancelConstruction:
-                foreach (Building building in _selectedUnits.OfType<Building>().Where(
+                foreach (Building building in recipients.OfType<Building>().Where(
                     building => !building.IsCompleted && building is not GenericBuilding &&
                         Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, building.ArmyId)))
                     _ = Globals.Game.NetworkClient.RequestCancelConstructionAsync(building.UnitId);
                 return false;
             case UnitActionType.Destroy:
-                foreach (Building building in _selectedUnits.OfType<Building>().Where(
+                foreach (Building building in recipients.OfType<Building>().Where(
                     building => Globals.Game.Armies.CanControl(
                         Globals.Game.Network.LocalPeerId, building.ArmyId)))
                     _ = Globals.Game.NetworkClient.RequestDestroyBuildingAsync(building.UnitId);
@@ -171,7 +176,7 @@ public class PlayerHandler
         if (!action.RequiresTarget)
         {
             _ = Globals.Game.NetworkClient.RequestUnitActionAsync(
-                _selectedUnits, action.Type, new UnitActionContext(Alternate: alternateAction));
+                recipients, action.Type, new UnitActionContext(Alternate: alternateAction));
             return false;
         }
 
@@ -212,6 +217,7 @@ public class PlayerHandler
             NotifySelectionChanged();
         }
 
+        if (Keyboard.GetState().IsKeyDown(Keys.Escape)) ActiveAction = null;
         _isDrag = false;        
 
         MouseState mouse = Mouse.GetState();
@@ -224,6 +230,14 @@ public class PlayerHandler
         {
             MouseWorldPosition = new Vector3(target.X, target.Y, target.Z);
             IsMouseOnTerrain = true;
+        }
+
+        if (IsRightButtonPressed(mouse) && ActiveAction is not null)
+        {
+            ActiveAction = null;
+            _formationPlacementActive = false;
+            _previousMouseState = mouse;
+            return;
         }
 
         if (GetMode() == CurrentMode.BuildPreview)
@@ -332,13 +346,13 @@ public class PlayerHandler
 
                 if (IsLeftButtonReleased(mouse))
                 {
-                    if (SelectedUnits.Count == 0)
-                        if (!_isSelectingUnits)
-                            SelectUnits(camera, viewport, _currentSelectionRect, 1);
+                    bool firstSelection = SelectedUnits.Count == 0;
+                    if (firstSelection && !_isSelectingUnits)
+                        SelectUnits(camera, viewport, _currentSelectionRect, 1);
 
                     if (_isSelectingUnits)
                         SelectUnits(camera, viewport, _currentSelectionRect, 99);
-                    else if (IsMouseOnTerrain)
+                    else if (!firstSelection && IsMouseOnTerrain)
                         PerformClickAction(_selectedUnits, MouseWorldPosition, 0);
 
                     _isSelectingUnits = false;
@@ -346,7 +360,10 @@ public class PlayerHandler
             }
 
             if (IsRightButtonPressed(mouse))
-                ClearSelection();
+            {
+                if (ActiveAction is not null) ActiveAction = null;
+                else ClearSelection();
+            }
         }
         else
         {
@@ -388,80 +405,44 @@ public class PlayerHandler
         return _selectedUnits.Contains(unit);
     }
 
-    UnitActionType SuggestAction(List<Unit> selectedUnits, Vector3 mouseWorldPosition, out Unit? targetUnit)
+    private (UnitAction Action, Unit? Target, List<Unit> Units) ResolveAction(Vector3 position)
     {
-        targetUnit = null;
-        if (selectedUnits.Count == 0)
-            return UnitActionType.None;
-
-        if (ActiveAction?.Type != UnitActionType.Goto)
+        Unit? target = FindUnitAt(Globals._camera, Globals.GraphicsDevice.Viewport, Mouse.GetState().Position);
+        var selection = ActiveAction is null && _selectedUnits.Any(u => u is MobileUnit)
+            ? _selectedUnits.Where(u => u is MobileUnit).ToList() : _selectedUnits;
+        UnitActionType type = UnitActionType.None;
+        if (selection.Count > 0)
         {
-            if (ActiveAction?.Type != UnitActionType.Follow)
-                return UnitActionType.None;
+            if (target is not null && selection.Any(u => u.IsEnemy(target))) type = UnitActionType.Attack;
+            else if (target?.Occupancy is not null && selection.OfType<Soldier>().Any(u => target.Occupancy.CanEnter(u))) type = UnitActionType.EnterUnit;
+            else if (target is Building { IsCompleted: false } && selection.Any(u => u.IsSamePlayer(target) && u is MobileUnit { BuildRate: > 0 })) type = UnitActionType.BuildConstruction;
+            else if (target is Helipad && selection.Any(u => u is Helicopter)) type = UnitActionType.Land;
+            else if (_map.Tiberium.Cells.ContainsKey(_map.GameGrid.ToCell(position)) && selection.Any(u => u is Harvester)) type = UnitActionType.Harvest;
+            else type = selection.Any(u => u is MobileUnit) ? UnitActionType.Goto : UnitActionType.SetRallyPoint;
         }
-
-        targetUnit = FindUnitAt(Globals._camera, Globals.GraphicsDevice.Viewport, Mouse.GetState().Position);
-        KeyboardState keyboardState = Keyboard.GetState();
-
-        if (targetUnit == null)
-        {
-            if (ActiveAction?.Type == UnitActionType.Follow)
-                return UnitActionType.None;
-            if (keyboardState.IsKeyDown(Keys.LeftControl) || keyboardState.IsKeyDown(Keys.RightControl))
-                return UnitActionType.Attack;
-
-            return UnitActionType.Goto;
-        }
-
-        if (ActiveAction?.Type == UnitActionType.Follow)
-            return UnitActionType.Follow;
-
-        if (selectedUnits.Count == 1 &&
-            selectedUnits[0] is Soldier soldier &&
-            targetUnit.Occupancy is OccupancyComponent occupancy &&
-            !keyboardState.IsKeyDown(Keys.LeftControl) &&
-            !keyboardState.IsKeyDown(Keys.RightControl) &&
-            occupancy.CanEnter(soldier))
-        {
-            return UnitActionType.EnterUnit;
-        }
-
-        if (targetUnit.IsEnemy(selectedUnits.First()))
-            return UnitActionType.Attack;
-
-        if (targetUnit.IsSamePlayer(selectedUnits.First()) && (targetUnit is Building))
-        {
-            Building b = (targetUnit as Building)!;
-            if (!b.IsCompleted)
-                return UnitActionType.BuildConstruction;
-
-            if (!b.IsDamaged)
-                return UnitActionType.Repair;
-            return UnitActionType.None;
-        }
-
-        if (keyboardState.IsKeyDown(Keys.LeftControl) || keyboardState.IsKeyDown(Keys.RightControl))
-            return UnitActionType.Attack;
-
-        if (keyboardState.IsKeyDown(Keys.LeftAlt) || keyboardState.IsKeyDown(Keys.RightAlt))
-            return UnitActionType.Repair;
-
-        return UnitActionType.None;
+        UnitAction action = ActiveAction ?? new UnitAction(type, type.ToString(), 0, 0);
+        var recipients = action.Type == UnitActionType.EnterUnit
+            ? selection.Where(u => u is Soldier soldier && target?.Occupancy?.CanEnter(soldier) == true).ToList()
+            : Recipients(selection, action);
+        if (action.Type == UnitActionType.Attack) recipients = recipients.Where(u => u.CanFireWeapon && (target is null || u.CanAttackTarget(target))).ToList();
+        if (action.Type == UnitActionType.BuildConstruction && (target is not Building { IsCompleted: false } || !recipients.Any(u => u.IsSamePlayer(target)))) recipients.Clear();
+        if (action.Type == UnitActionType.Follow && target is null) recipients.Clear();
+        if (SingleActor(action) && recipients.Count != 1) recipients.Clear();
+        return (action, target, recipients);
     }
 
     bool PerformClickAction(List<Unit> selectedUnits, Vector3 mouseWorldPosition, float targetAngleY)
     {
-        if (ActiveAction == null)
-            return false;
-
-        Unit? targetUnit;
-        UnitActionType suggestedAction = SuggestAction(selectedUnits, mouseWorldPosition, out targetUnit);
-        if (suggestedAction != UnitActionType.None)
+        var result = ResolveAction(mouseWorldPosition);
+        if (result.Units.Count == 0) return false;
+        if (result.Action.Type == UnitActionType.EnterUnit)
         {
-            SendRequestAction(suggestedAction, mouseWorldPosition, targetUnit);
-            return true;
+            foreach (Soldier soldier in result.Units.OfType<Soldier>())
+                _ = Globals.Game.NetworkClient.RequestEnterUnitAsync(soldier.UnitId, result.Target!.UnitId);
         }
-        RequestAction(ActiveAction, mouseWorldPosition, targetUnit, targetAngleY);
+        else if (result.Action.Type == UnitActionType.BuildConstruction)
+            _ = Globals.Game.NetworkClient.RequestBuildConstructionAsync(result.Units, result.Target!.UnitId);
+        else RequestAction(result.Action, mouseWorldPosition, result.Target, targetAngleY, result.Units);
         return true;
     }
 
@@ -495,14 +476,7 @@ public class PlayerHandler
             unit.Select();
         }
 
-        var commonAction = _selectedUnits
-            .SelectMany(unit => unit.Actions)
-            .GroupBy(action => action.Type)
-            .Where(group => group.Count() == _selectedUnits.Count)
-            .Select(group => group.First())
-            .FirstOrDefault();
-        
-        ActiveAction = commonAction;
+        ActiveAction = null;
         NotifySelectionChanged();
     }
 
@@ -546,58 +520,16 @@ public class PlayerHandler
                 _previousMouseState.RightButton == ButtonState.Pressed;
         }
 
-        private bool SendRequestAction(UnitActionType actionType, Vector3 targetPosition, Unit? targetUnit)
+        private void RequestAction(UnitAction action, Vector3 targetPosition, Unit? targetUnit, float targetAngleY, List<Unit>? recipients = null)
         {            
-            if (_selectedUnits.Count == 0)
-                return false;
-
-            if (actionType == UnitActionType.Goto)
-            {
-                _scouting.Stop(_selectedUnits);
-                Globals.Game.NetworkClient.RequestGotoAsync(_selectedUnits, targetPosition,
-                    Keyboard.GetState().IsKeyDown(Keys.LeftShift) || Keyboard.GetState().IsKeyDown(Keys.RightShift));
-                return true;
-            }
-            if (actionType == UnitActionType.Attack)
-            {
-                if (targetUnit is not null)
-                    _ = Globals.Game.NetworkClient.RequestAttackTargetAsync(_selectedUnits, targetUnit.UnitId);
-                else
-                    _ = Globals.Game.NetworkClient.RequestAttackTerrainAsync(_selectedUnits, targetPosition);
-                return true;
-            }
-            if (actionType == UnitActionType.Follow && targetUnit is not null)
-            {
-                _ = Globals.Game.NetworkClient.RequestFollowAsync(_selectedUnits, targetUnit.UnitId);
-                return true;
-            }
-            if (actionType == UnitActionType.BuildConstruction)
-            {
-                Globals.Game.NetworkClient.RequestBuildConstructionAsync(_selectedUnits, targetUnit?.UnitId ?? Guid.Empty);
-                return true;
-            }
-            if (actionType == UnitActionType.EnterUnit &&
-                _selectedUnits.Count == 1 &&
-                _selectedUnits[0] is Soldier soldier &&
-                targetUnit?.Occupancy is not null)
-            {
-                _ = Globals.Game.NetworkClient.RequestEnterUnitAsync(
-                    soldier.UnitId,
-                    targetUnit.UnitId);
-                return true;
-            }
-            return false;
-        }
-
-        private void RequestAction(UnitAction action, Vector3 targetPosition, Unit? targetUnit, float targetAngleY)
-        {            
-            if (_selectedUnits.Count == 0)
+            recipients ??= Recipients(_selectedUnits, action);
+            if (recipients.Count == 0)
                 return;
 
             if (action.Type == UnitActionType.Land)
             {
                 Helipad? pad = targetUnit as Helipad ?? _map.GameGrid.GetOccupant(_map.GameGrid.ToCell(targetPosition)) as Helipad;
-                foreach (Helicopter helicopter in _selectedUnits.OfType<Helicopter>())
+                foreach (Helicopter helicopter in recipients.OfType<Helicopter>())
                     _ = Globals.Game.NetworkClient.RequestHelicopterOrderAsync(helicopter.UnitId, HelicopterOrder.Land, targetPosition, pad?.UnitId);
                 ActiveAction = null;
                 return;
@@ -609,15 +541,15 @@ public class PlayerHandler
             }
             if (action.Type == UnitActionType.Harvest)
             {
-                foreach (Harvester harvester in _selectedUnits.OfType<Harvester>())
+                foreach (Harvester harvester in recipients.OfType<Harvester>())
                     _ = Globals.Game.NetworkClient.RequestHarvestAsync(harvester.UnitId, targetPosition);
                 ActiveAction = null;
                 return;
             }
             if (action.Type == UnitActionType.MoveAway)
             {
-                _scouting.Stop(_selectedUnits);
-                foreach (MobileUnit unit in _selectedUnits.OfType<MobileUnit>())
+                _scouting.Stop(recipients);
+                foreach (MobileUnit unit in recipients.OfType<MobileUnit>())
                     _ = Globals.Game.NetworkClient.RequestMoveAwayAsync(unit.UnitId, targetPosition);
                 ActiveAction = null;
                 return;
@@ -654,7 +586,7 @@ public class PlayerHandler
             }
             if (action.Type is UnitActionType.LevelAndConcrete or UnitActionType.RemoveConcrete)
             {
-                if (_selectedUnits.Count != 1 || _selectedUnits[0] is not GDIBulldozer worker) return;
+                if (recipients.Count != 1 || recipients[0] is not GDIBulldozer worker) return;
                 EarthworkKind kind = action.Type == UnitActionType.LevelAndConcrete ? EarthworkKind.LevelAndConcrete : EarthworkKind.RemoveConcrete;
                 if (!Earthwork.Preview(_map, worker, _map.GameGrid.ToCell(targetPosition), kind).IsAllowed) return;
                 _ = Globals.Game.NetworkClient.RequestEarthworkAsync(worker.UnitId, targetPosition, kind);
@@ -663,26 +595,26 @@ public class PlayerHandler
             }
             if (action.Type == UnitActionType.SetRallyPoint)
             {
-                foreach (Unit unit in _selectedUnits.Where(unit => unit.SupportsRallyPoint))
+                foreach (Unit unit in recipients.Where(unit => unit.SupportsRallyPoint))
                     _ = Globals.Game.NetworkClient.RequestSetRallyPointAsync(unit.UnitId, targetPosition);
                 ActiveAction = null;
                 return;
             }
             if (action.Type == UnitActionType.Goto)
             {
-                _scouting.Stop(_selectedUnits);
-                Globals.Game.NetworkClient.RequestGotoAsync(_selectedUnits, targetPosition,
+                _scouting.Stop(recipients);
+                Globals.Game.NetworkClient.RequestGotoAsync(recipients, targetPosition,
                     Keyboard.GetState().IsKeyDown(Keys.LeftShift) || Keyboard.GetState().IsKeyDown(Keys.RightShift));
             }
             if (action.Type == UnitActionType.Attack)
             {
                 if (targetUnit is not null)
-                    _ = Globals.Game.NetworkClient.RequestAttackTargetAsync(_selectedUnits, targetUnit.UnitId);
+                    _ = Globals.Game.NetworkClient.RequestAttackTargetAsync(recipients, targetUnit.UnitId);
                 else
-                    _ = Globals.Game.NetworkClient.RequestAttackTerrainAsync(_selectedUnits, targetPosition);
+                    _ = Globals.Game.NetworkClient.RequestAttackTerrainAsync(recipients, targetPosition);
             }
             if (action.Type == UnitActionType.Follow && targetUnit is not null)
-                _ = Globals.Game.NetworkClient.RequestFollowAsync(_selectedUnits, targetUnit.UnitId);
+                _ = Globals.Game.NetworkClient.RequestFollowAsync(recipients, targetUnit.UnitId);
             if (action.Type == UnitActionType.Build)
             {
                 Building? preview = BuildingFactory.SpawnBuilding(action.TargetObjectName, targetPosition,
@@ -701,8 +633,9 @@ public class PlayerHandler
                     return;
                 }
                 Guid buildingId = Guid.NewGuid();
-                Globals.Game.NetworkClient.RequestBuildAsync(action.TargetObjectName, targetPosition, targetAngleY, buildingId);
-                Globals.Game.NetworkClient.RequestBuildConstructionAsync(_selectedUnits, buildingId);
+                _scouting.Stop(recipients);
+                _ = Globals.Game.NetworkClient.RequestBuildAndConstructAsync(
+                    action.TargetObjectName, targetPosition, targetAngleY, buildingId, recipients);
                 ActiveAction = null;
             }
             if ((action.Type == UnitActionType.RaiseTerrain) || 
@@ -757,10 +690,17 @@ public class PlayerHandler
 
         private Unit? FindUnitAt(Camera camera, Viewport viewport, Point screenPosition)
         {
-            Unit[] candidates = _map.Units.Units.Where(unit => unit.IsSelectable &&
-                _map.Visibility.IsUnitVisibleToLocalPlayer(unit) && unit.GetScreenBounds(
-                    camera.View, camera.Projection, viewport).Contains(screenPosition)).ToArray();
-            return PrioritizeMobileUnits(candidates).FirstOrDefault();
+            Ray ray = CreatePickRay(camera, viewport, screenPosition);
+            float terrainDistance = _map.Terrain.TryGetIntersection(ray, out Vector3 terrainHit)
+                ? Vector3.Distance(ray.Position, terrainHit) + 0.01f
+                : float.PositiveInfinity;
+            var hits = _map.Units.Units
+                .Where(unit => unit.IsSelectable && _map.Visibility.IsUnitVisibleToLocalPlayer(unit))
+                .Select(unit => (Unit: unit, Distance: unit.IntersectSelectionRay(ray)))
+                .Where(hit => hit.Distance is float distance && distance <= terrainDistance)
+                .OrderBy(hit => hit.Distance)
+                .Select(hit => hit.Unit).ToArray();
+            return PrioritizeMobileUnits(hits).FirstOrDefault();
         }
 
         private static IEnumerable<Unit> PrioritizeMobileUnits(IReadOnlyList<Unit> candidates) =>
@@ -1029,11 +969,12 @@ public class PlayerHandler
 
         if (IsMouseOnTerrain)
         {
-            Unit? targetUnit;
-            UnitActionType suggestedAction = SuggestAction(_selectedUnits, MouseWorldPosition, out targetUnit);
-            if (suggestedAction != UnitActionType.None)
+            var result = ResolveAction(MouseWorldPosition);
+            if (_selectedUnits.Count > 0)
             {
-                string suggestion = suggestedAction.ToString();
+                string suggestion = result.Units.Count > 0
+                    ? $"{result.Action.Name} ({result.Units.Count}/{_selectedUnits.Count})"
+                    : "No suitable action for this target";
                 RenderHelper.DrawTooltip(spriteBatch, suggestion, _previousMouseState.Position.X + 24, _previousMouseState.Position.Y + 16);
             }
         }

@@ -58,6 +58,7 @@ public class Car : MobileUnit
 
     protected override void MoveAlongPath(GameTime gameTime)
     {
+        if (PlannedPath.Count == 0) return;
         if (!_isManeuvering)
         {
             base.MoveAlongPath(gameTime);

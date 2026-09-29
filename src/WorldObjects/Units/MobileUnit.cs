@@ -9,7 +9,15 @@ using RTS.Network;
 namespace RTS;
 
 public sealed record MobileUnitState(float X, float Y, float Z, float YawDegrees, bool IsMoving,
-    Guid? SquadLeaderId = null);
+    Guid? SquadLeaderId = null, GroundNavigationState? Navigation = null,
+    int PathProgress = 0, long NavigationRevision = 0);
+
+public enum MovementStatus { Idle, FollowingRoute, Waiting, Planning, Blocked }
+public sealed record QueuedMovementState(float X, float Z, Point[]? Route);
+public sealed record GroundNavigationState(float? TargetX, float? TargetZ, Point[] Route,
+    QueuedMovementState[] Queue, Guid? ConstructionSiteId, Guid? ContainerId, bool IsBuilding,
+    MovementStatus Status, Point? PreviousCell = null);
+
 
 public class MobileUnit : Unit
 {
@@ -50,6 +58,7 @@ public class MobileUnit : Unit
 
     private void MoveToProductionRallyPoint()
     {
+        if (!IsMovementAuthority) return;
         Vector2? target = _productionRallyPoint;
         _productionRallyPoint = null;
         if (target is not Vector2 position || CurrentCommand is not null)
@@ -108,6 +117,29 @@ public class MobileUnit : Unit
     private const float MinimumProgressDistance = 0.05f;
     private const float BlockedMovementGraceSeconds = MovementStallTimeoutSeconds;
 
+    // Offline worlds are authoritative too; connected clients only predict confirmed routes.
+    internal static bool IsMovementAuthority =>
+        Globals.Game?.Network is not { IsConnected: true, IsHost: false };
+    public MovementStatus MovementStatus { get; private set; }
+    private float _retryMovementSeconds;
+    private int _movementRetryCount;
+    private bool _turningTowardPath;
+    private Point? _previousRouteCell;
+    private int _pathProgress;
+    private long _navigationRevision;
+    private long _publishedNavigationRevision = -1;
+    private long _replicatedNavigationRevision = -1;
+    private Point[] _replicatedRoute = [];
+    private int _replicatedRouteStartProgress;
+    private Point? _replicatedPreviousCell;
+    private Vector3 _renderCorrectionOffset;
+    private float _renderCorrectionYaw;
+    internal double NextNavigationHeartbeat { get; set; }
+    internal bool HasUnpublishedNavigation => _navigationRevision != _publishedNavigationRevision;
+    internal long NavigationRevision => _navigationRevision;
+    internal void MarkNavigationPublished(long revision) => _publishedNavigationRevision = revision;
+    private void NavigationChanged() => _navigationRevision++;
+
     public override string GetDebugCommandText()
     {
         if (IsLeavingBuilding)
@@ -117,7 +149,7 @@ public class MobileUnit : Unit
         if (IsBuilding && TargetBuildingId is Guid buildingId)
             return $"Construct {buildingId.ToString("N")[..8]}";
         if (CurrentCommand is GotoCommand command)
-            return $"Goto ({command.Target.X:0.0}, {command.Target.Y:0.0}) | path={_plannedPath.Count} queue={_commandQueue.Count}";
+            return $"Goto ({command.Target.X:0.0}, {command.Target.Y:0.0}) | path={_plannedPath.Count} queue={_commandQueue.Count} movement={MovementStatus} retries={_movementRetryCount}";
         string commandText = base.GetDebugCommandText();
         return _commandQueue.Count > 0 ? $"{commandText} | queue={_commandQueue.Count}" : commandText;
     }
@@ -198,10 +230,11 @@ public class MobileUnit : Unit
         // Do not force a steering vehicle to hit the exact cell center: with a
         // finite turning radius it can otherwise orbit around that point and
         // continually steer from one side to the other.
-        if (currentCell == nextCell)
+        if (currentCell == nextCell && _plannedPath.Count > 1 && !IsRouteCorner(0))
         {
             CompleteWaypoint();
-            return;
+            if (_plannedPath.Count == 0) return;
+            nextCell = _plannedPath[0];
         }
 
         Vector3 target = Globals.World.GameGrid.ToWorldPosition(nextCell, Position.Y);
@@ -228,32 +261,34 @@ public class MobileUnit : Unit
             ? Math.Min(WaypointArrivalRadius, intermediateRadius)
             : TargetBuildingId is not null
                 ? Math.Min(WaypointArrivalRadius, 0.15f)
-                : WaypointArrivalRadius;
+                : Math.Min(WaypointArrivalRadius, Globals.World.GameGrid.CellSize * 0.35f);
         if (distanceToTarget <= arrivalRadius)
         {
             CompleteWaypoint();
             return;
         }
 
-        Vector3 desiredDirection = toTarget / distanceToTarget;
+        Vector3 steeringTarget = GetRouteSteeringTarget(target);
+        Vector3 toSteeringTarget = steeringTarget - Position;
+        toSteeringTarget.Y = 0;
+        Vector3 desiredDirection = Vector3.Normalize(toSteeringTarget);
 
         if (!CanOnlyMoveForward)
         {
             FaceDirection(desiredDirection);
+            movementDistance = Math.Min(movementDistance, distanceToTarget);
             TrackMovementAttempt(TryMoveTo(Position + desiredDirection * movementDistance), gameTime);
             return;
         }
 
         Vector3 forward = GetHorizontalDirection(Vector3.Forward);
-            Vector3 steeringDirection = desiredDirection;
-
-            if (HeadingSnapAngle > 0.0f)
-            steeringDirection = GetPathDirection(currentCell, nextCell);
+        Vector3 steeringDirection = desiredDirection;
 
         if (CanTurnInPlace &&
             Vector3.Dot(forward, steeringDirection) < ForwardMovementDotThreshold)
         {
             TurnTowards(steeringDirection, gameTime);
+            _turningTowardPath = true;
             return;
         }
 
@@ -271,15 +306,84 @@ public class MobileUnit : Unit
         if (moved)
         {
             _blockedMovementSeconds = 0.0f;
+            if (MovementStatus != MovementStatus.FollowingRoute)
+            {
+                MovementStatus = MovementStatus.FollowingRoute;
+                NavigationChanged();
+            }
             return;
         }
 
+        if (MovementStatus != MovementStatus.Waiting)
+        {
+            MovementStatus = MovementStatus.Waiting;
+            NavigationChanged();
+        }
         _blockedMovementSeconds += (float)gameTime.ElapsedGameTime.TotalSeconds;
         if (_blockedMovementSeconds < BlockedMovementGraceSeconds)
             return;
 
-        PathDebug("movement remained blocked; command completed at current position");
-        ClearCommand();
+        RequestMovementRecovery();
+    }
+
+    private bool IsRouteCorner(int index)
+    {
+        if (index + 1 >= _plannedPath.Count) return false;
+        Point before = index == 0
+            ? _previousRouteCell ?? Globals.World.GameGrid.ToCell(Position)
+            : _plannedPath[index - 1];
+        Point incoming = _plannedPath[index] - before;
+        Point outgoing = _plannedPath[index + 1] - _plannedPath[index];
+        return incoming != Point.Zero && incoming != outgoing;
+    }
+
+    private Vector3 GetRouteSteeringTarget(Vector3 fallback)
+    {
+        if (!CanOnlyMoveForward || _plannedPath.Count < 2) return fallback;
+        int last = 0;
+        // Look ahead only within a straight part of the confirmed route. A bend is
+        // approached at its center, so the steering never bypasses a blocked corner.
+        while (last + 1 < _plannedPath.Count && last < 3 && !IsRouteCorner(last)) last++;
+        return Globals.World.GameGrid.ToWorldPosition(_plannedPath[last], Position.Y);
+    }
+
+    private void RequestMovementRecovery()
+    {
+        if (!IsMovementAuthority || CurrentCommand is null || MovementStatus == MovementStatus.Planning)
+            return;
+        _plannedPath.Clear();
+        _blockedMovementSeconds = 0;
+        ResetMovementProgressWatchdog();
+        _pathRequestId++;
+        _movementRetryCount++;
+        MovementStatus = MovementStatus.Planning;
+        NavigationChanged();
+        Globals.World.PathfindingManager.RequestPath(this, MovementProfile, CurrentCommand.Value.Target, _pathRequestId);
+    }
+
+    internal void OnPathSearchFailed()
+    {
+        if (CurrentCommand is null) return;
+        _plannedPath.Clear();
+        MovementStatus = MovementStatus.Blocked;
+        // Bound retry frequency even for permanently unreachable orders. Keep the
+        // user's task and its Shift queue until a new command or Stop replaces it.
+        _retryMovementSeconds = _movementRetryCount >= 3 ? 5.0f : MovementStallTimeoutSeconds;
+        NavigationChanged();
+        ResetMovementProgressWatchdog();
+    }
+
+    private void UpdateMovementRecovery(float seconds)
+    {
+        if (CurrentCommand is null || MovementStatus != MovementStatus.Blocked) return;
+        _retryMovementSeconds -= seconds;
+        if (_retryMovementSeconds > 0) return;
+        if (TargetBuildingId is Guid siteId && Globals.World.Units.FindById(siteId) is Building site)
+        {
+            _movementRetryCount++;
+            TryReceiveBuildConstructionCommand(Globals.World, site, preserveQueue: true);
+        }
+        else RequestMovementRecovery();
     }
 
     protected Vector3 TurnTowards(Vector3 desiredDirection, GameTime gameTime)
@@ -323,44 +427,45 @@ public class MobileUnit : Unit
         _blockedMovementSeconds = 0.0f;
         Point completedWaypoint = _plannedPath[0];
         _plannedPath.RemoveAt(0);
+        _previousRouteCell = completedWaypoint;
+        _pathProgress++;
+        _movementRetryCount = 0;
         PathDebug($"waypoint reached cell=({completedWaypoint.X},{completedWaypoint.Y}) remaining={_plannedPath.Count}");
 
-        if (_plannedPath.Count == 0)
-        {
-            if (PendingEnterContainerId is not null)
-            {
-                CurrentCommand = null;
-                PathDebug("container entrance reached; waiting for host embark command");
-                return;
-            }
-
-            if (TargetBuildingId is not null)
-            {
-                UpdateConstructionMovement();
-                if (!IsBuilding)
-                {
-                    PathDebug("construction approach ended without footprint adjacency");
-                    ClearCommand();
-                }
-                return;
-            }
-
-            PathDebug("destination reached; command completed");
-            if (_commandQueue is { Count: > 0 })
-            {
-                var queued = _commandQueue.Dequeue();
-                StartGoto(Globals.World, queued.Command, queued.Route);
-            }
-            else
-                ClearCommand();
-        }
+        if (_plannedPath.Count == 0) FinishCurrentRoute();
     }
 
-    private static Vector3 GetPathDirection(Point from, Point to)
+    private void FinishCurrentRoute()
     {
-        Vector3 direction = new(to.X - from.X, 0.0f, to.Y - from.Y);
+        if (!IsMovementAuthority) return;
+        if (PendingEnterContainerId is not null)
+        {
+            CurrentCommand = null;
+            MovementStatus = MovementStatus.Idle;
+            NavigationChanged();
+            return;
+        }
+        if (TargetBuildingId is not null)
+        {
+            UpdateConstructionMovement();
+            if (!IsBuilding && CurrentCommand is not null) OnPathSearchFailed();
+            return;
+        }
+        StartNextQueuedOrder();
+    }
 
-        return Vector3.Normalize(direction);
+    private void StartNextQueuedOrder()
+    {
+        // An empty queued route means no travel; skip it without recursion or
+        // discarding the commands behind it.
+        while (_commandQueue is { Count: > 0 })
+        {
+            var queued = _commandQueue.Dequeue();
+            if (queued.Route is { Length: 0 }) continue;
+            StartGoto(Globals.World, queued.Command, queued.Route);
+            return;
+        }
+        ClearCommand();
     }
 
     protected bool TryMoveTo(Vector3 position)
@@ -494,6 +599,7 @@ public class MobileUnit : Unit
     {
         CurrentCommand = command;
         _pathRequestId++;
+        NavigationChanged();
     }
 
     public virtual bool TryReceiveGotoCommand(
@@ -506,14 +612,15 @@ public class MobileUnit : Unit
         // destination and when no useful route exists. In either case there
         // is nothing to execute; keeping CurrentCommand set would leave the
         // unit permanently "moving" without any waypoint to complete.
-        if (route is { Count: 0 })
+        if (!appendToQueue && route is { Count: 0 })
         {
             ClearCommand();
             return true;
         }
-        if (appendToQueue && (CurrentCommand is not null || _plannedPath.Count > 0))
+        if (appendToQueue && (CurrentCommand is not null || _plannedPath.Count > 0 || IsBuilding))
         {
             _commandQueue.Enqueue((command, route?.ToArray()));
+            NavigationChanged();
             return true;
         }
         _commandQueue.Clear();
@@ -527,7 +634,11 @@ public class MobileUnit : Unit
         TargetBuildingId = null;
         IsBuilding = false;
         CurrentCommand = command;
-
+        _pathRequestId++;
+        _movementRetryCount = 0;
+        _retryMovementSeconds = 0;
+        MovementStatus = MovementStatus.Planning;
+        NavigationChanged();
         _plannedPath.Clear();
         PathDebug($"path search requested target=({command.Target.X:0.0},{command.Target.Y:0.0}) request={_pathRequestId}");
 
@@ -536,6 +647,7 @@ public class MobileUnit : Unit
             SetPlannedPath(route);
             return true;
         }
+        if (!IsMovementAuthority) return true;
         map.PathfindingManager.RequestPath(
             this,
             MovementProfile,
@@ -557,13 +669,29 @@ public class MobileUnit : Unit
         return accepted;
     }
 
-    internal void ClearPendingEnterContainer() => PendingEnterContainerId = null;
+    internal void ClearPendingEnterContainer()
+    {
+        PendingEnterContainerId = null;
+        NavigationChanged();
+    }
 
     public virtual bool TryReceiveBuildConstructionCommand(
         GameWorld map,
-        Building constructionSite)
+        Building constructionSite, bool preserveQueue = false)
     {
+        if (!preserveQueue)
+        {
+            _commandQueue.Clear();
+            _plannedPath.Clear();
+            _pathRequestId++;
+            _movementRetryCount = 0;
+            PendingEnterContainerId = null;
+            CurrentCommand = null;
+            IsBuilding = false;
+        }
         TargetBuildingId = constructionSite.UnitId;
+        NavigationChanged();
+        if (!IsMovementAuthority) return true;
         if (map.GameGrid.AreFootprintsAdjacent(this, constructionSite))
         {
             BeginConstructionAtCurrentPosition();
@@ -593,35 +721,50 @@ public class MobileUnit : Unit
             orderby Vector3.DistanceSquared(Position, world)
             select cell;
 
-        foreach (Point candidate in candidates)
+        Point[] approaches = candidates.ToArray();
+        int offset = approaches.Length == 0 ? 0 : (_movementRetryCount * 4) % approaches.Length;
+        foreach (Point candidate in approaches.Skip(offset).Concat(approaches.Take(offset)).Take(4))
         {
             Vector3 world = map.GameGrid.ToWorldPosition(candidate, Position.Y);
             Vector2 target = new(world.X, world.Z);
             if (!map.PathfindingManager.TryFindPath(this, start, target, out List<Point> route))
                 continue;
 
-            bool accepted = TryReceiveGotoCommand(map, new GotoCommand(target), route: route);
+            bool accepted = StartGoto(map, new GotoCommand(target), route);
             if (accepted)
             {
                 TargetBuildingId = constructionSite.UnitId;
+                NavigationChanged();
                 return true;
             }
         }
 
-        TargetBuildingId = null;
-        return false;
+        CurrentCommand ??= new GotoCommand(new Vector2(constructionSite.Position.X, constructionSite.Position.Z));
+        OnPathSearchFailed();
+        return true;
     }
 
     public void SetPlannedPath(IReadOnlyList<Point> path)
     {
         _plannedPath.Clear();
         _plannedPath.AddRange(path);
+        _previousRouteCell = Globals.World?.GameGrid.ToCell(Position);
+        _pathProgress = 0;
+        _retryMovementSeconds = 0;
+        MovementStatus = path.Count > 0 ? MovementStatus.FollowingRoute : MovementStatus.Idle;
+        NavigationChanged();
         ResetMovementProgressWatchdog();
         PathDebug($"path applied waypoints={_plannedPath.Count}");
+        if (path.Count == 0 && CurrentCommand is not null) FinishCurrentRoute();
     }
 
     public override void ClearCommand()
     {
+        _pathRequestId++;
+        _retryMovementSeconds = 0;
+        _movementRetryCount = 0;
+        MovementStatus = MovementStatus.Idle;
+        NavigationChanged();
         _blockedMovementSeconds = 0.0f;
         ResetMovementProgressWatchdog();
         _commandQueue?.Clear();
@@ -650,22 +793,39 @@ public class MobileUnit : Unit
             return;
         }
 
-        UpdateFollowMovement(gameTime);
-        UpdateAttackMovement(gameTime);
-        UpdateConstructionMovement();
+        float seconds = Math.Max(0, (float)gameTime.ElapsedGameTime.TotalSeconds);
+        float correctionDecay = MathF.Exp(-seconds * 15.0f);
+        _renderCorrectionOffset *= correctionDecay;
+        _renderCorrectionYaw *= correctionDecay;
+        _turningTowardPath = false;
+        if (IsMovementAuthority)
+        {
+            UpdateFollowMovement(gameTime);
+            UpdateAttackMovement(gameTime);
+            UpdateConstructionMovement();
+            UpdateMovementRecovery(seconds);
+        }
         MoveAlongPath(gameTime);
-        UpdateMovementProgressWatchdog(gameTime);
+        if (IsMovementAuthority) UpdateMovementProgressWatchdog(gameTime);
         AlignToTerrain(gameTime);
         base.Update(gameTime);
     }
 
-    public override UnitState GetState()
+    public override UnitState GetState() => GetMovementState(includeNavigation: true);
+
+    internal UnitState GetMovementState(bool includeNavigation)
     {
         float yaw = GetYawDegrees(Transform);
         bool isMoving = CurrentCommand is not null || _plannedPath.Count > 0 || IsLeavingBuilding;
+        GroundNavigationState? navigation = includeNavigation ? new(
+            CurrentCommand?.Target.X, CurrentCommand?.Target.Y, _plannedPath.ToArray(),
+            _commandQueue.Select(order => new QueuedMovementState(order.Command.Target.X,
+                order.Command.Target.Y, order.Route)).ToArray(),
+            TargetBuildingId, PendingEnterContainerId, IsBuilding, MovementStatus, _previousRouteCell) : null;
         return new UnitState(UnitId, StateRevision, StateTypeId, StateVersion,
             JsonSerializer.SerializeToUtf8Bytes(new MobileUnitState(
-                Position.X, Position.Y, Position.Z, yaw, isMoving, SquadLeaderId), NetworkJson.Options));
+                Position.X, Position.Y, Position.Z, yaw, isMoving, SquadLeaderId,
+                navigation, _pathProgress, _navigationRevision), NetworkJson.Options));
     }
 
     public override void ApplyState(UnitState state)
@@ -678,25 +838,69 @@ public class MobileUnit : Unit
             !float.IsFinite(data.Z) || !float.IsFinite(data.YawDegrees))
             return;
 
+        Matrix oldVisual = GetVisualWorldMatrix();
         Matrix transform = Matrix.CreateRotationY(MathHelper.ToRadians(data.YawDegrees));
         transform.Translation = new Vector3(data.X, data.Y, data.Z);
-        if (Globals.World.GameGrid.TryApplyAuthoritativeTransform(this, transform) && !data.IsMoving)
-            ClearCommand();
+        bool positionApplied = Globals.World.GameGrid.TryApplyAuthoritativeTransform(this, transform);
+        Vector3 correction = positionApplied ? oldVisual.Translation - Position : _renderCorrectionOffset;
+        // Blend small prediction errors visually. Teleports must not sweep across the map.
+        _renderCorrectionOffset = correction.LengthSquared() <= 16.0f ? correction : Vector3.Zero;
+        if (positionApplied)
+            _renderCorrectionYaw = correction.LengthSquared() <= 16.0f
+                ? MathHelper.WrapAngle(MathHelper.ToRadians(GetYawDegrees(oldVisual) - data.YawDegrees)) : 0;
+        if (data.Navigation is GroundNavigationState navigation)
+        {
+            CurrentCommand = navigation.TargetX is float x && navigation.TargetZ is float z &&
+                float.IsFinite(x) && float.IsFinite(z) ? new GotoCommand(new Vector2(x, z)) : null;
+            _commandQueue.Clear();
+            foreach (QueuedMovementState queued in navigation.Queue)
+                _commandQueue.Enqueue((new GotoCommand(new Vector2(queued.X, queued.Z)), queued.Route));
+            TargetBuildingId = navigation.ConstructionSiteId;
+            PendingEnterContainerId = navigation.ContainerId;
+            IsBuilding = navigation.IsBuilding;
+            MovementStatus = navigation.Status;
+            _replicatedRoute = navigation.Route;
+            _replicatedPreviousCell = navigation.PreviousCell;
+            _replicatedRouteStartProgress = data.PathProgress;
+            _replicatedNavigationRevision = data.NavigationRevision;
+        }
+        if (data.NavigationRevision == _replicatedNavigationRevision)
+        {
+            int consumed = Math.Clamp(data.PathProgress - _replicatedRouteStartProgress, 0, _replicatedRoute.Length);
+            _plannedPath.Clear();
+            _plannedPath.AddRange(_replicatedRoute.Skip(consumed));
+            _previousRouteCell = consumed > 0 ? _replicatedRoute[consumed - 1]
+                : _replicatedPreviousCell ?? Globals.World.GameGrid.ToCell(Position);
+            _pathProgress = data.PathProgress;
+        }
+        else if (data.Navigation is null && !data.IsMoving)
+            ClearCommand(); // Compatibility with a position-only sender.
         SquadLeaderId = data.SquadLeaderId;
         StateRevision = state.Revision;
     }
 
+    protected override Matrix GetVisualWorldMatrix()
+    {
+        Matrix visual = Matrix.CreateRotationY(_renderCorrectionYaw) * base.GetVisualWorldMatrix();
+        visual.Translation += _renderCorrectionOffset;
+        return visual;
+    }
+
     private void UpdateConstructionMovement()
     {
-        if (IsBuilding || TargetBuildingId is not Guid buildingId)
+        if (TargetBuildingId is not Guid buildingId)
             return;
 
         if (Globals.World.Units.FindById(buildingId) is not Building constructionSite ||
             constructionSite.IsDying || constructionSite.IsCompleted)
         {
-            ClearCommand();
+            TargetBuildingId = null;
+            IsBuilding = false;
+            _plannedPath.Clear();
+            StartNextQueuedOrder();
             return;
         }
+        if (IsBuilding) return;
 
         if (Globals.World.GameGrid.AreFootprintsAdjacent(this, constructionSite))
             BeginConstructionAtCurrentPosition();
@@ -704,16 +908,18 @@ public class MobileUnit : Unit
 
     private void BeginConstructionAtCurrentPosition()
     {
+        _pathRequestId++;
         _plannedPath.Clear();
-        _commandQueue.Clear();
         CurrentCommand = null;
         IsBuilding = true;
+        MovementStatus = MovementStatus.Idle;
+        NavigationChanged();
         PathDebug("construction footprints are adjacent; building starts");
     }
 
     private void UpdateMovementProgressWatchdog(GameTime gameTime)
     {
-        if (CurrentCommand is null || _plannedPath.Count == 0 || IsBuilding || IsLeavingBuilding)
+        if (CurrentCommand is null || _plannedPath.Count == 0 || IsBuilding || IsLeavingBuilding || _turningTowardPath)
         {
             ResetMovementProgressWatchdog();
             return;
@@ -722,9 +928,8 @@ public class MobileUnit : Unit
         Point waypoint = _plannedPath[0];
         Vector3 target = Globals.World.GameGrid.ToWorldPosition(waypoint, Position.Y);
         float distanceSquared = HorizontalDistanceSquared(Position, target);
-        float minimumImprovementSquared = MinimumProgressDistance * MinimumProgressDistance;
         if (_progressWaypoint != waypoint ||
-            distanceSquared < _bestWaypointDistanceSquared - minimumImprovementSquared)
+            MathF.Sqrt(distanceSquared) < MathF.Sqrt(_bestWaypointDistanceSquared) - MinimumProgressDistance)
         {
             _progressWaypoint = waypoint;
             _bestWaypointDistanceSquared = distanceSquared;
@@ -737,8 +942,8 @@ public class MobileUnit : Unit
         if (_withoutPathProgressSeconds < MovementStallTimeoutSeconds)
             return;
 
-        PathDebug($"movement watchdog cancelled stalled route at cell=({waypoint.X},{waypoint.Y})");
-        ClearCommand();
+        PathDebug($"movement watchdog requests a replacement route at cell=({waypoint.X},{waypoint.Y})");
+        RequestMovementRecovery();
     }
 
     private void ResetMovementProgressWatchdog()
@@ -847,21 +1052,10 @@ public class MobileUnit : Unit
         _nextFollowReplanTime = gameTime.TotalGameTime.TotalSeconds + 0.5;
     }
 
-    private Vector3 SnapDirectionToHeading(Vector3 direction)
-    {
-        float heading = MathF.Atan2(-direction.X, -direction.Z);
-        float snappedHeading = MathF.Round(heading / HeadingSnapAngle) *
-            HeadingSnapAngle;
-
-        return Vector3.Transform(
-            Vector3.Forward,
-            Matrix.CreateRotationY(snappedHeading));
-    }
-
     private Matrix CreateTerrainTransform(Terrain terrain)
     {
-        float halfWidth = Width * 0.5f;
-        float halfLength = Length * 0.5f;
+        float halfWidth = Math.Max(1, Width) * 0.5f;
+        float halfLength = Math.Max(1, Length) * 0.5f;
 
             Vector3 horizontalRight = GetHorizontalDirection(Vector3.Right);
             Vector3 horizontalForward = GetHorizontalDirection(Vector3.Forward);

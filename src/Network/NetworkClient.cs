@@ -120,6 +120,11 @@ public sealed class NetworkClient
         return _commands.BuildAsync(buildingTypeName, new Vector3(x, y, z), targetAngleY, unitId);
     }
 
+    public Task<Guid> RequestBuildAndConstructAsync(string buildingTypeName, Vector3 target,
+        float targetAngleY, Guid unitId, IEnumerable<Unit> workers) =>
+        _commands.BuildAndConstructAsync(buildingTypeName, target, targetAngleY,
+            workers.OfType<MobileUnit>().Where(unit => unit.BuildRate > 0).Select(unit => unit.UnitId), unitId);
+
     public Task RequestStopAsync(IEnumerable<Unit> units)
     {
         return _commands.StopAsync(units.Select(unit => unit.UnitId));

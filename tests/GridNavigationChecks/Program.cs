@@ -568,6 +568,17 @@ Rectangle ExpectedBounds()
     return new Rectangle(left, top, right - left, bottom - top);
 }
 Check(building.GetScreenBounds(view, projection, viewport) == ExpectedBounds(), "Selection preserves mesh origin, scale and rotation without grid padding");
+Vector3 pickCenter = Vector3.Transform((authored.Min + authored.Max) * 0.5f,
+    mesh.LocalTransform * building.GetWorldMatrix());
+Ray towardBuilding = new(pickCenter + Vector3.Up * 20, Vector3.Down);
+Check(building.IntersectSelectionRay(towardBuilding) is float hitDistance && hitDistance < 20,
+    "Context picking intersects the transformed mesh bounds");
+Check(building.IntersectSelectionRay(new Ray(towardBuilding.Position, Vector3.Up)) is null,
+    "Objects behind the picking ray cannot become context targets");
+Check(building.IntersectSelectionRay(new Ray(pickCenter + new Vector3(100, 20, 0), Vector3.Down)) is null,
+    "Free terrain outside the mesh bounds has no unit hit");
+Check(Unit().IntersectSelectionRay(towardBuilding) is null,
+    "Units without a render mesh cannot become context targets");
 building.TotalBuildingPointsNeeded = 100;
 Check(building.GetScreenBounds(view, projection, viewport) == ExpectedBounds(), "Selection follows construction scale");
 building.SetTransform(Matrix.CreateRotationY(-0.9f) * Matrix.CreateTranslation(-2, 0, 1));
@@ -650,8 +661,10 @@ blockedMover.SetPlannedPath([new Point(3, 2)]);
 blockedMover.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(1.0)));
 Check(blockedMover.CurrentCommand is not null, "A temporary blocker is tolerated briefly");
 blockedMover.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(1.1)));
-Check(blockedMover.CurrentCommand is null && blockedMover.PlannedPath.Count == 0,
-    "A unit blocked for two seconds stops instead of retaining its run command");
+Check(blockedMover.CurrentCommand is not null && blockedMover.PlannedPath.Count == 0 && blockedMover.MovementStatus == MovementStatus.Planning,
+    "A blocked unit requests a replacement route without losing its order");
+blockedMover.Stop();
+world.PathfindingManager.Update();
 grid.Remove(blockedMover);
 grid.Remove(movementBlocker);
 
@@ -1040,13 +1053,18 @@ using (var commandNetwork = new NetworkHandler("CommandServiceTest"))
     commandNetwork.Update();
     Check(returnedBuildingId == requestedBuildingId &&
           receivedOrders.Select(message => message.Type).SequenceEqual(
-              [NetworkMessageType.BuildRequest, NetworkMessageType.BuildConstructionRequest]),
-        "Shared player command service queues build and construction in order");
+              [NetworkMessageType.BuildRequest]),
+        "Shared player command service sends placement and workers as one atomic request");
     Check(receivedOrders.All(message => message.SenderId == actingPlayerId) &&
           receivedOrders[0].UnitId == requestedBuildingId &&
-          receivedOrders[1].ConstructionSiteId == requestedBuildingId,
+          receivedOrders[0].UnitIds!.SequenceEqual([workerId]),
         "Shared player command service preserves the human or AI actor identity");
 }
+var combinedBuild = NetworkCommands.CreateBuildRequest(Guid.NewGuid(), "Reaktor", 1, 0, 1, 0, Guid.NewGuid())
+    with { UnitIds = [Guid.NewGuid()] };
+var confirmedBuild = NetworkCommands.CreateBuildCommand(Guid.NewGuid(), combinedBuild);
+Check(confirmedBuild.UnitIds!.SequenceEqual(combinedBuild.UnitIds) && confirmedBuild.UnitId == combinedBuild.UnitId,
+    "Build confirmation preserves workers for construction immediately after spawning");
 // Shared texel density must be independent of model bounds and ordinary UVs.
 var sharedRegion = new TextureHandler.TextureRegion { AtlasIndex = 0, X = 16, Y = 32, Width = 256, Height = 128, AtlasWidth = 1024, AtlasHeight = 1024 };
 SubMesh TexturedPart(string? sharedName, float length)
@@ -1441,7 +1459,7 @@ Check(heli.IsLanded && Math.Abs(heli.Position.Z - 28.5f) < 0.01f, "Diverted land
 
 // Import the actual user-authored models with atlas metadata, without a graphics device.
 Globals.MaterialMaskTextureHandler = textureHandler;
-foreach (string relative in new[] { "vehicles/heli-1.bbmodel", "buildings/helipad-1.bbmodel" })
+foreach (string relative in new[] { "vehicles/heli-1.bbmodel", "buildings/helipad-1.bbmodel", "blue-pick-up-truck.bbmodel" })
 {
     string modelPath = Path.GetFullPath(Path.Combine("Content/models", relative));
     using var modelJson = JsonDocument.Parse(File.ReadAllText(modelPath));
@@ -1807,6 +1825,17 @@ Globals.MeshHandler.Meshes["harvester-1"] = Globals.MeshHandler.Meshes["barracks
 var returnHarvester = new Harvester(Vector3.Zero, Guid.NewGuid());
 Check(returnHarvester.Actions.Any(action => action.Type == UnitActionType.ReturnToStorage),
     "Harvester exposes return and unload action");
+var selectionLeader = Empty<SquadLeader>();
+var assembleAction = selectionLeader.Actions.First(action => action.Type == UnitActionType.AssembleSquad);
+Check(PlayerHandler.Recipients(new Unit[] { returnHarvester, selectionLeader, completedBarracks }, assembleAction)
+        .SequenceEqual(new Unit[] { selectionLeader }),
+    "Mixed selection sends squad assembly only to the eligible leader");
+Check(PlayerHandler.SingleActor(assembleAction) &&
+      !PlayerHandler.SingleActor(new UnitAction(UnitActionType.Goto, "Goto", 0, 0)),
+    "Squad assembly requires one actor while movement supports multiple recipients");
+Check(PlayerHandler.Recipients(new Unit[] { returnHarvester, completedBarracks },
+        new UnitAction(UnitActionType.Harvest, "Harvest", 0, 0)).SequenceEqual(new Unit[] { returnHarvester }),
+    "Mixed selection sends harvest only to harvesters");
 var returnRequest = Wire(new NetworkMessage(NetworkMessageType.HarvesterReturnRequest,
     Guid.NewGuid(), UnitId: returnHarvester.UnitId));
 Check(returnRequest.Type == NetworkMessageType.HarvesterReturnRequest &&
@@ -2081,4 +2110,306 @@ planExecutor.Reset();
 Check(!planExecutor.IsBusy && planExecutor.State == AIPlanExecutionState.Idle &&
       planExecutor.CurrentStep is null,
     "Production plan executor resets its lifecycle state");
+// Search-local caching must preserve custom profiles and see world changes on the next request.
+var cacheGrid = new GameGrid(20, 20, 1);
+var cacheWorld = World(cacheGrid);
+var cacheFinder = new Pathfinder(cacheWorld);
+var cacheUnit = Unit();
+var countedProfile = new CountingMovementProfile();
+long callsBefore = Globals.Telemetry.TryFindPath_Calls;
+Check(cacheFinder.TryFindPathFrom(cacheUnit, countedProfile, new Point(1, 1),
+    new Vector2(18.5f, 18.5f), out var cachedRoute), "Direct host search finds a route");
+Check(Globals.Telemetry.TryFindPath_Calls == callsBefore + 1,
+    "Direct host searches contribute exactly once to telemetry");
+Check(countedProfile.Visits.Where(pair => pair.Key != new Point(1, 1) && pair.Key != new Point(18, 18))
+    .All(pair => pair.Value == 1), "A search checks each intermediate footprint at most once");
+cacheGrid.GetCell(18, 18).IsBlocked = true;
+Check(!cacheFinder.TryFindPathFrom(cacheUnit, countedProfile, new Point(1, 1),
+    new Vector2(18.5f, 18.5f), out _), "Search caches never hide new world obstacles");
+var advancingUnit = Mobile(Vector3.Zero);
+var advanceMethod = typeof(AISquadAssaultController).GetMethod("NeedsAdvanceOrder",
+    BindingFlags.Static | BindingFlags.NonPublic)!;
+bool NeedsAdvance(Vector3 target) => (bool)advanceMethod.Invoke(null, [advancingUnit, target])!;
+Check(NeedsAdvance(new Vector3(1000, 0, 1000)), "Idle attackers outside range request movement");
+Check(!NeedsAdvance(Vector3.Zero), "Attackers within range avoid redundant pathfinding");
+advancingUnit.ReceiveCommand(new GotoCommand(new Vector2(1000, 1000)));
+Check(!NeedsAdvance(new Vector3(1000, 0, 1000)), "Combat refresh preserves a pending movement order");
+var zeroSizeUnit = Mobile(new Vector3(3.5f, 0, 3.5f));
+Field(zeroSizeUnit, typeof(Unit), "<Width>k__BackingField", 0);
+Field(zeroSizeUnit, typeof(Unit), "<Length>k__BackingField", 0);
+var terrainTransformMethod = typeof(MobileUnit).GetMethod("CreateTerrainTransform", BindingFlags.Instance | BindingFlags.NonPublic)!;
+Matrix safeTerrainTransform = (Matrix)terrainTransformMethod.Invoke(zeroSizeUnit, [Terrain(10, 10)])!;
+Check(float.IsFinite(safeTerrainTransform.Determinant()) && Math.Abs(safeTerrainTransform.Determinant() - 1) < 0.001f,
+    "Missing vehicle dimensions do not produce a NaN transform after factory exit");
+var jeep = new Jeep(Vector3.Zero, Guid.NewGuid());
+Check(jeep.Width > 0 && jeep.Length > 0 && jeep.Height > 0,
+    "Jeep derives valid dimensions from its mesh for grid occupancy and terrain alignment");
+// Navigation integration: stalled routes retain their task and Shift queue, then recover.
+GameWorld MovementWorld()
+{
+    var navigationGrid = new GameGrid(24, 24, 1);
+    var navigationTerrain = Terrain(24, 24);
+    navigationGrid.BindTerrain(navigationTerrain);
+    var navigationWorld = World(navigationGrid);
+    Field(navigationWorld, typeof(GameWorld), "_terrain", navigationTerrain);
+    Field(navigationWorld, typeof(GameWorld), "<Units>k__BackingField", new UnitHandler());
+    Field(navigationWorld, typeof(GameWorld), "<PathfindingManager>k__BackingField", new PathfindingManager(navigationWorld));
+    return navigationWorld;
+}
+var previousMovementWorld = Globals.World;
+var navigationWorld = MovementWorld();
+Globals.World = navigationWorld;
+var waitingVehicle = Mobile(new Vector3(2.5f, 0, 2.5f));
+var temporaryBlocker = Mobile(new Vector3(3.5f, 0, 2.5f));
+waitingVehicle.MoveSpeed = 2;
+navigationWorld.GameGrid.TryMove(waitingVehicle, new Point(2, 2));
+navigationWorld.GameGrid.TryMove(temporaryBlocker, new Point(3, 2));
+waitingVehicle.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(3.5f, 2.5f)), route: [new Point(3, 2)]);
+waitingVehicle.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(6.5f, 2.5f)),
+    appendToQueue: true, route: [new Point(4, 2), new Point(5, 2), new Point(6, 2)]);
+for (int frame = 0; frame < 80; frame++)
+{
+    waitingVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.05)));
+    navigationWorld.PathfindingManager.Update();
+}
+Check(waitingVehicle.CurrentCommand?.Target == new Vector2(3.5f, 2.5f) &&
+    waitingVehicle.LastQueuedTarget == new Vector2(6.5f, 2.5f) &&
+    waitingVehicle.MovementStatus == MovementStatus.Blocked,
+    "Failed replanning preserves both the current task and Shift queue");
+long blockedSearchesBefore = Globals.Telemetry.TryFindPath_Calls;
+for (int frame = 0; frame < 400; frame++)
+{
+    waitingVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.05)));
+    navigationWorld.PathfindingManager.Update();
+}
+Check(Globals.Telemetry.TryFindPath_Calls - blockedSearchesBefore <= 7,
+    "Permanent obstacles use bounded backoff instead of per-frame searches");
+navigationWorld.GameGrid.Remove(temporaryBlocker);
+for (int frame = 0; frame < 400 && waitingVehicle.CurrentCommand is not null; frame++)
+{
+    waitingVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.05)));
+    navigationWorld.PathfindingManager.Update();
+}
+Check(waitingVehicle.CurrentCommand is null && navigationWorld.GameGrid.ToCell(waitingVehicle.Position) == new Point(6, 2),
+    "Removing a blocker resumes travel and executes the preserved next order");
+
+navigationWorld = MovementWorld();
+Globals.World = navigationWorld;
+var slowTurningVehicle = Mobile(new Vector3(5.5f, 0, 5.5f));
+slowTurningVehicle.CanOnlyMoveForward = true;
+slowTurningVehicle.CanTurnInPlace = true;
+slowTurningVehicle.RotationSpeed = 0.25f;
+slowTurningVehicle.MoveSpeed = 1;
+navigationWorld.GameGrid.TryMove(slowTurningVehicle, new Point(5, 5));
+slowTurningVehicle.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(5.5f, 7.5f)),
+    route: [new Point(5, 6), new Point(5, 7)]);
+for (int frame = 0; frame < 60; frame++)
+    slowTurningVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.05)));
+Check(slowTurningVehicle.CurrentCommand is not null && navigationWorld.PathfindingManager.PendingRequests == 0 &&
+    slowTurningVehicle.MovementStatus == MovementStatus.FollowingRoute,
+    "Turning deliberately for more than two seconds is not mistaken for a stall");
+for (int frame = 0; frame < 500 && slowTurningVehicle.CurrentCommand is not null; frame++)
+    slowTurningVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.05)));
+Check(slowTurningVehicle.CurrentCommand is null && navigationWorld.GameGrid.ToCell(slowTurningVehicle.Position) == new Point(5, 7),
+    "A slowly turning vehicle completes its route after aligning");
+
+foreach (float step in new[] { 1f / 60, 0.1f, 0.25f })
+{
+    navigationWorld = MovementWorld();
+    Globals.World = navigationWorld;
+    var cornerVehicle = Mobile(new Vector3(2.2f, 0, 2.1f));
+    cornerVehicle.SetRotationYDegrees(-90);
+    cornerVehicle.CanOnlyMoveForward = true;
+    cornerVehicle.CanTurnInPlace = true;
+    cornerVehicle.MoveSpeed = 3;
+    cornerVehicle.RotationSpeed = 2;
+    navigationWorld.GameGrid.GetCell(6, 3).IsBlocked = true;
+    navigationWorld.GameGrid.GetCell(6, 4).IsBlocked = true;
+    navigationWorld.GameGrid.TryMove(cornerVehicle, new Point(2, 2));
+    Point[] cornerRoute = [new(3, 2), new(4, 2), new(5, 2), new(5, 3), new(5, 4), new(5, 5), new(6, 5), new(7, 5)];
+    cornerVehicle.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(7.5f, 5.5f)), route: cornerRoute);
+    bool stayedClear = true;
+    for (int frame = 0; frame < 30 / step && cornerVehicle.CurrentCommand is not null; frame++)
+    {
+        cornerVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(step)));
+        navigationWorld.PathfindingManager.Update();
+        stayedClear &= !navigationWorld.GameGrid.GetCell(navigationWorld.GameGrid.ToCell(cornerVehicle.Position)).IsBlocked;
+    }
+    Check(stayedClear && cornerVehicle.CurrentCommand is null &&
+        navigationWorld.GameGrid.ToCell(cornerVehicle.Position) == new Point(7, 5),
+        $"Route lookahead negotiates building corners at timestep {step} without cutting obstacles");
+}
+
+// Host navigation snapshots restore an authoritative route, its progress and the queue.
+navigationWorld = MovementWorld();
+Globals.World = navigationWorld;
+var routeOwner = Mobile(new Vector3(2.5f, 0, 2.5f));
+routeOwner.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(5.5f, 2.5f)),
+    route: [new(3, 2), new(4, 2), new(5, 2)]);
+routeOwner.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(8.5f, 2.5f)), true,
+    [new(6, 2), new(7, 2), new(8, 2)]);
+UnitState routeSnapshot = routeOwner.GetState();
+var routeReplica = new MobileUnit(new Vector3(2.25f, 0, 2.5f), routeOwner.UnitId);
+Field(routeReplica, typeof(Unit), "<Width>k__BackingField", 1);
+Field(routeReplica, typeof(Unit), "<Length>k__BackingField", 1);
+navigationWorld.GameGrid.TryMove(routeReplica, new Point(2, 2));
+routeReplica.ApplyState(routeSnapshot);
+Check(routeReplica.Position == routeOwner.Position && routeReplica.PlannedPath.SequenceEqual(routeOwner.PlannedPath) &&
+    routeReplica.LastQueuedTarget == new Vector2(8.5f, 2.5f),
+    "A serialized navigation snapshot carries the shared route and queued destinations");
+var visualMatrixMethod = typeof(MobileUnit).GetMethod("GetVisualWorldMatrix", BindingFlags.Instance | BindingFlags.NonPublic)!;
+Check(Math.Abs(((Matrix)visualMatrixMethod.Invoke(routeReplica, null)!).Translation.X - 2.25f) < 0.001f &&
+    navigationWorld.GameGrid.GetOccupant(new Point(2, 2)) == routeReplica,
+    "Small network corrections update the logical grid immediately and preserve the current render position");
+routeOwner.SetPosition(new Vector3(3.5f, 0, 2.5f));
+typeof(MobileUnit).GetMethod("CompleteWaypoint", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(routeOwner, null);
+UnitState progressSnapshot = (UnitState)typeof(MobileUnit).GetMethod("GetMovementState", BindingFlags.Instance | BindingFlags.NonPublic)!
+    .Invoke(routeOwner, [false])!;
+Check(JsonSerializer.Deserialize<MobileUnitState>(progressSnapshot.Payload, NetworkJson.Options)!.Navigation is null,
+    "Routine position updates omit unchanged route and queue arrays");
+routeReplica.ApplyState(progressSnapshot);
+Check(routeReplica.PlannedPath.SequenceEqual([new Point(4, 2), new Point(5, 2)]),
+    "Position-only progress snapshots prevent clients from chasing old waypoints after correction");
+
+// A replacement for the same destination invalidates an older pending search.
+routeReplica.Stop();
+routeReplica.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(10.5f, 2.5f)));
+int oldRequestId = routeReplica._pathRequestId;
+routeReplica.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(10.5f, 2.5f)), route: [new(4, 2)]);
+navigationWorld.PathfindingManager.Update();
+Check(routeReplica._pathRequestId != oldRequestId && routeReplica.PlannedPath.SequenceEqual([new Point(4, 2)]),
+    "Older searches cannot overwrite a newer route to the same destination");
+routeReplica.Stop();
+Check(routeReplica.CurrentCommand is null && routeReplica.MovementStatus == MovementStatus.Idle && routeReplica.PlannedPath.Count == 0,
+    "Explicit Stop still cancels movement and recovery");
+NetworkMessage coordinateMessage = new(NetworkMessageType.GotoCommand, Guid.NewGuid(),
+    Routes: [new UnitRoute(routeOwner.UnitId, [new Point(7, 11), new Point(8, 12)], 8.5f, 12.5f)]);
+NetworkMessage coordinateReplay = JsonSerializer.Deserialize<NetworkMessage>(
+    JsonSerializer.Serialize(coordinateMessage, NetworkJson.Options), NetworkJson.Options)!;
+Check(coordinateReplay.Routes![0].Cells.SequenceEqual(coordinateMessage.Routes![0].Cells),
+    "Network Goto JSON preserves every nonzero cell coordinate");
+bool rejectedEmptyCell = false;
+try { JsonSerializer.Deserialize<Point>("{}", NetworkJson.Options); }
+catch (JsonException) { rejectedEmptyCell = true; }
+Check(rejectedEmptyCell, "Missing route coordinates are rejected instead of silently becoming origin cells");
+
+// Exercise the actual connected-client branch without a graphics device or game server.
+var authorityNetwork = Globals.Game.Network;
+var clientSocketListener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+clientSocketListener.Start();
+using (var clientTransport = new System.Net.Sockets.TcpClient())
+using (var clientNetwork = new NetworkHandler("MovementReplicaTest"))
+{
+    var acceptedSocket = clientSocketListener.AcceptTcpClientAsync();
+    await clientTransport.ConnectAsync(System.Net.IPAddress.Loopback,
+        ((System.Net.IPEndPoint)clientSocketListener.LocalEndpoint).Port);
+    using var serverTransport = await acceptedSocket;
+    Field(clientNetwork, typeof(NetworkHandler), "_serverConnection", clientTransport);
+    Field(clientNetwork, typeof(NetworkHandler), "_sessionAccepted", true);
+    Field(Globals.Game, typeof(RTSGame), "<Network>k__BackingField", clientNetwork);
+    try
+    {
+        navigationWorld = MovementWorld();
+        Globals.World = navigationWorld;
+        var connectedReplica = new MobileUnit(new Vector3(2.25f, 0, 2.5f), routeOwner.UnitId);
+        Field(connectedReplica, typeof(Unit), "<Width>k__BackingField", 1);
+        Field(connectedReplica, typeof(Unit), "<Length>k__BackingField", 1);
+        connectedReplica.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(5.5f, 2.5f)));
+        Check(navigationWorld.PathfindingManager.PendingRequests == 0,
+            "A connected client waits for a host route instead of starting a local search");
+        long clientSearchesBefore = Globals.Telemetry.TryFindPath_Calls;
+        connectedReplica.ApplyState(routeSnapshot);
+        Check(connectedReplica.PlannedPath.SequenceEqual([new Point(3, 2), new Point(4, 2), new Point(5, 2)]),
+            "Connected clients receive the exact authoritative route");
+        connectedReplica.ApplyState(progressSnapshot);
+        Check(connectedReplica.PlannedPath.SequenceEqual([new Point(4, 2), new Point(5, 2)]),
+            "Client route cursor follows authoritative progress");
+        for (int frame = 0; frame < 100; frame++)
+        {
+            connectedReplica.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.05)));
+            navigationWorld.PathfindingManager.Update();
+        }
+        Check(Globals.Telemetry.TryFindPath_Calls == clientSearchesBefore &&
+            connectedReplica.CurrentCommand?.Target == new Vector2(5.5f, 2.5f) &&
+            connectedReplica.LastQueuedTarget == new Vector2(8.5f, 2.5f),
+            "Prediction cannot independently replan or advance the queued order before the host");
+        Check(Vector3.Distance(((Matrix)visualMatrixMethod.Invoke(connectedReplica, null)!).Translation,
+            connectedReplica.Position) < 0.001f,
+            "Visual correction converges without changing authoritative navigation");
+        var clientSite = Empty<Building>();
+        connectedReplica.TryReceiveBuildConstructionCommand(navigationWorld, clientSite);
+        Check(navigationWorld.PathfindingManager.PendingRequests == 0 &&
+            Globals.Telemetry.TryFindPath_Calls == clientSearchesBefore,
+            "Construction approach searches are host-only too");
+    }
+    finally
+    {
+        Field(Globals.Game, typeof(RTSGame), "<Network>k__BackingField", authorityNetwork);
+        clientSocketListener.Stop();
+    }
+}
+
+navigationWorld = MovementWorld();
+Globals.World = navigationWorld;
+var emptyQueueVehicle = Mobile(new Vector3(2.5f, 0, 2.5f));
+emptyQueueVehicle.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(3.5f, 2.5f)), route: [new Point(3, 2)]);
+emptyQueueVehicle.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(3.5f, 2.5f)), true, []);
+emptyQueueVehicle.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(4.5f, 2.5f)), true, [new Point(4, 2)]);
+for (int frame = 0; frame < 100 && emptyQueueVehicle.CurrentCommand is not null; frame++)
+    emptyQueueVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.05)));
+Check(emptyQueueVehicle.CurrentCommand is null && navigationWorld.GameGrid.ToCell(emptyQueueVehicle.Position) == new Point(4, 2),
+    "A zero-length queued route does not discard the following destination");
+
+navigationWorld = MovementWorld();
+Globals.World = navigationWorld;
+var retryBuilder = Mobile(new Vector3(2.5f, 0, 2.5f));
+retryBuilder.MoveSpeed = 3;
+var retrySite = new Building(new Vector3(8.5f, 0, 8.5f), Guid.NewGuid());
+retrySite.TotalBuildingPointsNeeded = 100;
+UnitList(navigationWorld.Units).Add(retrySite);
+navigationWorld.GameGrid.TryPlace(retrySite, retrySite.Position, 0);
+navigationWorld.GameGrid.TryMove(retryBuilder, new Point(2, 2));
+for (int y = 6; y <= 10; y++)
+    for (int x = 6; x <= 10; x++)
+        if (x != 8 || y != 8) navigationWorld.GameGrid.GetCell(x, y).IsBlocked = true;
+retryBuilder.TryReceiveBuildConstructionCommand(navigationWorld, retrySite);
+retryBuilder.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(3.5f, 12.5f)), appendToQueue: true);
+Check(retryBuilder.TargetBuildingId == retrySite.UnitId && retryBuilder.MovementStatus == MovementStatus.Blocked &&
+    retryBuilder.LastQueuedTarget == new Vector2(3.5f, 12.5f),
+    "An inaccessible construction site retains the construction assignment and subsequent travel order");
+for (int y = 6; y <= 10; y++)
+    for (int x = 6; x <= 10; x++)
+        navigationWorld.GameGrid.GetCell(x, y).IsBlocked = false;
+for (int frame = 0; frame < 600 && !retryBuilder.IsBuilding; frame++)
+{
+    retryBuilder.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.05)));
+    navigationWorld.PathfindingManager.Update();
+}
+Check(retryBuilder.IsBuilding && retryBuilder.TargetBuildingId == retrySite.UnitId &&
+    retryBuilder.LastQueuedTarget == new Vector2(3.5f, 12.5f),
+    "A freed construction approach resumes building without discarding the queued destination");
+Field(retrySite, typeof(Building), "<ConstructionProgress>k__BackingField", 100.0f);
+for (int frame = 0; frame < 600 && (retryBuilder.IsBuilding || retryBuilder.CurrentCommand is not null); frame++)
+{
+    retryBuilder.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.05)));
+    navigationWorld.PathfindingManager.Update();
+}
+Check(!retryBuilder.IsBuilding && retryBuilder.CurrentCommand is null &&
+    navigationWorld.GameGrid.ToCell(retryBuilder.Position) == new Point(3, 12),
+    "Completing construction executes the preserved queued movement order");
+
+Globals.World = previousMovementWorld;
+
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");
+
+sealed class CountingMovementProfile : IMovementProfile
+{
+    public Dictionary<Point, int> Visits { get; } = [];
+    public bool CanEnter(GameWorld map, MobileUnit unit, Point cell)
+    {
+        Visits[cell] = Visits.GetValueOrDefault(cell) + 1;
+        return map.GameGrid.Contains(cell) && !map.GameGrid.GetCell(cell).IsBlocked;
+    }
+    public float GetMovementCost(GameWorld map, MobileUnit unit, Point from, Point to) =>
+        from.X != to.X && from.Y != to.Y ? 1.4142135f : 1f;
+}

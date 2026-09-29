@@ -321,6 +321,9 @@ public sealed class NetworkInput
             if (message.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
                 army.Resources = message.ResourceAmount;
 
+            if (message.UnitIds is { Length: > 0 })
+                ExecuteBuildConstruction(message with { ConstructionSiteId = unitId });
+
             return;
         }
 

@@ -171,7 +171,7 @@ public sealed class AISquadAssaultController(
             _orderElapsed = 0.0f;
             _ = AdvanceAndAttackAsync(
                 [leader.UnitId, .. escortVehicles.Select(vehicle => vehicle.UnitId)],
-                target.Position, desiredTargetId);
+                (immediateThreat ?? target).Position, desiredTargetId);
         }
 
         LastDecision = immediateThreat is not null
@@ -322,9 +322,17 @@ public sealed class AISquadAssaultController(
 
     private async Task AdvanceAndAttackAsync(Guid[] unitIds, Vector3 targetPosition, Guid targetId)
     {
-        await _commands.GotoAsync(unitIds, targetPosition);
+        // Keep existing routes: refreshing the combat target must not run group A* again.
+        Guid[] movingIds = unitIds.Where(id => world.Units.FindById(id) is MobileUnit unit &&
+            NeedsAdvanceOrder(unit, targetPosition)).ToArray();
+        if (movingIds.Length > 0)
+            await _commands.GotoAsync(movingIds, targetPosition);
         await _commands.AttackTargetAsync(unitIds, targetId);
     }
+
+    internal static bool NeedsAdvanceOrder(MobileUnit unit, Vector3 targetPosition) =>
+        unit.CurrentCommand is null && unit.PlannedPath.Count == 0 &&
+        HorizontalDistanceSquared(unit.Position, targetPosition) > unit.AttackRange * unit.AttackRange;
 
     private async Task RetreatAsync(Guid[] unitIds, Vector3 destination)
     {

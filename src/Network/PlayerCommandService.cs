@@ -67,9 +67,12 @@ public sealed class PlayerCommandService
         float rotationDegrees, IEnumerable<Guid> workerIds, Guid? buildingId = null,
         CancellationToken cancellationToken = default)
     {
-        Guid id = await BuildAsync(buildingTypeName, target, rotationDegrees, buildingId, cancellationToken);
-        if (id != Guid.Empty)
-            await ConstructAsync(workerIds, id, cancellationToken);
+        if (string.IsNullOrWhiteSpace(buildingTypeName) || !IsFinite(target) || !float.IsFinite(rotationDegrees))
+            return Guid.Empty;
+        Guid id = buildingId ?? Guid.NewGuid();
+        NetworkMessage request = NetworkCommands.CreateBuildRequest(PlayerId, buildingTypeName,
+            target.X, target.Y, target.Z, rotationDegrees, id);
+        await SendAsync(request with { UnitIds = workerIds.Distinct().ToArray() }, cancellationToken);
         return id;
     }
 

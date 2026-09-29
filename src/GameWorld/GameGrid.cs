@@ -48,9 +48,15 @@ public class GameGrid
 
     public bool IsPathfindingAllowed(Unit unit, Point centerCell, Point? startingCell = null)
     {
-        HashSet<Point>? startingFootprint = startingCell is Point start
-            ? GetMovementFootprintCells(unit, start).ToHashSet()
-            : null;
+        return IsPathfindingAllowedFromFootprint(unit, centerCell,
+            startingCell is Point start ? GetPathfindingStartingFootprint(unit, start) : null);
+    }
+
+    internal HashSet<Point> GetPathfindingStartingFootprint(Unit unit, Point start) =>
+        GetMovementFootprintCells(unit, start).ToHashSet();
+
+    internal bool IsPathfindingAllowedFromFootprint(Unit unit, Point centerCell, HashSet<Point>? startingFootprint)
+    {
         foreach (Point cell in GetMovementFootprintCells(unit, centerCell))
             if (!Contains(cell) || (GetCell(cell).ExcludeFromPathfinding &&
                 !(startingFootprint?.Contains(cell) ?? false)))

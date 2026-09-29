@@ -1001,6 +1001,23 @@ public abstract class Unit : WorldObject
         return true;
     }
 
+    // Intersect in model space so rotated bounds do not acquire empty world-space corners.
+    public float? IntersectSelectionRay(Ray ray)
+    {
+        if (_meshSet is null)
+            return null;
+        _selectionBounds ??= _meshSet.GetBounds();
+        Matrix world = GetVisualWorldMatrix();
+        float determinant = world.Determinant();
+        if (!float.IsFinite(determinant) || MathF.Abs(determinant) < 0.000001f)
+            return null;
+        Matrix inverse = Matrix.Invert(world);
+        Ray localRay = new(Vector3.Transform(ray.Position, inverse),
+            Vector3.TransformNormal(ray.Direction, inverse));
+        float? distance = localRay.Intersects(_selectionBounds.Value);
+        return distance is float value && float.IsFinite(value) && value >= 0 ? value : null;
+    }
+
     public Rectangle GetScreenBounds(
         Matrix view,
         Matrix projection,
@@ -1057,7 +1074,7 @@ public abstract class Unit : WorldObject
         UpdateDamageSmoke(gameTime);
     }
 
-    protected Matrix GetVisualWorldMatrix()
+    protected virtual Matrix GetVisualWorldMatrix()
     {
         Matrix visualWorld = VisualRecoilTransform * GetWorldMatrix();
         if (!_isVehicleWreck)

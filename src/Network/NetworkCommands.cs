@@ -122,6 +122,7 @@ public static class NetworkCommands
             PlayerId: request.PlayerId ?? request.SenderId,
             UnitId: request.UnitId ?? Guid.NewGuid(),
             UnitTypeId: request.UnitTypeId,
+            UnitIds: request.UnitIds,
             X: request.X,
             Y: request.Y,
             Z: request.Z,

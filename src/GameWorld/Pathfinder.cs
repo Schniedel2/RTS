@@ -32,19 +32,7 @@ public class Pathfinder
         Vector2 target,
         out List<Point> path)
     {
-        DateTime t0 = DateTime.Now;
-        
-        bool result = TryFindPath_AStar(
-            unit,
-            movementProfile,
-            target,
-            out path);
-
-        Globals.Telemetry.Pathfinding_Last = (DateTime.Now - t0).TotalMilliseconds;
-        Globals.Telemetry.Pathfinding_Total += Globals.Telemetry.Pathfinding_Last;
-        Globals.Telemetry.TryFindPath_Calls++;
-        Globals.Telemetry.Pathfinding_Avg = Globals.Telemetry.TryFindPath_Calls == 0 ? 0.0 : Globals.Telemetry.Pathfinding_Total / Globals.Telemetry.TryFindPath_Calls;
-        return result;
+        return TryFindPath_AStar(unit, movementProfile, target, out path);
     }
 
     public bool TryFindPathFrom(MobileUnit unit, IMovementProfile profile, Point start, Vector2 target, out List<Point> path) =>
@@ -64,6 +52,22 @@ public class Pathfinder
 
     private bool FindPath(MobileUnit unit, IMovementProfile profile, Vector2 target, bool useHeuristic, out List<Point> path, Point? startOverride = null)
     {
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            return FindPathCore(unit, profile, target, useHeuristic, out path, startOverride);
+        }
+        finally
+        {
+            Globals.Telemetry.Pathfinding_Last = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            Globals.Telemetry.Pathfinding_Total += Globals.Telemetry.Pathfinding_Last;
+            Globals.Telemetry.TryFindPath_Calls++;
+            Globals.Telemetry.Pathfinding_Avg = Globals.Telemetry.Pathfinding_Total / Globals.Telemetry.TryFindPath_Calls;
+        }
+    }
+
+    private bool FindPathCore(MobileUnit unit, IMovementProfile profile, Vector2 target, bool useHeuristic, out List<Point> path, Point? startOverride)
+    {
         GameGrid grid = _map.GameGrid;
         Point start = startOverride ?? grid.ToCell(unit.Position);
         Point destination = grid.ToCell(new Vector3(target.X, 0, target.Y));
@@ -75,6 +79,11 @@ public class Pathfinder
         if (!profile.CanEnter(_map, unit, destination) || !grid.IsPathfindingAllowed(unit, destination))
             return false;
 
+        // These caches belong to one synchronous search, never to the changing world.
+        HashSet<Point> startingFootprint = grid.GetPathfindingStartingFootprint(unit, start);
+        Dictionary<Point, bool> passability = [];
+        Dictionary<Point, float> terrainCosts = [];
+        bool standardGroundProfile = profile.GetType() == typeof(GroundMovementProfile);
         PriorityQueue<(Point Cell, float Cost), float> open = new();
         Dictionary<Point, Point> previous = [];
         Dictionary<Point, float> costs = new() { [start] = 0 };
@@ -101,7 +110,15 @@ public class Pathfinder
                     (!CanPlan(new Point(current.X + direction.X, current.Y)) ||
                      !CanPlan(new Point(current.X, current.Y + direction.Y))))
                     continue;
-                float stepCost = profile.GetMovementCost(_map, unit, current, next);
+                float stepCost;
+                if (standardGroundProfile)
+                {
+                    if (!terrainCosts.TryGetValue(next, out float terrainCost))
+                        terrainCosts[next] = terrainCost = grid.GetMovementCost(unit, next);
+                    stepCost = terrainCost * (direction.X != 0 && direction.Y != 0 ? 1.4142135f : 1.0f);
+                }
+                else
+                    stepCost = profile.GetMovementCost(_map, unit, current, next);
                 if (!float.IsFinite(stepCost) || stepCost <= 0)
                     throw new InvalidOperationException("Movement costs must be finite and positive.");
                 float candidate = item.Cost + stepCost;
@@ -115,8 +132,13 @@ public class Pathfinder
         return false;
 
         // Allow the entire initial footprint to leave a planning exclusion after spawning.
-        bool CanPlan(Point cell) => profile.CanEnter(_map, unit, cell) &&
-            grid.IsPathfindingAllowed(unit, cell, start);
+        bool CanPlan(Point cell)
+        {
+            if (!passability.TryGetValue(cell, out bool allowed))
+                passability[cell] = allowed = grid.Contains(cell) && profile.CanEnter(_map, unit, cell) &&
+                    grid.IsPathfindingAllowedFromFootprint(unit, cell, startingFootprint);
+            return allowed;
+        }
     }
 
     private static void BuildPath(

@@ -24,6 +24,7 @@ public class PathfindingManager
         Vector2 target,
         int pathRequestId)
     {
+        if (!MobileUnit.IsMovementAuthority) return;
         Debug($"request unit={ShortId(unit.UnitId)} target=({target.X:0.0},{target.Y:0.0}) request={pathRequestId}");
         _requests.Enqueue(
             new PathRequest(
@@ -35,7 +36,15 @@ public class PathfindingManager
 
     public void Update()
     {
-        while (!UpdateRequest());
+        if (!MobileUnit.IsMovementAuthority)
+        {
+            _requests.Clear();
+            return;
+        }
+        // Discard stale work cheaply, but do not let a cancelled backlog consume
+        // an entire frame. UpdateRequest stops after one real path search.
+        for (int discarded = 0; discarded < 64; discarded++)
+            if (UpdateRequest()) break;
     }
 
     bool UpdateRequest()
@@ -52,7 +61,7 @@ public class PathfindingManager
         if (unit._pathRequestId != request.PathRequestId)
         {
             Debug($"discard stale request unit={ShortId(unit.UnitId)} request={request.PathRequestId} current={unit._pathRequestId}");
-            return true; // force next call to process the next request
+            return false;
         }
 
         // Unit könnte inzwischen einen neuen
@@ -67,7 +76,7 @@ public class PathfindingManager
                 request.Target))
         {
             Debug($"discard replaced request unit={ShortId(unit.UnitId)} request={request.PathRequestId}");
-            return true;
+            return false;
         }
 
         if (_pathfinder.TryFindPath(
@@ -84,8 +93,8 @@ public class PathfindingManager
         }
         else
         {
-            Debug($"path failed unit={ShortId(unit.UnitId)} request={request.PathRequestId}; command cancelled");
-            unit.ClearCommand();
+            Debug($"path failed unit={ShortId(unit.UnitId)} request={request.PathRequestId}; waiting before retry");
+            unit.OnPathSearchFailed();
         }
 
         return true;
@@ -103,8 +112,12 @@ public class PathfindingManager
             Globals.Console.Print($"[PATH] {message}");
     }
 
-    public bool TryFindPath(MobileUnit unit, Point start, Vector2 target, out List<Point> path) =>
-        _pathfinder.TryFindPathFrom(unit, unit.MovementProfile, start, target, out path);
+    public bool TryFindPath(MobileUnit unit, Point start, Vector2 target, out List<Point> path)
+    {
+        path = [];
+        return MobileUnit.IsMovementAuthority &&
+            _pathfinder.TryFindPathFrom(unit, unit.MovementProfile, start, target, out path);
+    }
 
     private static string ShortId(Guid id) => id.ToString("N")[..8];
 }
