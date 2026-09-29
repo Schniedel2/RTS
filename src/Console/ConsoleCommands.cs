@@ -47,12 +47,32 @@ public class ConsoleCommands
         _console.RegisterCommand(
             "telemetry",
             Telemetry);
-        _console.RegisterCommand(
-            "enable",
-            Enable);
-        _console.RegisterCommand(
-            "disable",
-            Disable);
+        _console.RegisterCommand("enable", Enable);
+        _console.RegisterCommand("enable Lighting", Enable);
+        _console.RegisterCommand("enable Shadowmap", Enable);
+        _console.RegisterCommand("enable Shadowmappreview", Enable);
+        _console.RegisterCommand("enable Gamegrid", Enable);
+        _console.RegisterCommand("enable Unitbounds", Enable);
+        _console.RegisterCommand("enable Unittransforms", Enable);
+        _console.RegisterCommand("enable Markers", Enable);
+        _console.RegisterCommand("enable Network", Enable);
+        _console.RegisterCommand("enable Path", Enable);
+        _console.RegisterCommand("enable Unitcommands", Enable);
+        _console.RegisterCommand("enable Hide-unexplored", Enable);
+        _console.RegisterCommand("enable Fogofwar", Enable);
+        _console.RegisterCommand("disable", Disable);
+        _console.RegisterCommand("disable Lighting", Disable);
+        _console.RegisterCommand("disable Shadowmap", Disable);
+        _console.RegisterCommand("disable Shadowmappreview", Disable);
+        _console.RegisterCommand("disable Gamegrid", Disable);
+        _console.RegisterCommand("disable Unitbounds", Disable);
+        _console.RegisterCommand("disable Unittransforms", Disable);
+        _console.RegisterCommand("disable Markers", Disable);
+        _console.RegisterCommand("disable Network", Disable);
+        _console.RegisterCommand("disable Path", Disable);
+        _console.RegisterCommand("disable Unitcommands", Disable);
+        _console.RegisterCommand("disable Hide-unexplored", Disable);
+        _console.RegisterCommand("disable Fogofwar", Disable);
         _console.RegisterAsyncCommand(
             "session-host",
             CreateSession);
@@ -68,6 +88,10 @@ public class ConsoleCommands
         _console.RegisterCommand(
             "session-list",
             ListSessions);
+        _console.RegisterCommand("network-sync-start", StartNetworkSyncDiagnostics);
+        _console.RegisterCommand("network-sync-stop", StopNetworkSyncDiagnostics);
+        _console.RegisterCommand("network-sync-check", CheckNetworkSyncDiagnostics);
+        _console.RegisterCommand("network-sync-status", ShowNetworkSyncDiagnosticsStatus);
         _console.RegisterCommand(
             "say",
             Say);
@@ -189,6 +213,28 @@ public class ConsoleCommands
         Globals.HealthBarDisplayMode = mode;
         _console.Print($"Healthbars: {mode}.");
     }
+
+    private void StartNetworkSyncDiagnostics(string[] args)
+    {
+        float interval = 5.0f;
+        if (args.Length > 1 || args.Length == 1 &&
+            (!float.TryParse(args[0], NumberStyles.Float, CultureInfo.InvariantCulture, out interval) ||
+             interval < 0.5f || interval > 300.0f))
+        {
+            _console.Print("Usage: network-sync-start [interval-seconds: 0.5..300]");
+            return;
+        }
+        _rtsGame.NetworkSyncDiagnostics.Start(interval);
+    }
+
+    private void StopNetworkSyncDiagnostics(string[] args) =>
+        _rtsGame.NetworkSyncDiagnostics.Stop();
+
+    private void CheckNetworkSyncDiagnostics(string[] args) =>
+        _rtsGame.NetworkSyncDiagnostics.CheckNow();
+
+    private void ShowNetworkSyncDiagnosticsStatus(string[] args) =>
+        _console.Print(_rtsGame.NetworkSyncDiagnostics.GetStatusText());
 
     public async System.Threading.Tasks.Task CallBatch(string[] args)
     {

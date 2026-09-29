@@ -21,6 +21,7 @@ public class RTSGame
     public NetworkInput NetworkInput { get; }
     public NetworkHost NetworkHost { get; }
     public NetworkClient NetworkClient { get; }
+    public NetworkSyncDiagnostics NetworkSyncDiagnostics { get; }
     public GameHud Hud { get; }
     private readonly List<Player> _players = [];
     public IReadOnlyList<Player> Players => _players;
@@ -87,6 +88,8 @@ public class RTSGame
         Network.Diagnostic += error => Globals.Console.Print($"[Network] {error}");
         NetworkInput = new NetworkInput(Network);
         NetworkHost = new NetworkHost(Network, NetworkInput, World);
+        NetworkSyncDiagnostics = new NetworkSyncDiagnostics(Network, NetworkInput,
+            CaptureSessionSnapshot, message => Globals.Console.Print(message));
         Network.SetHostTimeProvider(() => NetworkHost.HostTime);
         NetworkClient = new NetworkClient(Network);
         _consoleCommands = new ConsoleCommands(Globals.Console, this);
@@ -111,7 +114,11 @@ public class RTSGame
             Globals._camera.CenterForMatchStart(position, World.Center);
     }
 
-    private NetworkMessage CreateSessionSnapshotCommand()
+    private NetworkMessage CreateSessionSnapshotCommand() => new(
+        NetworkMessageType.SessionSnapshot, Network.LocalPeerId,
+        SessionSnapshot: CaptureSessionSnapshot());
+
+    internal SessionSnapshot CaptureSessionSnapshot()
     {
         Network.AssertGameThread();
         RuntimeUnitSnapshot[] units = World.Units.Units
@@ -126,9 +133,8 @@ public class RTSGame
                 unit is Harvester harvester ? harvester.HarvestPhase : null,
                 unit is Harvester cargo ? cargo.CargoAmount : 0.0f))
             .ToArray();
-        return new NetworkMessage(NetworkMessageType.SessionSnapshot, Network.LocalPeerId,
-            SessionSnapshot: new SessionSnapshot(World.GetWorldData(), Armies.GetSnapshot(), units,
-                World.Visibility.GetSnapshot(), NetworkHost.HostTime));
+        return new SessionSnapshot(World.GetWorldData(), Armies.GetSnapshot(), units,
+            World.Visibility.GetSnapshot(), NetworkHost.HostTime);
     }
 
     internal void ApplySessionSnapshot(SessionSnapshot snapshot)
@@ -442,6 +448,7 @@ public class RTSGame
             }
         }
         NetworkHost.Update(gameTime);
+        NetworkSyncDiagnostics.Update(gameTime);
         UpdateConsole(gameTime);
 
         if (!ShadowMap.UpdateForCamera(

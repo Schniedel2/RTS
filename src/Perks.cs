@@ -117,7 +117,12 @@ public sealed class ArmyPerkState
     public void Clear() => _sources.Clear();
 
     internal PerkSourceSnapshot[] GetSnapshot() => _sources
-        .Select(source => new PerkSourceSnapshot(source.Key, source.Value.ToArray()))
+        .OrderBy(source => source.Key)
+        .Select(source => new PerkSourceSnapshot(source.Key, source.Value
+            .OrderBy(grant => grant.Perk)
+            .ThenBy(grant => grant.Lifetime)
+            .ThenBy(grant => grant.Scope)
+            .ToArray()))
         .ToArray();
 
     internal void ApplySnapshot(IEnumerable<PerkSourceSnapshot>? sources)

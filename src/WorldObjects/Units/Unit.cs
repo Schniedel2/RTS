@@ -24,6 +24,7 @@ public abstract class Unit : WorldObject
         Aiming,
         Dying
     }
+    public List<int> MemberOfSelectionGroups { get; } = new List<int>(); //  groups a build/selected via keyboard shortcuts
     protected UnitActionState _currentUnitState = UnitActionState.Idle;    
     public Guid UnitId { get; }
     public virtual bool SupportsRallyPoint => false;
@@ -54,7 +55,7 @@ public abstract class Unit : WorldObject
         RallyPoint = state.HasPosition ? new Vector3(state.X, state.Y, state.Z) : null;
         RallyPointRevision = state.Revision;
     }
-
+    
     public bool IsCrewMember { get; protected set; } = false;
     public float HitPoints { get; set; }
     public float MaxHitPoints { get; protected set; }
@@ -1286,5 +1287,16 @@ public abstract class Unit : WorldObject
     {
         transform = Matrix.Identity;
         return false;
+    }
+
+    public void NotifyRemovedFromSelectionGroup(int groupNum)
+    {
+        MemberOfSelectionGroups.Remove(groupNum);
+    }
+
+    public void NotifyAddedToSecetionGroup(int groupNum)
+    {
+        if (!MemberOfSelectionGroups.Contains(groupNum))
+            MemberOfSelectionGroups.Add(groupNum);
     }
 }

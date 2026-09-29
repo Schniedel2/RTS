@@ -110,7 +110,10 @@ public enum NetworkMessageType
     StartMultiplayerGameRequest,
     StartMultiplayerGameCommand,
     SessionSnapshot,
-    SessionReady
+    SessionReady,
+    SyncDiagnosticsControlCommand,
+    SyncDiagnosticsProbeCommand,
+    SyncDiagnosticsReportRequest
 }
 
 public sealed record WorldData(
@@ -151,6 +154,10 @@ public sealed record RuntimeUnitSnapshot(string TypeId, Guid UnitId, Guid Creato
     HarvestPhase? HarvestPhase = null, float CargoAmount = 0.0f);
 public sealed record SessionSnapshot(WorldData World, ArmySnapshot[] Armies,
     RuntimeUnitSnapshot[] Units, VisibilitySnapshot[] Visibility, double HostTime);
+public sealed record SyncDiagnosticDigest(long Sequence, double HostTime,
+    Dictionary<string, string> Categories, Dictionary<string, string> Items);
+public sealed record SyncDiagnosticReport(long Sequence, bool Matches,
+    string[] Differences, Dictionary<string, string> Categories);
 
 public sealed record NetworkMessage(
     NetworkMessageType Type,
@@ -224,4 +231,8 @@ public sealed record NetworkMessage(
     int? StartPositionSlot = null,
     MatchStartAssignment[]? MatchStartAssignments = null,
     int ProtocolVersion = 0,
-    SessionSnapshot? SessionSnapshot = null);
+    SessionSnapshot? SessionSnapshot = null,
+    bool? SyncDiagnosticsEnabled = null,
+    float SyncDiagnosticsIntervalSeconds = 0.0f,
+    SyncDiagnosticDigest? SyncDiagnosticDigest = null,
+    SyncDiagnosticReport? SyncDiagnosticReport = null);

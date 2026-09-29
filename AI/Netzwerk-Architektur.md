@@ -11,3 +11,7 @@ Beim Beitritt erhält ein Client in dieser Reihenfolge `JoinAccepted`, Spielerda
 Jede Sitzung hat eine Generation. Beim Trennen oder Neuverbinden werden Listener, Verbindungen, Mitglieder, Fehlerzustand und ausstehende Daten bereinigt. Spät eintreffende Nachrichten einer alten Generation werden ignoriert. Der `NetworkHost` setzt zugleich laufende Erdarbeiten, Projektile, Requests und Zeitgeber zurück.
 
 Neue Netzwerkfunktionen sollten deshalb immer diesem Weg folgen: Client-Request, Host-Verarbeitung auf dem Spiel-Thread, autoritativer Command, geordnete Verteilung. Laufende Zustände, die ein später Client benötigt, gehören zusätzlich in den `SessionSnapshot`.
+
+## Synchronisationsdiagnose
+
+Der Host kann mit `network-sync-start` regelmäßige Vergleiche aktivieren. Optional setzt beispielsweise `network-sync-start 10` ein Intervall von zehn Sekunden. `network-sync-check` startet sofort einen einzelnen Vergleich, `network-sync-status` zeigt Zähler und Zustand und `network-sync-stop` beendet die Diagnose auf allen Teilnehmern. Abweichungen werden nach Welt, Armies, Units und Sichtdaten aufgeteilt; soweit möglich nennt die Meldung die betroffene Army- oder Unit-ID.

@@ -2475,6 +2475,24 @@ using (var clientNetwork = new NetworkHandler("LoopbackClient"))
         "Loopback join establishes one session without publishing a partial peer");
 }
 
+var diagnosticUnitId = Guid.NewGuid();
+SessionSnapshot DiagnosticSnapshot(float hitPoints) => new(
+    new WorldData(1, 1, [0], [0.0f]), [],
+    [new RuntimeUnitSnapshot("soldier", diagnosticUnitId, Guid.Empty, null,
+        0.5f, 0, 0.5f, 0, hitPoints, UnitBehavior.Passive, 0,
+        new UnitState(diagnosticUnitId, 1, "unit-state", 1, []), [])], [], 0);
+MethodInfo createDigest = typeof(NetworkSyncDiagnostics).GetMethod("CreateDigest",
+    BindingFlags.Static | BindingFlags.NonPublic)!;
+MethodInfo findDifferences = typeof(NetworkSyncDiagnostics).GetMethod("FindDifferences",
+    BindingFlags.Static | BindingFlags.NonPublic)!;
+var expectedDigest = (SyncDiagnosticDigest)createDigest.Invoke(null, [DiagnosticSnapshot(100), 1L])!;
+var changedDigest = (SyncDiagnosticDigest)createDigest.Invoke(null, [DiagnosticSnapshot(75), 1L])!;
+var diagnosticDifferences = ((IEnumerable<string>)findDifferences.Invoke(null,
+    [expectedDigest, changedDigest])!).ToArray();
+Check(diagnosticDifferences.Contains("units") &&
+      diagnosticDifferences.Contains($"unit:{diagnosticUnitId:N}"),
+    "Sync diagnostics identify the category and exact unit for a state divergence");
+
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");
 
 sealed class CountingMovementProfile : IMovementProfile

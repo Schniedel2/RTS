@@ -480,6 +480,18 @@ public class PlayerHandler
         NotifySelectionChanged();
     }
 
+    public void SetUnitSelection(IReadOnlyList<Unit> units)
+    {
+        ClearSelection(notify: false);
+        foreach (Unit unit in units)
+        {
+            _selectedUnits.Add(unit);
+            unit.Select();
+        }
+        ActiveAction = null;
+        NotifySelectionChanged();
+    }
+
     private void NotifySelectionChanged()
     {
         _ = Globals.Game.NetworkClient.NotifyUnitsSelectedAsync(
@@ -942,6 +954,16 @@ public class PlayerHandler
                     unit.GetDebugCommandText(),
                     new Vector2(unitBounds.Center.X, unitBounds.Top - 12),
                     Color.Yellow);
+            //  show selection group numbers
+            
+            if (unit.MemberOfSelectionGroups.Count > 0)
+            {
+                string groupNumbers = string.Join(", ", unit.MemberOfSelectionGroups);
+                RenderHelper.DrawTextCentered(spriteBatch, Globals._debugFont,
+                    $"{groupNumbers}",
+                    new Vector2(unitBounds.Center.X, unitBounds.Top - 24),
+                    Color.Cyan);
+            }
         }
 
         foreach (Unit unit in _selectedUnits)

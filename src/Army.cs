@@ -70,9 +70,10 @@ public sealed class ArmyHandler
 
     public Army? Find(Guid armyId) => _armies.GetValueOrDefault(armyId);
 
-    public ArmySnapshot[] GetSnapshot() => _armies.Values.Select(army => new ArmySnapshot(
-        army.Id, army.TeamId, army.Resources, army.OwnerPlayerIds.ToArray(),
-        new Dictionary<Guid, ArmyPermission>(army.GrantedPermissions),
+    public ArmySnapshot[] GetSnapshot() => _armies.Values.OrderBy(army => army.Id).Select(army => new ArmySnapshot(
+        army.Id, army.TeamId, army.Resources, army.OwnerPlayerIds.Order().ToArray(),
+        army.GrantedPermissions.OrderBy(item => item.Key)
+            .ToDictionary(item => item.Key, item => item.Value),
         new IntelligenceCapabilities
         {
             ShareExploredMinimap = army.Intelligence.ShareExploredMinimap,

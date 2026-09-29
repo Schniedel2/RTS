@@ -18,6 +18,7 @@ public sealed class GameHud
     private KeyboardState _previousKeyboardState;
 
     public HudLayout Layout { get; private set; }
+    public Dictionary<int, SelectionGroup> SelectionGroups { get; } = new();
 
     public GameHud(GraphicsDevice graphicsDevice, GameWorld world, Texture2D actionIcons)
     {
@@ -38,6 +39,7 @@ public sealed class GameHud
             _minimap.Update(camera, Layout.Minimap, inputEnabled);
         bool actionPanelConsumed = Layout.ShowActionPanel &&
             _actionPanel.Update(selectedUnits, Layout.ActionPanel, inputEnabled);
+
         KeyboardState keyboard = Keyboard.GetState();
         bool homeConsumed = false;
         if (inputEnabled && !editorMode && localArmy is not null &&
@@ -48,6 +50,29 @@ public sealed class GameHud
             camera.CenterOn(homePosition, _world.Terrain);
             homeConsumed = true;
         }
+
+        Keys[] groupKeys = {Keys.D0, Keys.D1, Keys.D2, Keys.D3, Keys.D4, Keys.D5, Keys.D6, Keys.D7, Keys.D8, Keys.D9};
+        
+        foreach (Keys groupKey in groupKeys)
+        {            
+            if (keyboard.IsKeyDown(groupKey) && !_previousKeyboardState.IsKeyDown(groupKey))
+            {
+                //  group-key pressed
+                int groupNum = groupKey - Keys.D0;
+                if (keyboard.IsKeyDown(Keys.LeftControl) || keyboard.IsKeyDown(Keys.RightControl))
+                {
+                    RecreateSelectionGroup(groupNum, Globals.LocalPlayer.SelectedUnits);
+                }
+                else
+                {
+                    if (SelectionGroups.TryGetValue(groupNum, out SelectionGroup? group))
+                    {
+                        Globals.LocalPlayer.SetUnitSelection(group.Units);
+                    }
+                }
+            }
+        }
+                
         _previousKeyboardState = keyboard;
 
         _minimapRefreshElapsed += (float)gameTime.ElapsedGameTime.TotalSeconds;
@@ -76,5 +101,21 @@ public sealed class GameHud
         _minimap.Reset();
         _minimapRefreshElapsed = 0.0f;
         _showMinimap = false;
+    }
+
+    private void DeleteSelectionGroup(int groupNum)
+    {
+        if (!SelectionGroups.TryGetValue(groupNum, out SelectionGroup? group))
+            return;
+        SelectionGroups.Remove(groupNum);
+        foreach (var unit in group.Units)
+            unit.NotifyRemovedFromSelectionGroup(groupNum);
+    }
+    public void RecreateSelectionGroup(int groupNum, IReadOnlyList<Unit> selectedUnits)
+    {
+        DeleteSelectionGroup(groupNum);
+        SelectionGroups[groupNum] = new SelectionGroup(selectedUnits);
+        foreach (var unit in selectedUnits)
+            unit.NotifyAddedToSecetionGroup(groupNum);
     }
 }
