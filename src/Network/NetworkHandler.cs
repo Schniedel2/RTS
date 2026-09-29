@@ -19,7 +19,7 @@ public sealed class NetworkHandler : IDisposable
 {
     public const int SessionPortStart = 27000;
     public const int SessionPortEnd = 27010;
-    public const int ProtocolVersion = 3;
+    public const int ProtocolVersion = 4;
     public const int MaximumMessagesPerUpdate = 128;
     public const int MaximumPendingMessages = 8192;
     private readonly NetworkInbox<Inbound> _receivedMessages = new(input => input.Message, input => (input.Generation, input.Client));

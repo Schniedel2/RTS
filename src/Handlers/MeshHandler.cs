@@ -45,8 +45,8 @@ public class MeshHandler
         Meshes["Soldier-2"] = BBModelLoader.Load(Path.Combine(directory, "Soldier-2.bbmodel"), Color.White);
         Meshes["Soldier-2"].LocalTransform = Matrix.CreateScale(0.2f);
 
-        Meshes["reaktor"] = BBModelLoader.Load(Path.Combine(directory, "reaktor.bbmodel"), Color.White);
-        Meshes["gdi-base"] = BBModelLoader.Load(Path.Combine(directory, "gdi-base.bbmodel"), Color.White);
+        Meshes["reaktor"] = BBModelLoader.Load(Path.Combine(directory, "buildings/reaktor-1.bbmodel"), Color.White);
+        Meshes["gdi-base"] = BBModelLoader.Load(Path.Combine(directory, "buildings/radarbase-1.bbmodel"), Color.White);
         Meshes["barracks-1"] = BBModelLoader.Load(Path.Combine(directory, "buildings/barracks-1.bbmodel"), Color.White);
         Meshes["building-1"] = BBModelLoader.Load(Path.Combine(directory, "buildings/building-1.bbmodel"), Color.White);
         Meshes["building-1"] = BBModelLoader.Load(Path.Combine(directory, "buildings/building-1.bbmodel"), Color.White);

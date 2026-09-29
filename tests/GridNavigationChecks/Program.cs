@@ -51,6 +51,19 @@ GameWorld World(GameGrid grid)
 }
 
 var visibilityGrid = new VisibilityGrid(9, 9);
+visibilityGrid.Reveal(new Point(2, 2), 1);
+var exploredSnapshot = (ExploredVisibilitySnapshot)typeof(VisibilityGrid)
+    .GetMethod("GetExploredSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!
+    .Invoke(visibilityGrid, [Guid.NewGuid()])!;
+var reconciledVisibility = new VisibilityGrid(9, 9);
+reconciledVisibility.Reveal(new Point(7, 7), 0);
+reconciledVisibility.BeginUpdate();
+typeof(VisibilityGrid).GetMethod("ApplyAuthoritativeExplored",
+    BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(reconciledVisibility, [exploredSnapshot]);
+Check(reconciledVisibility[new Point(2, 2)] == VisibilityState.Explored &&
+      reconciledVisibility[new Point(7, 7)] == VisibilityState.Unexplored &&
+      exploredSnapshot.Bits.Length == 11,
+    "Host explored-visibility bitsets restore permanent fog history and remove client-only cells");
 var snapshotHandler = new UnitHandler();
 UnitList(snapshotHandler).Add(Unit());
 IReadOnlyList<Unit> stableUnitSnapshot = snapshotHandler.Units;
@@ -1061,10 +1074,11 @@ using (var commandNetwork = new NetworkHandler("CommandServiceTest"))
         "Shared player command service preserves the human or AI actor identity");
 }
 var combinedBuild = NetworkCommands.CreateBuildRequest(Guid.NewGuid(), "Reaktor", 1, 0, 1, 0, Guid.NewGuid())
-    with { UnitIds = [Guid.NewGuid()] };
+    with { UnitIds = [Guid.NewGuid()], PurchasePrice = 725 };
 var confirmedBuild = NetworkCommands.CreateBuildCommand(Guid.NewGuid(), combinedBuild);
-Check(confirmedBuild.UnitIds!.SequenceEqual(combinedBuild.UnitIds) && confirmedBuild.UnitId == combinedBuild.UnitId,
-    "Build confirmation preserves workers for construction immediately after spawning");
+Check(confirmedBuild.UnitIds!.SequenceEqual(combinedBuild.UnitIds) &&
+      confirmedBuild.UnitId == combinedBuild.UnitId && confirmedBuild.PurchasePrice == 725,
+    "Build confirmation preserves workers and the host-authoritative price");
 // Shared texel density must be independent of model bounds and ordinary UVs.
 var sharedRegion = new TextureHandler.TextureRegion { AtlasIndex = 0, X = 16, Y = 32, Width = 256, Height = 128, AtlasWidth = 1024, AtlasHeight = 1024 };
 SubMesh TexturedPart(string? sharedName, float length)
@@ -1095,6 +1109,18 @@ var previousUv = sharedPart.Vertices.Select(v => v.TextureCoordinate).ToArray();
 uvMesh.ApplySharedTextureMapping(64);
 Check(previousUv.SequenceEqual(sharedPart.Vertices.Select(v => v.TextureCoordinate)), "Repeated mapping is idempotent");
 Check(Math.Abs((sharedPart.Vertices[2].TextureCoordinate.Y - sharedPart.Vertices[0].TextureCoordinate.Y) * sharedRegion.AtlasHeight + 128) < 0.001f, "Non-square textures preserve vertical density");
+var smoothSharedPart = new SubMesh("smooth-shared",
+[
+    new(new Vector3(0, 0, 0), Color.White, Vector3.Right, Vector2.Zero),
+    new(new Vector3(2, 0, 0), Color.White, Vector3.Up, Vector2.Zero),
+    new(new Vector3(0, 1, 0), Color.White, Vector3.Backward, Vector2.Zero)
+], [0, 1, 2], Vector3.Zero, 0, sharedRegion, sharedTextureName: "bricks");
+new Mesh("smooth-shared", new[] { smoothSharedPart }).ApplySharedTextureMapping();
+Check(Math.Abs((smoothSharedPart.Vertices[1].TextureCoordinate.X - smoothSharedPart.Vertices[0].TextureCoordinate.X) *
+               sharedRegion.AtlasWidth + 64) < 0.001f &&
+      Math.Abs((smoothSharedPart.Vertices[2].TextureCoordinate.Y - smoothSharedPart.Vertices[0].TextureCoordinate.Y) *
+               sharedRegion.AtlasHeight + 32) < 0.001f,
+    "Shared cube mapping uses one geometric projection plane across a smooth-shaded triangle");
 foreach (float invalid in new[] { 0, -1, float.NaN, float.PositiveInfinity })
 {
     bool rejected = false;
@@ -2476,10 +2502,12 @@ using (var clientNetwork = new NetworkHandler("LoopbackClient"))
 }
 
 var diagnosticUnitId = Guid.NewGuid();
-SessionSnapshot DiagnosticSnapshot(float hitPoints) => new(
-    new WorldData(1, 1, [0], [0.0f]), [],
+SessionSnapshot DiagnosticSnapshot(float hitPoints, float x = 0.5f,
+    double tiberiumCreatedAt = 0, float tiberiumAmount = 0) => new(
+    new WorldData(1, 1, [0], [0.0f], TiberiumCells:
+        [new TiberiumSeedState(0, 0, tiberiumCreatedAt, tiberiumAmount, 0, 1, 1, 1, 1)]), [],
     [new RuntimeUnitSnapshot("soldier", diagnosticUnitId, Guid.Empty, null,
-        0.5f, 0, 0.5f, 0, hitPoints, UnitBehavior.Passive, 0,
+        x, 0, 0.5f, 0, hitPoints, UnitBehavior.Passive, 0,
         new UnitState(diagnosticUnitId, 1, "unit-state", 1, []), [])], [], 0);
 MethodInfo createDigest = typeof(NetworkSyncDiagnostics).GetMethod("CreateDigest",
     BindingFlags.Static | BindingFlags.NonPublic)!;
@@ -2490,8 +2518,17 @@ var changedDigest = (SyncDiagnosticDigest)createDigest.Invoke(null, [DiagnosticS
 var diagnosticDifferences = ((IEnumerable<string>)findDifferences.Invoke(null,
     [expectedDigest, changedDigest])!).ToArray();
 Check(diagnosticDifferences.Contains("units") &&
-      diagnosticDifferences.Contains($"unit:{diagnosticUnitId:N}"),
+      diagnosticDifferences.Contains($"unit:{diagnosticUnitId:N}:health"),
     "Sync diagnostics identify the category and exact unit for a state divergence");
+var toleratedDigest = (SyncDiagnosticDigest)createDigest.Invoke(null,
+    [DiagnosticSnapshot(100, 3.4f, 50, 150), 1L])!;
+var divergentDigest = (SyncDiagnosticDigest)createDigest.Invoke(null,
+    [DiagnosticSnapshot(100, 3.6f, 50, 150), 1L])!;
+Check(!((IEnumerable<string>)findDifferences.Invoke(null,
+          [expectedDigest, toleratedDigest])!).Any() &&
+      ((IEnumerable<string>)findDifferences.Invoke(null,
+          [expectedDigest, divergentDigest])!).Contains($"movement:{diagnosticUnitId:N}"),
+    "Sync diagnostics tolerate sampling time and ordinary replication lag but report large movement drift");
 
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");
 

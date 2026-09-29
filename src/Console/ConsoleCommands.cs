@@ -155,6 +155,7 @@ public class ConsoleCommands
         _console.RegisterCommand(
             "set-clock",
             SetClock);
+        _console.RegisterCommand("set-time-factor", SetTimeFactor);
         _console.RegisterCommand(
             "set-wind",
             SetWind);
@@ -1447,6 +1448,18 @@ public class ConsoleCommands
         _console.Print(
             $"Wind set to {angleDegrees:0.##} degrees at {speed:0.##} " +
             $"(X={windVelocity.X:0.##}, Z={windVelocity.Z:0.##}).");
+    }
+
+    private void SetTimeFactor(string[] args)
+    {
+        if (args.Length != 1 || !TryParseFloat(args[0], out float speedFactor))
+        {
+            _console.Print("Usage: set-time-factor <factor>");
+            return;
+        }
+        
+        Globals.TimeFactor = speedFactor;
+        _console.Print($"Speed factor set to {speedFactor:0.##}.");
     }
 
     /// <summary>Creates a local-only visual smoke emitter; it is not replicated over the network.</summary>

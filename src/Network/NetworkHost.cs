@@ -32,6 +32,7 @@ public sealed class NetworkHost
     private int _groundStateCursor;
     private double _hostTime;
     private double _simulationAccumulator;
+    private double _nextExploredVisibilitySync;
     /// <summary>Authoritative simulation time, shared with clients via NetworkHandler.EstimatedHostTime.</summary>
     public double HostTime => _hostTime;
     private readonly List<HostProjectile> _hostProjectiles = [];
@@ -241,6 +242,7 @@ public sealed class NetworkHost
         _projectileImpacts.Clear();
         _hostTime = 0;
         _simulationAccumulator = 0;
+        _nextExploredVisibilitySync = 0;
         _groundStateCursor = 0;
         foreach (Unit unit in _world.Units.Units) unit.NextNetworkUpdateTime = 0;
     }
@@ -344,6 +346,7 @@ public sealed class NetworkHost
             await PublishEarthworkAsync();
             await PublishHelicoptersAsync();
             await PublishGroundMobileUnitsAsync();
+            await PublishExploredVisibilityAsync();
             await PublishHarvestersAsync(gameTime);
             await PublishProjectileImpactsAsync();
             await UpdateAndPublishMedicsAsync();
@@ -420,6 +423,15 @@ public sealed class NetworkHost
         {
             _updateGate.Release();
         }
+    }
+
+    private Task PublishExploredVisibilityAsync()
+    {
+        if (_hostTime < _nextExploredVisibilitySync) return Task.CompletedTask;
+        _nextExploredVisibilitySync = _hostTime + 1.0;
+        return _networkHandler.BroadcastAsync(new NetworkMessage(
+            NetworkMessageType.ExploredVisibilityCommand, _networkHandler.LocalPeerId,
+            ExploredVisibility: _world.Visibility.GetExploredSnapshots()));
     }
 
     private NetworkMessage CreateTransferUnitCommand(NetworkMessage request)

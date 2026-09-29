@@ -151,7 +151,10 @@ public sealed class NetworkSyncDiagnostics
             else
             {
                 _mismatches++;
-                _write($"[SYNC #{report.Sequence}] {peer}: DIFFERENT - {string.Join(", ", report.Differences)}");
+                _write($"[SYNC #{report.Sequence}] {peer}: DIFFERENT");
+                foreach (string difference in report.Differences)
+                    foreach (string line in difference.Split('\n'))
+                        _write($"  {line}");
             }
         }
     }
@@ -159,26 +162,60 @@ public sealed class NetworkSyncDiagnostics
     internal static SyncDiagnosticDigest CreateDigest(SessionSnapshot snapshot, long sequence)
     {
         var items = new Dictionary<string, string>(StringComparer.Ordinal);
+        var details = new Dictionary<string, string>(StringComparer.Ordinal);
         Add(items, "world:terrain", new { snapshot.World.Width, snapshot.World.Height,
             snapshot.World.TileMap, snapshot.World.HeightMap });
-        Add(items, "world:markers", snapshot.World.GameplayMarkers ?? []);
-        Add(items, "world:tiberium", snapshot.World.TiberiumCells ?? []);
-        Add(items, "world:objects", snapshot.World.MapObjects ?? []);
+        Add(items, "world:markers", (snapshot.World.GameplayMarkers ?? [])
+            .OrderBy(marker => marker.Id).Select(marker => new
+            {
+                marker.Id, marker.Name, marker.Type, marker.X, marker.Y, marker.Z,
+                marker.RotationDegrees, marker.Shape, marker.Width, marker.Height,
+                marker.PlayerSlot, marker.TeamId,
+                Tags = marker.Tags.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+                Properties = marker.Properties.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(item => new { item.Key, item.Value }).ToArray(),
+                marker.PathPoints
+            }).ToArray());
+        // CreatedAt and Amount continuously advance from the synchronized host clock.
+        // They cannot be sampled at precisely the same instant on two processes.
+        Add(items, "world:tiberium", (snapshot.World.TiberiumCells ?? [])
+            .OrderBy(cell => cell.CellX).ThenBy(cell => cell.CellZ).Select(cell => new
+            {
+                cell.CellX, cell.CellZ, cell.RotationYRadians, cell.SubType,
+                cell.GrowthFactor, cell.MaxSize, cell.RenderSizeFactor
+            }).ToArray());
+        Add(items, "world:objects", (snapshot.World.MapObjects ?? [])
+            .OrderBy(value => value.Id).ToArray());
         foreach (ArmySnapshot army in snapshot.Armies.OrderBy(value => value.Id))
             Add(items, $"army:{army.Id:N}", army);
         foreach (RuntimeUnitSnapshot unit in snapshot.Units.OrderBy(value => value.UnitId))
-            Add(items, $"unit:{unit.UnitId:N}", unit);
-        foreach (VisibilitySnapshot visibility in snapshot.Visibility.OrderBy(value => value.ArmyId))
-            Add(items, $"visibility:{visibility.ArmyId:N}", visibility);
-
+        {
+            string prefix = $"unit:{unit.UnitId:N}";
+            string identityKey = $"{prefix}:identity";
+            var identity = new
+                { unit.TypeId, unit.UnitId, unit.CreatorPlayerId, unit.ArmyId, unit.PurchasePrice };
+            Add(items, identityKey, identity);
+            details[identityKey] = $"type={unit.TypeId} creator={Short(unit.CreatorPlayerId)} " +
+                $"army={Short(unit.ArmyId)} price={unit.PurchasePrice}";
+            Add(items, $"{prefix}:health", unit.HitPoints);
+            Add(items, $"{prefix}:behavior", unit.Behavior);
+            Add(items, $"{prefix}:occupants", unit.Occupants
+                .OrderBy(value => value.UnitId).ToArray());
+            if (unit.HarvestPhase is not null)
+                Add(items, $"{prefix}:harvester", new
+                    { unit.HarvestPhase, Cargo = MathF.Round(unit.CargoAmount, 1) });
+        }
         var categories = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["world"] = HashGroup(items, "world:"),
             ["armies"] = HashGroup(items, "army:"),
-            ["units"] = HashGroup(items, "unit:"),
-            ["visibility"] = HashGroup(items, "visibility:")
+            ["units"] = HashGroup(items, "unit:")
         };
-        return new SyncDiagnosticDigest(sequence, snapshot.HostTime, categories, items);
+        Dictionary<Guid, SyncDiagnosticPose> poses = snapshot.Units.ToDictionary(unit => unit.UnitId,
+            unit => new SyncDiagnosticPose(unit.X, unit.Y, unit.Z, unit.RotationDegrees));
+        Dictionary<Guid, byte[]> explored = snapshot.Visibility.ToDictionary(value => value.ArmyId,
+            value => value.Cells.Select(cell => cell == (byte)VisibilityState.Unexplored ? (byte)0 : (byte)1).ToArray());
+        return new SyncDiagnosticDigest(sequence, snapshot.HostTime, categories, items, poses, details, explored);
     }
 
     internal static IEnumerable<string> FindDifferences(SyncDiagnosticDigest expected,
@@ -188,8 +225,62 @@ public sealed class NetworkSyncDiagnostics
             if (expected.Categories.GetValueOrDefault(category) != actual.Categories.GetValueOrDefault(category))
                 yield return category;
         foreach (string key in expected.Items.Keys.Union(actual.Items.Keys).Order())
-            if (expected.Items.GetValueOrDefault(key) != actual.Items.GetValueOrDefault(key))
-                yield return key;
+        {
+            bool onHost = expected.Items.ContainsKey(key);
+            bool onClient = actual.Items.ContainsKey(key);
+            if (!onClient) yield return $"client-missing:{key}";
+            else if (!onHost) yield return $"client-only:{key}";
+            else if (expected.Items[key] != actual.Items[key])
+            {
+                if (key.EndsWith(":identity", StringComparison.Ordinal) &&
+                    expected.Details?.GetValueOrDefault(key) is string hostIdentity &&
+                    actual.Details?.GetValueOrDefault(key) is string clientIdentity)
+                    yield return $"{key}\nhost: {hostIdentity}\nclient: {clientIdentity}";
+                else yield return key;
+            }
+        }
+        IReadOnlyDictionary<Guid, SyncDiagnosticPose> expectedPoses = expected.UnitPoses ??
+            new Dictionary<Guid, SyncDiagnosticPose>();
+        IReadOnlyDictionary<Guid, SyncDiagnosticPose> actualPoses = actual.UnitPoses ??
+            new Dictionary<Guid, SyncDiagnosticPose>();
+        foreach (Guid id in expectedPoses.Keys.Intersect(actualPoses.Keys).Order())
+        {
+            SyncDiagnosticPose first = expectedPoses[id];
+            SyncDiagnosticPose second = actualPoses[id];
+            float dx = first.X - second.X;
+            float dy = first.Y - second.Y;
+            float dz = first.Z - second.Z;
+            float yaw = MathF.Abs(MathHelper.WrapAngle(MathHelper.ToRadians(
+                first.YawDegrees - second.YawDegrees)));
+            // Normal replication delay is expected. Report only a displacement
+            // large enough to indicate a stuck or divergent replica.
+            if (dx * dx + dy * dy + dz * dz > 9.0f || yaw > MathHelper.ToRadians(60))
+                yield return $"movement:{id:N}";
+        }
+        IReadOnlyDictionary<Guid, byte[]> expectedVisibility = expected.ExploredVisibility ??
+            new Dictionary<Guid, byte[]>();
+        IReadOnlyDictionary<Guid, byte[]> actualVisibility = actual.ExploredVisibility ??
+            new Dictionary<Guid, byte[]>();
+        foreach (Guid armyId in expectedVisibility.Keys.Union(actualVisibility.Keys).Order())
+        {
+            if (!expectedVisibility.TryGetValue(armyId, out byte[]? hostCells))
+            {
+                yield return $"visibility:client-only-army:{armyId:N}";
+                continue;
+            }
+            if (!actualVisibility.TryGetValue(armyId, out byte[]? clientCells))
+            {
+                yield return $"visibility:client-missing-army:{armyId:N}";
+                continue;
+            }
+            int different = Math.Abs(hostCells.Length - clientCells.Length);
+            for (int index = 0; index < Math.Min(hostCells.Length, clientCells.Length); index++)
+                if (hostCells[index] != clientCells[index]) different++;
+            // The currently visible rim moves with replicated units and reaches
+            // the client later. A small explored-cell fringe is expected.
+            if (different > 32)
+                yield return $"visibility:{armyId:N} ({different} explored cells differ)";
+        }
     }
 
     private static void Add(Dictionary<string, string> items, string key, object value) =>
@@ -203,4 +294,6 @@ public sealed class NetworkSyncDiagnostics
     }
 
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes))[..16];
+
+    private static string Short(Guid? id) => id is Guid value ? value.ToString("N")[..8] : "none";
 }

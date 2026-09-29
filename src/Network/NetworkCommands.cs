@@ -128,7 +128,8 @@ public static class NetworkCommands
             Z: request.Z,
             TargetAngleY: request.TargetAngleY,
             ArmyId: request.ArmyId,
-            ResourceAmount: request.ResourceAmount);
+            ResourceAmount: request.ResourceAmount,
+            PurchasePrice: request.PurchasePrice);
     }
 
     public static NetworkMessage CreateTextMessage(Guid senderId, string text)

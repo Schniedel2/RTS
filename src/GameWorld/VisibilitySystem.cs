@@ -95,6 +95,29 @@ public sealed class VisibilityGrid
                 ? (VisibilityState)states[index] : VisibilityState.Unexplored;
     }
 
+    internal ExploredVisibilitySnapshot GetExploredSnapshot(Guid armyId)
+    {
+        byte[] bits = new byte[(_cells.Length + 7) / 8];
+        for (int index = 0; index < _cells.Length; index++)
+            if (_cells[index] != VisibilityState.Unexplored)
+                bits[index >> 3] |= (byte)(1 << (index & 7));
+        return new ExploredVisibilitySnapshot(armyId, _cells.Length, bits);
+    }
+
+    internal void ApplyAuthoritativeExplored(ExploredVisibilitySnapshot snapshot)
+    {
+        if (snapshot.CellCount != _cells.Length || snapshot.Bits.Length != (_cells.Length + 7) / 8)
+            return;
+        for (int index = 0; index < _cells.Length; index++)
+        {
+            bool explored = (snapshot.Bits[index >> 3] & (1 << (index & 7))) != 0;
+            // Current visibility stays responsive and local. Only the permanent
+            // explored history is reconciled with the host.
+            if (_cells[index] != VisibilityState.Visible)
+                _cells[index] = explored ? VisibilityState.Explored : VisibilityState.Unexplored;
+        }
+    }
+
     private bool Contains(Point cell) => cell.X >= 0 && cell.Y >= 0 && cell.X < Width && cell.Y < Height;
 }
 
@@ -122,6 +145,16 @@ public sealed class VisibilitySystem
 
     public VisibilitySnapshot[] GetSnapshot() => _grids
         .Select(grid => new VisibilitySnapshot(grid.Key, grid.Value.GetSnapshot())).ToArray();
+
+    public ExploredVisibilitySnapshot[] GetExploredSnapshots() => _grids
+        .OrderBy(grid => grid.Key)
+        .Select(grid => grid.Value.GetExploredSnapshot(grid.Key)).ToArray();
+
+    public void ApplyAuthoritativeExplored(IEnumerable<ExploredVisibilitySnapshot>? states)
+    {
+        foreach (ExploredVisibilitySnapshot state in states ?? [])
+            GetGrid(state.ArmyId).ApplyAuthoritativeExplored(state);
+    }
 
     public void ApplySnapshot(IEnumerable<VisibilitySnapshot>? states)
     {

@@ -81,6 +81,7 @@ public class Game1 : Game
 
     protected override void Update(GameTime gameTime)
     {        
+        gameTime.ElapsedGameTime *= (float)Globals.TimeFactor;        
         _rtsGame.Update(gameTime, Globals._camera, GraphicsDevice.Viewport);
             
         base.Update(gameTime);

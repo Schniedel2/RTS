@@ -589,4 +589,13 @@ public sealed class TextureHandler : IDisposable
 
         _currentAtlas = null;
     }
+
+    public void LoadModelTextures(string directory)
+    {
+        AddTexture("bricks", Path.Combine(directory, "buildings/bricks-256x256.png"));
+        AddTexture("concrete", Path.Combine(directory, "buildings/concrete-256x256.png"));
+        AddTexture("iron", Path.Combine(directory, "buildings/iron-256x256.png"));
+        AddTexture("iron2", Path.Combine(directory, "buildings/iron2-256x256.png"));
+        AddTexture("steel", Path.Combine(directory, "buildings/steel-256x256.png"));
+    }
 }

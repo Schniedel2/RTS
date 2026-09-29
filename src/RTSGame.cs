@@ -48,6 +48,7 @@ public class RTSGame
         Globals.SkinHandler = new SkinHandler();
         Globals.SkinHandler.LoadSkinTextures();
         Globals.TilemapHandler.LoadTilemaps();
+        Globals.TextureHandler.LoadModelTextures(Globals.ModelsDirectory);
 
         Globals.MeshHandler = new MeshHandler();
         Globals.MeshHandler.LoadMeshes();

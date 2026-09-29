@@ -113,7 +113,8 @@ public enum NetworkMessageType
     SessionReady,
     SyncDiagnosticsControlCommand,
     SyncDiagnosticsProbeCommand,
-    SyncDiagnosticsReportRequest
+    SyncDiagnosticsReportRequest,
+    ExploredVisibilityCommand
 }
 
 public sealed record WorldData(
@@ -147,6 +148,7 @@ public sealed record ArmySnapshot(Guid Id, Guid? TeamId, int Resources, Guid[] O
     Dictionary<Guid, ArmyPermission> Permissions, IntelligenceCapabilities Intelligence,
     PerkSourceSnapshot[] Perks);
 public sealed record VisibilitySnapshot(Guid ArmyId, byte[] Cells);
+public sealed record ExploredVisibilitySnapshot(Guid ArmyId, int CellCount, byte[] Bits);
 public sealed record OccupantSnapshot(Guid UnitId, OccupantRole Role);
 public sealed record RuntimeUnitSnapshot(string TypeId, Guid UnitId, Guid CreatorPlayerId, Guid? ArmyId,
     float X, float Y, float Z, float RotationDegrees, float HitPoints, UnitBehavior Behavior,
@@ -155,7 +157,11 @@ public sealed record RuntimeUnitSnapshot(string TypeId, Guid UnitId, Guid Creato
 public sealed record SessionSnapshot(WorldData World, ArmySnapshot[] Armies,
     RuntimeUnitSnapshot[] Units, VisibilitySnapshot[] Visibility, double HostTime);
 public sealed record SyncDiagnosticDigest(long Sequence, double HostTime,
-    Dictionary<string, string> Categories, Dictionary<string, string> Items);
+    Dictionary<string, string> Categories, Dictionary<string, string> Items,
+    Dictionary<Guid, SyncDiagnosticPose>? UnitPoses = null,
+    Dictionary<string, string>? Details = null,
+    Dictionary<Guid, byte[]>? ExploredVisibility = null);
+public sealed record SyncDiagnosticPose(float X, float Y, float Z, float YawDegrees);
 public sealed record SyncDiagnosticReport(long Sequence, bool Matches,
     string[] Differences, Dictionary<string, string> Categories);
 
@@ -235,4 +241,5 @@ public sealed record NetworkMessage(
     bool? SyncDiagnosticsEnabled = null,
     float SyncDiagnosticsIntervalSeconds = 0.0f,
     SyncDiagnosticDigest? SyncDiagnosticDigest = null,
-    SyncDiagnosticReport? SyncDiagnosticReport = null);
+    SyncDiagnosticReport? SyncDiagnosticReport = null,
+    ExploredVisibilitySnapshot[]? ExploredVisibility = null);

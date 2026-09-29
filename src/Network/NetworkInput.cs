@@ -78,6 +78,13 @@ public sealed class NetworkInput
         if (message.Type == NetworkMessageType.SessionReady)
             return;
 
+        if (message.Type == NetworkMessageType.ExploredVisibilityCommand)
+        {
+            if (!Globals.Game.Network.IsHost)
+                Globals.World.Visibility.ApplyAuthoritativeExplored(message.ExploredVisibility);
+            return;
+        }
+
         if (message.Type == NetworkMessageType.NotifyUnitsSelected && message.PlayerId is Guid selectedPlayerId)
         {
             if (selectedPlayerId != Globals.Game.Network.LocalPeerId)
