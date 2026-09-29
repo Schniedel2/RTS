@@ -83,6 +83,8 @@ public class RTSGame
         Network.SetWorldDataProvider(() => NetworkCommands.CreateWorldData(
             Network.LocalPeerId,
             World.GetWorldData()));
+        Network.SetSessionSnapshotProvider(CreateSessionSnapshotCommand);
+        Network.Diagnostic += error => Globals.Console.Print($"[Network] {error}");
         NetworkInput = new NetworkInput(Network);
         NetworkHost = new NetworkHost(Network, NetworkInput, World);
         Network.SetHostTimeProvider(() => NetworkHost.HostTime);
@@ -108,6 +110,79 @@ public class RTSGame
         if (localStartPosition is Vector3 position)
             Globals._camera.CenterForMatchStart(position, World.Center);
     }
+
+    private NetworkMessage CreateSessionSnapshotCommand()
+    {
+        Network.AssertGameThread();
+        RuntimeUnitSnapshot[] units = World.Units.Units
+            .Where(unit => unit is not TiberiumSource && !unit.IsDying &&
+                !string.IsNullOrWhiteSpace(GetSnapshotTypeId(unit)))
+            .Select(unit => new RuntimeUnitSnapshot(
+                GetSnapshotTypeId(unit), unit.UnitId, unit.CreatorPlayerId, unit.ArmyId,
+                unit.Position.X, unit.Position.Y, unit.Position.Z, GetYawDegrees(unit.Transform),
+                unit.HitPoints, unit.Behavior, unit is Building building ? building.PurchasePrice : 0,
+                unit.GetState(), unit.Occupancy?.Occupants
+                    .Select(item => new OccupantSnapshot(item.UnitId, item.Role)).ToArray() ?? [],
+                unit is Harvester harvester ? harvester.HarvestPhase : null,
+                unit is Harvester cargo ? cargo.CargoAmount : 0.0f))
+            .ToArray();
+        return new NetworkMessage(NetworkMessageType.SessionSnapshot, Network.LocalPeerId,
+            SessionSnapshot: new SessionSnapshot(World.GetWorldData(), Armies.GetSnapshot(), units,
+                World.Visibility.GetSnapshot(), NetworkHost.HostTime));
+    }
+
+    internal void ApplySessionSnapshot(SessionSnapshot snapshot)
+    {
+        Network.AssertGameThread();
+        World.Units.ClearForNetworkSnapshot();
+        Armies.ApplySnapshot(snapshot.Armies);
+        foreach (Player player in _players)
+            if (snapshot.Armies.FirstOrDefault(army => army.Owners.Contains(player.Id)) is ArmySnapshot army)
+                player.SetArmy(army.Id);
+        World.ApplyWorldData(snapshot.World);
+
+        foreach (RuntimeUnitSnapshot state in snapshot.Units
+            .OrderBy(unit => IsSnapshotBuilding(unit.TypeId) ? 0 : 1))
+        {
+            Vector3 position = new(state.X, state.Y, state.Z);
+            Unit? unit = IsSnapshotBuilding(state.TypeId)
+                ? World.Units.SpawnBuilding(state.TypeId, position, state.RotationDegrees,
+                    state.UnitId, state.CreatorPlayerId, state.PurchasePrice)
+                : World.Units.SpawnUnit(state.TypeId, position, state.RotationDegrees,
+                    state.UnitId, state.CreatorPlayerId);
+            if (unit is null) continue;
+            unit.SetArmy(state.ArmyId);
+            unit.HitPoints = Math.Clamp(state.HitPoints, 0.0f, unit.MaxHitPoints);
+            unit.Behavior = state.Behavior;
+            unit.ApplyState(state.State);
+            if (unit is Harvester harvester && state.HarvestPhase is HarvestPhase phase)
+                harvester.ApplyHarvestState(phase, state.CargoAmount);
+        }
+        foreach (RuntimeUnitSnapshot container in snapshot.Units.Where(unit => unit.Occupants.Length > 0))
+            foreach (OccupantSnapshot occupant in container.Occupants)
+                World.Units.EmbarkUnit(occupant.UnitId, container.UnitId, occupant.Role);
+        World.Visibility.ApplySnapshot(snapshot.Visibility);
+        World.ClearTransientEffects();
+        Hud.Reset();
+        _fogTexture.Reset();
+    }
+
+    private static bool IsSnapshotBuilding(string typeId) => typeId is
+        "gdi-barracks" or "gdi-base" or "reaktor" or "turret-minigun" or
+        "building-1" or "vehicle-factory" or "communicationstower" or
+        "command-center" or "helipad" or "silo" or "tiberium-refinery";
+
+    private static string GetSnapshotTypeId(Unit unit) => unit switch
+    {
+        GenericBuilding => "building-1",
+        TerrainEditorTool => "editor",
+        Soldier when string.IsNullOrWhiteSpace(unit.GameplayTypeId) => "soldier",
+        Car when string.IsNullOrWhiteSpace(unit.GameplayTypeId) => "car",
+        _ => unit.GameplayTypeId
+    };
+
+    private static float GetYawDegrees(Matrix transform) =>
+        MathHelper.ToDegrees(MathF.Atan2(-transform.Forward.X, -transform.Forward.Z));
 
     public void UpdatePlayer(Guid playerId, string name, int teamId, PlayerSkin skin)
     {
@@ -327,6 +402,9 @@ public class RTSGame
     public void Update(GameTime gameTime, Camera camera, Viewport viewport)
     {
         Globals.Telemetry.FramesProcessed++;
+        Network.Update();
+        if (Network.Status is NetworkConnectionStatus.Connecting or NetworkConnectionStatus.Synchronizing)
+            return;
 
         float deltaTime =
             (float)gameTime.ElapsedGameTime.TotalSeconds;
@@ -363,8 +441,7 @@ public class RTSGame
                 _fogTexture.Update(viewer.ArmyId);
             }
         }
-        Network.Update();
-        _ = NetworkHost.UpdateAsync(gameTime);
+        NetworkHost.Update(gameTime);
         UpdateConsole(gameTime);
 
         if (!ShadowMap.UpdateForCamera(

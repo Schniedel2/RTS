@@ -400,6 +400,17 @@ public class UnitHandler
         lock (_unitsSync) _units.Remove(unit);
     }
 
+    /// <summary>Immediate replacement used only while applying one atomic host snapshot.</summary>
+    internal void ClearForNetworkSnapshot()
+    {
+        lock (_unitsSync)
+        {
+            foreach (Unit unit in _units) Globals.World.GameGrid.Remove(unit);
+            _units.Clear();
+        }
+        _perkSourceArmies.Clear();
+    }
+
     private void RefreshPerkSource(Unit unit)
     {
         Guid? currentArmyId = unit.ArmyId;

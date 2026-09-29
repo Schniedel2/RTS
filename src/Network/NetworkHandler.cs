@@ -13,11 +13,35 @@ using System.Threading.Tasks;
 
 namespace RTS.Network;
 
+public enum NetworkConnectionStatus { Disconnected, Hosting, Connecting, Synchronizing, Connected, Faulted }
+
 public sealed class NetworkHandler : IDisposable
 {
     public const int SessionPortStart = 27000;
     public const int SessionPortEnd = 27010;
-    private readonly ConcurrentQueue<NetworkMessage> _receivedMessages = new();
+    public const int ProtocolVersion = 2;
+    public const int MaximumMessagesPerUpdate = 128;
+    public const int MaximumPendingMessages = 8192;
+    private readonly NetworkInbox<Inbound> _receivedMessages = new(input => input.Message, input => (input.Generation, input.Client));
+    private readonly ConcurrentDictionary<TcpClient, NetworkConnection> _connections = new();
+    private sealed record Inbound(long Generation, TcpClient? Client, NetworkMessage? Message,
+        bool Closed = false, string? Error = null);
+    private long _generation;
+    private int _gameThreadId;
+    private Guid? _hostPeerId;
+    private Func<NetworkMessage>? _sessionSnapshotProvider;
+    public long SessionGeneration => Volatile.Read(ref _generation);
+    public NetworkConnectionStatus Status { get; private set; } = NetworkConnectionStatus.Disconnected;
+    public string? LastError { get; private set; }
+    public int PendingMessages => _receivedMessages.Count;
+    public event Action<string>? Diagnostic;
+    public void SetSessionSnapshotProvider(Func<NetworkMessage> provider) => _sessionSnapshotProvider = provider;
+    public void AssertGameThread()
+    {
+        if (_gameThreadId != 0 && _gameThreadId != Environment.CurrentManagedThreadId)
+            throw new InvalidOperationException("Network gameplay processing must run on the game thread.");
+    }
+
     private readonly ConcurrentDictionary<Guid, NetworkPeer> _members = new();
     private readonly ConcurrentDictionary<Guid, string> _peerDisplayNames = new();
     private readonly object _memberLock = new();
@@ -120,11 +144,12 @@ public sealed class NetworkHandler : IDisposable
         SessionName = ValidateDisplayName(sessionName);
         SessionId = Guid.NewGuid();
         IsHost = true;
+        Status = NetworkConnectionStatus.Hosting;
         _sessionAccepted = true;
         _cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         int port = StartSessionListener();
         _discovery.StartAdvertising(SessionName, DisplayName, port);
-        _ = AcceptClientsAsync(_cancellation.Token);
+        _ = AcceptClientsAsync(_listener!, SessionGeneration, _cancellation.Token);
         await Task.CompletedTask;
         return port;
     }
@@ -140,19 +165,28 @@ public sealed class NetworkHandler : IDisposable
         await JoinSessionAsync(session.Address, session.Port, cancellationToken);
     }
 
-    private async Task JoinSessionAsync(string hostAddress, int port, CancellationToken cancellationToken)
+    public async Task JoinSessionAsync(string hostAddress, int port, CancellationToken cancellationToken = default)
     {
+        Disconnect();
         DisplayName = ValidateDisplayName(DisplayName);
-        _serverConnection = new TcpClient();
-        _sessionAccepted = false;
-        await _serverConnection.ConnectAsync(hostAddress, port, cancellationToken);
+        Status = NetworkConnectionStatus.Connecting;
+        long generation = SessionGeneration;
         _cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _ = ReadMessagesAsync(_serverConnection, _cancellation.Token);
-
-        await SendAsync(_serverConnection, new NetworkMessage(
-            NetworkMessageType.JoinSession,
-            LocalPeerId,
-            DisplayName: DisplayName), cancellationToken);
+        var connection = new TcpClient();
+        _serverConnection = connection;
+        try
+        {
+            await connection.ConnectAsync(hostAddress, port, _cancellation.Token);
+            if (generation != SessionGeneration) { connection.Dispose(); return; }
+            StartConnection(connection, generation, _cancellation.Token);
+            await SendAsync(connection, new NetworkMessage(NetworkMessageType.JoinSession, LocalPeerId,
+                DisplayName: DisplayName, ProtocolVersion: ProtocolVersion), cancellationToken);
+        }
+        catch (Exception error) when (error is SocketException or IOException or OperationCanceledException or ObjectDisposedException)
+        {
+            connection.Dispose();
+            EnqueueInbound(new(generation, connection, null, Closed: true, Error: error.Message));
+        }
     }
 
     public Task SendCommandToHostAsync(string command, string[] arguments, CancellationToken cancellationToken = default)
@@ -164,7 +198,7 @@ public sealed class NetworkHandler : IDisposable
 
         if (IsHost)
         {
-            _receivedMessages.Enqueue(message);
+            EnqueueLocalMessage(message);
             return Task.CompletedTask;
         }
 
@@ -210,9 +244,26 @@ public sealed class NetworkHandler : IDisposable
         return SendToServerAsync(message, cancellationToken);
     }
 
-    public void EnqueueLocalMessage(NetworkMessage message)
+    public void ApplyLocalCommand(NetworkMessage message)
     {
-        _receivedMessages.Enqueue(message);
+        AssertGameThread();
+        MessageReceived?.Invoke(message);
+    }
+
+    public void EnqueueLocalMessage(NetworkMessage message) =>
+        EnqueueInbound(new(SessionGeneration, null, message));
+
+    private void EnqueueInbound(Inbound input)
+    {
+        if (input.Generation != SessionGeneration) return;
+        // Commands are never silently dropped. An overloaded remote connection
+        // is closed and reported instead of allowing an unbounded memory backlog.
+        if (!input.Closed && input.Client is not null && PendingMessages >= MaximumPendingMessages)
+        {
+            if (_connections.TryGetValue(input.Client, out NetworkConnection? connection)) connection.Dispose();
+            return;
+        }
+        _receivedMessages.Enqueue(input);
     }
 
     public Task<IReadOnlyList<SessionInfo>> DiscoverSessionsAsync(
@@ -234,229 +285,212 @@ public sealed class NetworkHandler : IDisposable
 
     public void Update()
     {
-        while (_receivedMessages.TryDequeue(out NetworkMessage? message))
+        if (_gameThreadId == 0) _gameThreadId = Environment.CurrentManagedThreadId;
+        AssertGameThread();
+        long started = Stopwatch.GetTimestamp();
+        for (int count = 0; count < MaximumMessagesPerUpdate; count++)
         {
-            MessageReceived?.Invoke(message);
+            if (!_receivedMessages.TryDequeue(out Inbound? input)) break;
+            if (input.Generation != SessionGeneration) continue;
+            if (input.Closed) HandleClosed(input);
+            else if (input.Message is NetworkMessage message)
+            {
+                if (input.Client is null) MessageReceived?.Invoke(message);
+                else if (IsHost) HandleHostMessage(input.Client, message);
+                else if (ReferenceEquals(input.Client, _serverConnection)) HandleClientMessage(message);
+            }
+            if (Stopwatch.GetElapsedTime(started).TotalMilliseconds >= 4) break;
         }
     }
 
     public void Disconnect()
     {
+        Interlocked.Increment(ref _generation);
         _cancellation?.Cancel();
         _listener?.Stop();
+        foreach (NetworkConnection connection in _connections.Values) connection.Dispose();
+        _connections.Clear();
         _serverConnection?.Dispose();
         _listener = null;
         _serverConnection = null;
         _sessionAccepted = false;
+        _hostPeerId = null;
         _discovery.Stop();
         _members.Clear();
+        _peerDisplayNames.Clear();
+        _peerDisplayNames[LocalPeerId] = DisplayName;
+        // Concurrent old-session readers may enqueue after this drain. Generation
+        // tags also reject those entries when they are eventually consumed.
+        while (_receivedMessages.TryDequeue(out _)) { }
         SessionId = null;
         IsHost = false;
         SessionName = "";
+        Status = NetworkConnectionStatus.Disconnected;
+        LastError = null;
     }
 
     public void Dispose() => Disconnect();
 
-    private async Task AcceptClientsAsync(CancellationToken cancellationToken)
+    private void StartConnection(TcpClient client, long generation, CancellationToken token)
     {
-        if (_listener is null)
-            return;
-
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            try
-            {
-                TcpClient client = await _listener.AcceptTcpClientAsync(cancellationToken);
-                _ = ReadMessagesAsync(client, cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (SocketException)
-            {
-                return;
-            }
-        }
+        if (generation != SessionGeneration) { client.Dispose(); return; }
+        var connection = new NetworkConnection(client, token,
+            message => EnqueueInbound(new(generation, client, message)),
+            error => EnqueueInbound(new(generation, client, null, Closed: true, Error: error)));
+        if (!_connections.TryAdd(client, connection)) connection.Dispose();
     }
 
-    private async Task ReadMessagesAsync(TcpClient client, CancellationToken cancellationToken)
+    private async Task AcceptClientsAsync(TcpListener listener, long generation, CancellationToken token)
     {
-        using NetworkStream stream = client.GetStream();
-        using StreamReader reader = new(stream, Encoding.UTF8, leaveOpen: true);
-
         try
         {
-            while (!cancellationToken.IsCancellationRequested)
+            while (!token.IsCancellationRequested)
             {
-                string? line = await reader.ReadLineAsync(cancellationToken);
-                if (line is null)
-                    break;
-
-                NetworkMessage? message = JsonSerializer.Deserialize<NetworkMessage>(line, _jsonOptions);
-                if (message is null)
-                    continue;
-
-                if (IsHost)
-                {
-                    await HandleHostMessageAsync(client, message, cancellationToken);
-                }
-                else
-                {
-                    if (message.Type == NetworkMessageType.JoinAccepted)
-                    {
-                        _sessionAccepted = true;
-                        SessionId = message.SessionId;
-                        if (message.DisplayName is not null)
-                            _peerDisplayNames[message.SenderId] = message.DisplayName;
-                        _hostTimeOffset = message.ServerTime - _localClock.Elapsed.TotalSeconds;
-                    }
-
-                    if (message.Type == NetworkMessageType.JoinRejected)
-                    {
-                        _sessionAccepted = false;
-                        _serverConnection?.Dispose();
-                    }
-
-                    if (message.Type == NetworkMessageType.MemberJoined &&
-                        message.DisplayName is not null)
-                    {
-                        _peerDisplayNames[message.SenderId] = message.DisplayName;
-                    }
-
-                    if (message.Type == NetworkMessageType.MemberLeft)
-                        _peerDisplayNames.TryRemove(message.SenderId, out _);
-
-                    _receivedMessages.Enqueue(message);
-                }
+                TcpClient client = await listener.AcceptTcpClientAsync(token);
+                StartConnection(client, generation, token);
             }
         }
-        catch (IOException)
+        catch (OperationCanceledException) { }
+        catch (Exception error) when (error is SocketException or ObjectDisposedException)
         {
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        finally
-        {
-            NetworkPeer? disconnectedPeer = _members.Values.FirstOrDefault(peer => peer.Client == client);
-            if (disconnectedPeer is not null && _members.TryRemove(disconnectedPeer.Id, out _))
-            {
-                    _peerDisplayNames.TryRemove(disconnectedPeer.Id, out _);
-                    _receivedMessages.Enqueue(new NetworkMessage(NetworkMessageType.MemberLeft, disconnectedPeer.Id));
-            }
-
-            client.Dispose();
+            if (!token.IsCancellationRequested)
+                EnqueueInbound(new(generation, null, null, Closed: true, Error: error.Message));
         }
     }
 
-    private async Task HandleHostMessageAsync(TcpClient client, NetworkMessage message, CancellationToken cancellationToken)
+    private void HandleClosed(Inbound input)
     {
+        if (input.Client is not null && _connections.TryRemove(input.Client, out NetworkConnection? transport))
+            transport.Dispose();
+        NetworkPeer? peer = _members.Values.FirstOrDefault(member => member.Client == input.Client);
+        if (peer is not null && _members.TryRemove(peer.Id, out _))
+        {
+            _peerDisplayNames.TryRemove(peer.Id, out _);
+            var left = new NetworkMessage(NetworkMessageType.MemberLeft, peer.Id);
+            MessageReceived?.Invoke(left);
+            _ = BroadcastAsync(left);
+        }
+        if (ReferenceEquals(input.Client, _serverConnection) && input.Client is not null)
+        {
+            _sessionAccepted = false;
+            _serverConnection = null;
+            Status = NetworkConnectionStatus.Faulted;
+            SessionId = null;
+            Interlocked.Increment(ref _generation); // Pending commands from this server are no longer current.
+        }
+        if (input.Error is not null) ReportError(input.Error);
+    }
+
+    public void ReportError(string error)
+    {
+        LastError = error;
+        Diagnostic?.Invoke(error);
+    }
+
+    private void HandleClientMessage(NetworkMessage message)
+    {
+        if (message.Type == NetworkMessageType.JoinAccepted)
+        {
+            if (message.ProtocolVersion != ProtocolVersion)
+            {
+                ReportError("Incompatible network protocol. Host and clients must use the same build.");
+                _connections.GetValueOrDefault(_serverConnection!)?.Dispose();
+                return;
+            }
+            _hostPeerId = message.SenderId;
+            _sessionAccepted = true;
+            SessionId = message.SessionId;
+            Status = NetworkConnectionStatus.Synchronizing;
+            if (message.DisplayName is not null) _peerDisplayNames[message.SenderId] = message.DisplayName;
+            _hostTimeOffset = message.ServerTime - _localClock.Elapsed.TotalSeconds;
+        }
+        else if (message.Type == NetworkMessageType.JoinRejected)
+        {
+            _sessionAccepted = false;
+            Status = NetworkConnectionStatus.Faulted;
+            ReportError(message.Error ?? "Join rejected.");
+        }
+        else if (message.Type == NetworkMessageType.SessionReady)
+        {
+            Status = NetworkConnectionStatus.Connected;
+        }
+        if (message.Type == NetworkMessageType.MemberJoined && message.DisplayName is not null)
+            _peerDisplayNames[message.SenderId] = message.DisplayName;
+        if (message.Type == NetworkMessageType.MemberLeft) _peerDisplayNames.TryRemove(message.SenderId, out _);
+        MessageReceived?.Invoke(message);
+    }
+
+    private void HandleHostMessage(TcpClient client, NetworkMessage message)
+    {
+        AssertGameThread();
         if (message.Type == NetworkMessageType.JoinSession)
         {
-            string displayName = message.DisplayName?.Trim() ?? "";
-            if (displayName.Length == 0)
+            string name = message.DisplayName?.Trim() ?? "";
+            if (message.ProtocolVersion != ProtocolVersion || name.Length is < 1 or > 32 ||
+                message.SenderId == Guid.Empty || message.SenderId == LocalPeerId ||
+                _members.ContainsKey(message.SenderId) || _members.Values.Any(peer => peer.Client == client) ||
+                string.Equals(name, DisplayName, StringComparison.OrdinalIgnoreCase) ||
+                _members.Values.Any(peer => string.Equals(peer.DisplayName, name, StringComparison.OrdinalIgnoreCase)))
             {
-                await RejectJoinAsync(client, "A display name is required.", cancellationToken);
+                RejectJoin(client, "Incompatible build, invalid identity or duplicate player name.");
                 return;
             }
-
-            NetworkPeer peer;
-            lock (_memberLock)
+            try
             {
-                if (string.Equals(displayName, DisplayName, StringComparison.OrdinalIgnoreCase) ||
-                    _members.Values.Any(member => string.Equals(member.DisplayName, displayName, StringComparison.OrdinalIgnoreCase)))
+                // Capture and encode every initial message on the game thread,
+                // before publishing this peer to the regular broadcast recipients.
+                var initial = new List<NetworkMessage>
                 {
-                    peer = null!;
-                }
-                else
-                {
-                    peer = new NetworkPeer(message.SenderId, displayName, client);
-                    _members[peer.Id] = peer;
-                    _peerDisplayNames[peer.Id] = peer.DisplayName;
-                }
+                    new(NetworkMessageType.JoinAccepted, LocalPeerId, SessionId: SessionId,
+                        DisplayName: DisplayName, ServerTime: _hostTimeProvider?.Invoke() ?? 0,
+                        ProtocolVersion: ProtocolVersion)
+                };
+                if (_playerDataProvider is not null) initial.AddRange(_playerDataProvider());
+                if (_sessionSnapshotProvider is not null) initial.Add(_sessionSnapshotProvider());
+                else if (_worldDataProvider is not null) initial.Add(_worldDataProvider());
+                initial.AddRange(_members.Values.Select(peer => new NetworkMessage(NetworkMessageType.MemberJoined,
+                    peer.Id, DisplayName: peer.DisplayName)));
+                initial.Add(new(NetworkMessageType.SessionReady, LocalPeerId));
+                byte[][] frames = initial.Select(NetworkConnection.Encode).ToArray();
+                if (!_connections.TryGetValue(client, out NetworkConnection? connection)) return;
+                foreach (byte[] frame in frames) if (!connection.TrySend(frame)) return;
+                _members[message.SenderId] = new NetworkPeer(message.SenderId, name, client);
+                _peerDisplayNames[message.SenderId] = name;
+                var joined = new NetworkMessage(NetworkMessageType.MemberJoined, message.SenderId, DisplayName: name);
+                MessageReceived?.Invoke(joined);
+                _ = BroadcastAsync(joined);
             }
-
-            if (peer is null)
+            catch (Exception error) when (error is InvalidOperationException or IOException or JsonException or NotSupportedException)
             {
-                await RejectJoinAsync(client, $"The display name '{displayName}' is already in use.", cancellationToken);
-                return;
+                ReportError($"Could not capture the joining player's state: {error.Message}");
+                RejectJoin(client, "The host could not create a consistent game snapshot.");
             }
-                        _peerDisplayNames.Clear();
-                        _peerDisplayNames[LocalPeerId] = DisplayName;
-
-            await SendAsync(client, new NetworkMessage(
-                NetworkMessageType.JoinAccepted,
-                LocalPeerId,
-                SessionId: SessionId,
-                DisplayName: DisplayName,
-                ServerTime: _hostTimeProvider?.Invoke() ?? 0.0), cancellationToken);
-
-            if (_worldDataProvider is not null)
-                await SendAsync(client, _worldDataProvider(), cancellationToken);
-
-            if (_playerDataProvider is not null)
-            {
-                foreach (NetworkMessage playerData in _playerDataProvider())
-                    await SendAsync(client, playerData, cancellationToken);
-            }
-
-            foreach (NetworkPeer member in _members.Values.Where(member => member.Id != peer.Id))
-            {
-                await SendAsync(client, new NetworkMessage(
-                    NetworkMessageType.MemberJoined,
-                    member.Id,
-                    DisplayName: member.DisplayName), cancellationToken);
-            }
-
-            NetworkMessage memberJoined = new(
-                NetworkMessageType.MemberJoined,
-                peer.Id,
-                DisplayName: peer.DisplayName);
-            _receivedMessages.Enqueue(memberJoined);
-            await BroadcastAsync(memberJoined, cancellationToken);
-
-            NetworkMessage joinedMessage = NetworkCommands.CreateTextMessage(
-                LocalPeerId,
-                $"{peer.DisplayName} joined");
-            _receivedMessages.Enqueue(joinedMessage);
-            await BroadcastAsync(joinedMessage, cancellationToken);
             return;
         }
-
-        if (!_members.ContainsKey(message.SenderId))
-            return;
-
+        NetworkPeer? sender = _members.Values.FirstOrDefault(peer => ReferenceEquals(peer.Client, client));
+        if (sender is null || sender.Id != message.SenderId) return;
         if (message.Type == NetworkMessageType.RequestWorldData)
         {
-            if (_worldDataProvider is not null)
-                await SendAsync(client, _worldDataProvider(), cancellationToken);
-
+            if (_sessionSnapshotProvider is not null) _ = SendAsync(client, _sessionSnapshotProvider());
+            else if (_worldDataProvider is not null) _ = SendAsync(client, _worldDataProvider());
             return;
         }
-
-        switch (message.Type)
+        if (message.Type is NetworkMessageType.CommandToMember or NetworkMessageType.CommandToAll)
         {
-            case NetworkMessageType.CommandToHost:
-                _receivedMessages.Enqueue(message);
-                break;
-            case NetworkMessageType.CommandToMember:
-            case NetworkMessageType.CommandToAll:
-                await BroadcastAsync(message, cancellationToken);
-                break;
-            default:
-                _receivedMessages.Enqueue(message);
-                break;
+            _ = BroadcastAsync(message);
+            if (message.Type == NetworkMessageType.CommandToAll) MessageReceived?.Invoke(message);
+            return;
         }
+        // Clients issue requests, never confirmations. Actor identity comes from the connection.
+        if (message.Type.ToString().EndsWith("Request", StringComparison.Ordinal) ||
+            message.Type is NetworkMessageType.CommandToHost or NetworkMessageType.RequestPlayerUpdate or NetworkMessageType.NotifyUnitsSelected)
+            MessageReceived?.Invoke(message with { PlayerId = sender.Id });
     }
 
-    private async Task RejectJoinAsync(TcpClient client, string error, CancellationToken cancellationToken)
+    private void RejectJoin(TcpClient client, string error)
     {
-        await SendAsync(client, new NetworkMessage(
-            NetworkMessageType.JoinRejected,
-            LocalPeerId,
-            Error: error), cancellationToken);
-        client.Dispose();
+        _ = SendAsync(client, new NetworkMessage(NetworkMessageType.JoinRejected, LocalPeerId, Error: error));
+        if (_connections.TryGetValue(client, out NetworkConnection? connection)) connection.FinishSending();
     }
 
     private static string ValidateDisplayName(string displayName)
@@ -496,14 +530,14 @@ public sealed class NetworkHandler : IDisposable
         if (IsHost)
         {
             if (message.Type == NetworkMessageType.CommandToAll)
-                _receivedMessages.Enqueue(message);
+                EnqueueLocalMessage(message);
 
             await BroadcastAsync(message, cancellationToken);
             return;
         }
 
         if (message.Type == NetworkMessageType.CommandToAll)
-            _receivedMessages.Enqueue(message);
+            EnqueueLocalMessage(message);
 
         await SendToServerAsync(message, cancellationToken);
     }
@@ -516,22 +550,24 @@ public sealed class NetworkHandler : IDisposable
         await SendAsync(_serverConnection, message, cancellationToken);
     }
 
-    public async Task BroadcastAsync(NetworkMessage message, CancellationToken cancellationToken = default)
+    /// <summary>Completes when queued, not when a remote peer has received the message.</summary>
+    public Task BroadcastAsync(NetworkMessage message, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        byte[] frame = NetworkConnection.Encode(message);
         IEnumerable<NetworkPeer> recipients = message.Type == NetworkMessageType.CommandToMember
             ? _members.Values.Where(peer => peer.Id == message.TargetId)
             : _members.Values.Where(peer => peer.Id != message.SenderId);
-
         foreach (NetworkPeer peer in recipients)
-        {
-            await SendAsync(peer.Client, message, cancellationToken);
-        }
+            if (_connections.TryGetValue(peer.Client, out NetworkConnection? connection)) connection.TrySend(frame);
+        return Task.CompletedTask;
     }
 
-    private async Task SendAsync(TcpClient client, NetworkMessage message, CancellationToken cancellationToken = default)
+    private Task SendAsync(TcpClient client, NetworkMessage message, CancellationToken cancellationToken = default)
     {
-        string json = JsonSerializer.Serialize(message, _jsonOptions);
-        byte[] bytes = Encoding.UTF8.GetBytes(json + "\n");
-        await client.GetStream().WriteAsync(bytes, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_connections.TryGetValue(client, out NetworkConnection? connection))
+            connection.TrySend(NetworkConnection.Encode(message));
+        return Task.CompletedTask;
     }
 }

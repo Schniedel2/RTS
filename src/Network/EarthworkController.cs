@@ -64,6 +64,11 @@ public sealed class EarthworkController(GameWorld world, Guid hostId, Action<Net
             if (_jobs.TryGetValue(id, out Job? job) && Globals.Game.Armies.CanControl(request.SenderId, job.Worker.ArmyId)) Cancel(id);
     }
 
+    internal void Reset()
+    {
+        _jobs.Clear();
+    }
+
     public void Cancel(Guid id)
     {
         if (!_jobs.Remove(id, out Job? job)) return;

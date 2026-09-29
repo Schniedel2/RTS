@@ -2,6 +2,7 @@ using Microsoft.Xna.Framework;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using RTS.Network;
 
 namespace RTS;
 
@@ -83,6 +84,17 @@ public sealed class VisibilityGrid
         _visibleCells.Clear();
     }
 
+    internal byte[] GetSnapshot() => _cells.Select(value => (byte)value).ToArray();
+
+    internal void ApplySnapshot(byte[]? states)
+    {
+        Reset();
+        if (states is null || states.Length != _cells.Length) return;
+        for (int index = 0; index < states.Length; index++)
+            _cells[index] = Enum.IsDefined((VisibilityState)states[index])
+                ? (VisibilityState)states[index] : VisibilityState.Unexplored;
+    }
+
     private bool Contains(Point cell) => cell.X >= 0 && cell.Y >= 0 && cell.X < Width && cell.Y < Height;
 }
 
@@ -106,6 +118,16 @@ public sealed class VisibilitySystem
     {
         _grids.Clear();
         _alliedArmyIds.Clear();
+    }
+
+    public VisibilitySnapshot[] GetSnapshot() => _grids
+        .Select(grid => new VisibilitySnapshot(grid.Key, grid.Value.GetSnapshot())).ToArray();
+
+    public void ApplySnapshot(IEnumerable<VisibilitySnapshot>? states)
+    {
+        Reset();
+        foreach (VisibilitySnapshot state in states ?? [])
+            GetGrid(state.ArmyId).ApplySnapshot(state.Cells);
     }
 
     public void Update()

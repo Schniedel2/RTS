@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Xna.Framework;
+using RTS.Network;
 
 namespace RTS;
 
@@ -68,6 +69,35 @@ public sealed class ArmyHandler
     }
 
     public Army? Find(Guid armyId) => _armies.GetValueOrDefault(armyId);
+
+    public ArmySnapshot[] GetSnapshot() => _armies.Values.Select(army => new ArmySnapshot(
+        army.Id, army.TeamId, army.Resources, army.OwnerPlayerIds.ToArray(),
+        new Dictionary<Guid, ArmyPermission>(army.GrantedPermissions),
+        new IntelligenceCapabilities
+        {
+            ShareExploredMinimap = army.Intelligence.ShareExploredMinimap,
+            ShareVisibleMinimap = army.Intelligence.ShareVisibleMinimap,
+            ShareWorldVision = army.Intelligence.ShareWorldVision
+        }, army.Perks.GetSnapshot())).ToArray();
+
+    public void ApplySnapshot(IEnumerable<ArmySnapshot>? states)
+    {
+        _armies.Clear();
+        foreach (ArmySnapshot state in states ?? [])
+        {
+            Guid owner = state.Owners.FirstOrDefault();
+            Army army = new(state.Id, owner, state.TeamId) { Resources = state.Resources };
+            army.OwnerPlayerIds.Clear();
+            army.OwnerPlayerIds.UnionWith(state.Owners);
+            foreach ((Guid playerId, ArmyPermission permission) in state.Permissions)
+                army.GrantedPermissions[playerId] = permission;
+            army.Intelligence.ShareExploredMinimap = state.Intelligence.ShareExploredMinimap;
+            army.Intelligence.ShareVisibleMinimap = state.Intelligence.ShareVisibleMinimap;
+            army.Intelligence.ShareWorldVision = state.Intelligence.ShareWorldVision;
+            army.Perks.ApplySnapshot(state.Perks);
+            _armies[state.Id] = army;
+        }
+    }
 
     public bool CanControl(Guid playerId, Guid? armyId)
     {

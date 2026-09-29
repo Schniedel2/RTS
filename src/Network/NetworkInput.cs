@@ -68,6 +68,16 @@ public sealed class NetworkInput
             return;
         }
 
+        if (message.Type == NetworkMessageType.SessionSnapshot &&
+            message.SessionSnapshot is SessionSnapshot snapshot)
+        {
+            Globals.Game.ApplySessionSnapshot(snapshot);
+            return;
+        }
+
+        if (message.Type == NetworkMessageType.SessionReady)
+            return;
+
         if (message.Type == NetworkMessageType.NotifyUnitsSelected && message.PlayerId is Guid selectedPlayerId)
         {
             if (selectedPlayerId != Globals.Game.Network.LocalPeerId)

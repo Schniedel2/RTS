@@ -2400,6 +2400,81 @@ Check(!retryBuilder.IsBuilding && retryBuilder.CurrentCommand is null &&
 
 Globals.World = previousMovementWorld;
 
+// The network inbox performs bounded game-thread work and only coalesces
+// replaceable position samples inside an uninterrupted command interval.
+using (var boundedNetwork = new NetworkHandler("BoundedInboxTest"))
+{
+    var received = new List<NetworkMessage>();
+    boundedNetwork.MessageReceived += received.Add;
+    for (int index = 0; index < NetworkHandler.MaximumMessagesPerUpdate + 17; index++)
+        boundedNetwork.EnqueueLocalMessage(new NetworkMessage(NetworkMessageType.TextMessage,
+            boundedNetwork.LocalPeerId, Text: index.ToString()));
+    boundedNetwork.Update();
+    Check(received.Count == NetworkHandler.MaximumMessagesPerUpdate && boundedNetwork.PendingMessages == 17,
+        "Network update bounds command processing per game frame");
+    boundedNetwork.Update();
+    Check(received.Count == NetworkHandler.MaximumMessagesPerUpdate + 17 &&
+          received.Select(message => int.Parse(message.Text!)).SequenceEqual(
+              Enumerable.Range(0, NetworkHandler.MaximumMessagesPerUpdate + 17)),
+        "Bounded network processing preserves command order across frames");
+}
+
+using (var coalescingNetwork = new NetworkHandler("PositionCoalescingTest"))
+{
+    var received = new List<NetworkMessage>();
+    coalescingNetwork.MessageReceived += received.Add;
+    Guid movingId = Guid.NewGuid();
+    NetworkMessage Position(long revision, uint sample) => NetworkCommands.CreateUnitStateCommand(
+        coalescingNetwork.LocalPeerId,
+        new UnitState(movingId, sample, "mobile-unit-state", 1,
+            JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                navigation = (object?)null,
+                navigationRevision = revision,
+                sample
+            }, NetworkJson.Options)));
+    coalescingNetwork.EnqueueLocalMessage(Position(4, 1));
+    coalescingNetwork.EnqueueLocalMessage(Position(4, 2));
+    coalescingNetwork.EnqueueLocalMessage(new NetworkMessage(NetworkMessageType.StopCommand,
+        coalescingNetwork.LocalPeerId, UnitId: movingId));
+    coalescingNetwork.EnqueueLocalMessage(Position(4, 3));
+    coalescingNetwork.Update();
+    Check(received.Count == 3 && received[0].UnitState?.Revision == 2 &&
+          received[1].Type == NetworkMessageType.StopCommand && received[2].UnitState?.Revision == 3,
+        "Position snapshots coalesce without crossing command barriers");
+}
+
+using (var hostNetwork = new NetworkHandler("LoopbackHost"))
+using (var clientNetwork = new NetworkHandler("LoopbackClient"))
+{
+    Guid snapshotUnitId = Guid.NewGuid();
+    var snapshot = new SessionSnapshot(
+        new WorldData(1, 1, [0], [0.0f]), [],
+        [new RuntimeUnitSnapshot("soldier", snapshotUnitId, Guid.Empty, null,
+            0.5f, 0, 0.5f, 0, 100, UnitBehavior.Passive, 0,
+            new UnitState(snapshotUnitId, 1, "unit-state", 1, []), [])],
+        [], 12.5);
+    hostNetwork.SetSessionSnapshotProvider(() => new NetworkMessage(
+        NetworkMessageType.SessionSnapshot, hostNetwork.LocalPeerId, SessionSnapshot: snapshot));
+    int port = hostNetwork.CreateSessionAsync("LoopbackSession").GetAwaiter().GetResult();
+    var initialTypes = new List<NetworkMessageType>();
+    clientNetwork.MessageReceived += message => initialTypes.Add(message.Type);
+    clientNetwork.JoinSessionAsync("127.0.0.1", port).GetAwaiter().GetResult();
+    DateTime deadline = DateTime.UtcNow.AddSeconds(3);
+    while (clientNetwork.Status != NetworkConnectionStatus.Connected && DateTime.UtcNow < deadline)
+    {
+        hostNetwork.Update();
+        clientNetwork.Update();
+        Thread.Sleep(5);
+    }
+    Check(clientNetwork.Status == NetworkConnectionStatus.Connected &&
+          initialTypes.IndexOf(NetworkMessageType.JoinAccepted) < initialTypes.IndexOf(NetworkMessageType.SessionSnapshot) &&
+          initialTypes.IndexOf(NetworkMessageType.SessionSnapshot) < initialTypes.IndexOf(NetworkMessageType.SessionReady),
+        "Late join receives acceptance, complete snapshot, and readiness in order");
+    Check(clientNetwork.SessionId == hostNetwork.SessionId && clientNetwork.Members.Count == 0,
+        "Loopback join establishes one session without publishing a partial peer");
+}
+
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");
 
 sealed class CountingMovementProfile : IMovementProfile

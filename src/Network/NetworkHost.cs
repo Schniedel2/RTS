@@ -28,6 +28,7 @@ public sealed class NetworkHost
     private const int MaximumGotoPathAttemptsPerUnit = 12;
     private const double HostSimulationInterval = 0.1;
     private const double StateHeartbeatInterval = 3.0;
+    private long _sessionGeneration = -1;
     private int _groundStateCursor;
     private double _hostTime;
     private double _simulationAccumulator;
@@ -95,7 +96,7 @@ public sealed class NetworkHost
         _world = world;
         _earthworks = new EarthworkController(world, networkHandler.LocalPeerId, command =>
         {
-            networkHandler.EnqueueLocalMessage(command);
+            networkHandler.ApplyLocalCommand(command);
             _earthworkBroadcasts.Enqueue(command);
         });
         networkInput.MessageReceived += HandleMessage;
@@ -116,7 +117,7 @@ public sealed class NetworkHost
             {
                 _world.Units.Destroy(helicopter.UnitId);
                 var destroy = NetworkCommands.CreateDestroyUnitCommand(_networkHandler.LocalPeerId, helicopter.UnitId);
-                _networkHandler.EnqueueLocalMessage(destroy);
+                _networkHandler.ApplyLocalCommand(destroy);
                 await _networkHandler.BroadcastAsync(destroy);
             }
             else if (_hostTime >= helicopter.NextNetworkUpdateTime)
@@ -222,8 +223,31 @@ public sealed class NetworkHost
                 _networkHandler.LocalPeerId, request with { UnitIds = accepted });
     }
 
+    private void EnsureSessionGeneration()
+    {
+        long generation = _networkHandler.SessionGeneration;
+        if (generation == _sessionGeneration) return;
+        _sessionGeneration = generation;
+        _requestQueue.Clear();
+        _earthworkBroadcasts.Clear();
+        _earthworks.Reset();
+        _gotoQueueEnds.Clear();
+        _harvestJobs.Clear();
+        _startPositionWishes.Clear();
+        _nextPatientHealTimes.Clear();
+        _medicJobs.Clear();
+        _medicsHoldingPosition.Clear();
+        _hostProjectiles.Clear();
+        _projectileImpacts.Clear();
+        _hostTime = 0;
+        _simulationAccumulator = 0;
+        _groundStateCursor = 0;
+        foreach (Unit unit in _world.Units.Units) unit.NextNetworkUpdateTime = 0;
+    }
+
     private void HandleMessage(NetworkMessage message)
     {
+        EnsureSessionGeneration();
         if (!_networkHandler.IsHost)
             return;
 
@@ -295,8 +319,22 @@ public sealed class NetworkHost
         _requestQueue.Enqueue(message);
     }
 
+    public void Update(GameTime gameTime)
+    {
+        _networkHandler.AssertGameThread();
+        EnsureSessionGeneration();
+        if (!_networkHandler.IsHost) return;
+        Task update = UpdateAsync(gameTime);
+        if (!update.IsCompleted)
+            throw new InvalidOperationException("Host simulation must never await network I/O.");
+        update.GetAwaiter().GetResult();
+    }
+
     public async Task UpdateAsync(GameTime gameTime)
     {
+        _networkHandler.AssertGameThread();
+        EnsureSessionGeneration();
+        if (!_networkHandler.IsHost) return;
         if (!await _updateGate.WaitAsync(0))
             return;
 
@@ -371,7 +409,7 @@ public sealed class NetworkHost
                 if (command is null)
                     continue;
 
-                _networkHandler.EnqueueLocalMessage(command);
+                _networkHandler.ApplyLocalCommand(command);
                 await _networkHandler.BroadcastAsync(command, CancellationToken.None);
 
                 if (request.Type == NetworkMessageType.AttackRequest)
@@ -972,7 +1010,7 @@ public sealed class NetworkHost
 
     private async Task PublishAsync(NetworkMessage command)
     {
-        _networkHandler.EnqueueLocalMessage(command);
+        _networkHandler.ApplyLocalCommand(command);
         await _networkHandler.BroadcastAsync(command, CancellationToken.None);
     }
 
@@ -1369,7 +1407,7 @@ public sealed class NetworkHost
                     !_world.Tiberium.TryHostSeed(cell, _hostTime, out TiberiumSeedState state))
                     continue;
                 NetworkMessage seedCommand = NetworkCommands.CreateTiberiumSeedCommand(_networkHandler.LocalPeerId, state);
-                _networkHandler.EnqueueLocalMessage(seedCommand);
+                _networkHandler.ApplyLocalCommand(seedCommand);
                 _ = _networkHandler.BroadcastAsync(seedCommand, CancellationToken.None);
             }
         }
@@ -1388,7 +1426,7 @@ public sealed class NetworkHost
             NetworkMessage state = NetworkCommands.CreateUnitStateCommand(
                 _networkHandler.LocalPeerId,
                 constructionSite.GetState());
-            _networkHandler.EnqueueLocalMessage(state);
+            _networkHandler.ApplyLocalCommand(state);
             _ = _networkHandler.BroadcastAsync(state, CancellationToken.None);
             constructionSite.MarkNetworkStateSent(_hostTime, StateHeartbeatInterval);
             sentUpdates++;
@@ -1587,7 +1625,7 @@ public sealed class NetworkHost
                 NetworkMessage researchCompleted = NetworkCommands.CreateResearchCompletedCommand(
                     _networkHandler.LocalPeerId, researchArmyId, completedOrder.OrderId,
                     completedOrder.UnitTypeId);
-                _networkHandler.EnqueueLocalMessage(researchCompleted);
+                _networkHandler.ApplyLocalCommand(researchCompleted);
                 _ = _networkHandler.BroadcastAsync(researchCompleted, CancellationToken.None);
                 continue;
             }
@@ -1599,7 +1637,7 @@ public sealed class NetworkHost
                 NetworkMessage delivery = NetworkCommands.CreateProducedUnitCommand(
                     _networkHandler.LocalPeerId, building, completedOrder,
                     landing + Vector3.Up * 30f, landing);
-                _networkHandler.EnqueueLocalMessage(delivery);
+                _networkHandler.ApplyLocalCommand(delivery);
                 _ = _networkHandler.BroadcastAsync(delivery, CancellationToken.None);
                 continue;
             }
@@ -1641,7 +1679,7 @@ public sealed class NetworkHost
                 completedOrder,
                 spawnPosition,
                 exitPosition);
-            _networkHandler.EnqueueLocalMessage(command);
+            _networkHandler.ApplyLocalCommand(command);
             _ = _networkHandler.BroadcastAsync(command, CancellationToken.None);
         }
     }
@@ -1676,7 +1714,7 @@ public sealed class NetworkHost
                 occupant.UnitId,
                 container.UnitId,
                 role);
-            _networkHandler.EnqueueLocalMessage(command);
+            _networkHandler.ApplyLocalCommand(command);
             _ = _networkHandler.BroadcastAsync(command, CancellationToken.None);
         }
     }
@@ -1774,7 +1812,7 @@ public sealed class NetworkHost
             _networkHandler.LocalPeerId,
             unit.UnitId,
             targetId);
-        _networkHandler.EnqueueLocalMessage(command);
+        _networkHandler.ApplyLocalCommand(command);
         _ = _networkHandler.BroadcastAsync(command, CancellationToken.None);
     }
 
@@ -1818,7 +1856,7 @@ public sealed class NetworkHost
                     launchPosition,
                     initialVelocity,
                     _hostTime);
-                _networkHandler.EnqueueLocalMessage(spawnCommand);
+                _networkHandler.ApplyLocalCommand(spawnCommand);
                 await _networkHandler.BroadcastAsync(spawnCommand, CancellationToken.None);
                 continue;
             }
@@ -1827,7 +1865,7 @@ public sealed class NetworkHost
             {
                 NetworkMessage impactCommand = NetworkCommands.CreateBulletImpactCommand(
                     _networkHandler.LocalPeerId, attackerId, impactPosition);
-                _networkHandler.EnqueueLocalMessage(impactCommand);
+                _networkHandler.ApplyLocalCommand(impactCommand);
                 await _networkHandler.BroadcastAsync(impactCommand, CancellationToken.None);
             }
 
@@ -1930,7 +1968,7 @@ public sealed class NetworkHost
                 impact.Normal,
                 impact.HitUnitId,
                 _hostTime);
-            _networkHandler.EnqueueLocalMessage(impactCommand);
+            _networkHandler.ApplyLocalCommand(impactCommand);
             await _networkHandler.BroadcastAsync(impactCommand, CancellationToken.None);
             await ApplyExplosionDamageAsync(impact);
         }
@@ -2044,7 +2082,7 @@ public sealed class NetworkHost
                 impact.Position,
                 damage,
                 target.HitPoints);
-            _networkHandler.EnqueueLocalMessage(hitCommand);
+            _networkHandler.ApplyLocalCommand(hitCommand);
             await _networkHandler.BroadcastAsync(hitCommand, CancellationToken.None);
 
             if (!destroyed)
@@ -2055,7 +2093,7 @@ public sealed class NetworkHost
             NetworkMessage destroyCommand = NetworkCommands.CreateDestroyUnitCommand(
                 _networkHandler.LocalPeerId,
                 target.UnitId);
-            _networkHandler.EnqueueLocalMessage(destroyCommand);
+            _networkHandler.ApplyLocalCommand(destroyCommand);
             await _networkHandler.BroadcastAsync(destroyCommand, CancellationToken.None);
         }
     }
@@ -2093,7 +2131,7 @@ public sealed class NetworkHost
             impactPosition,
             damage,
             target.HitPoints);
-        _networkHandler.EnqueueLocalMessage(hitCommand);
+        _networkHandler.ApplyLocalCommand(hitCommand);
         await _networkHandler.BroadcastAsync(hitCommand, CancellationToken.None);
 
         if (!destroyed)
@@ -2104,7 +2142,7 @@ public sealed class NetworkHost
         NetworkMessage destroyCommand = NetworkCommands.CreateDestroyUnitCommand(
             _networkHandler.LocalPeerId,
             target.UnitId);
-        _networkHandler.EnqueueLocalMessage(destroyCommand);
+        _networkHandler.ApplyLocalCommand(destroyCommand);
         await _networkHandler.BroadcastAsync(destroyCommand, CancellationToken.None);
     }
 }

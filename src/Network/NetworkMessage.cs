@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 
 namespace RTS.Network;
@@ -107,7 +108,9 @@ public enum NetworkMessageType
     SellBuildingCommand,
     StartPositionWishRequest,
     StartMultiplayerGameRequest,
-    StartMultiplayerGameCommand
+    StartMultiplayerGameCommand,
+    SessionSnapshot,
+    SessionReady
 }
 
 public sealed record WorldData(
@@ -135,6 +138,19 @@ public sealed record MatchStartAssignment(
     float RotationDegrees,
     Guid BulldozerId,
     bool IsAI = false);
+
+public sealed record PerkSourceSnapshot(Guid SourceId, PerkGrant[] Grants);
+public sealed record ArmySnapshot(Guid Id, Guid? TeamId, int Resources, Guid[] Owners,
+    Dictionary<Guid, ArmyPermission> Permissions, IntelligenceCapabilities Intelligence,
+    PerkSourceSnapshot[] Perks);
+public sealed record VisibilitySnapshot(Guid ArmyId, byte[] Cells);
+public sealed record OccupantSnapshot(Guid UnitId, OccupantRole Role);
+public sealed record RuntimeUnitSnapshot(string TypeId, Guid UnitId, Guid CreatorPlayerId, Guid? ArmyId,
+    float X, float Y, float Z, float RotationDegrees, float HitPoints, UnitBehavior Behavior,
+    int PurchasePrice, UnitState State, OccupantSnapshot[] Occupants,
+    HarvestPhase? HarvestPhase = null, float CargoAmount = 0.0f);
+public sealed record SessionSnapshot(WorldData World, ArmySnapshot[] Armies,
+    RuntimeUnitSnapshot[] Units, VisibilitySnapshot[] Visibility, double HostTime);
 
 public sealed record NetworkMessage(
     NetworkMessageType Type,
@@ -206,4 +222,6 @@ public sealed record NetworkMessage(
     int ResourceAmount = 0,
     int PurchasePrice = 0,
     int? StartPositionSlot = null,
-    MatchStartAssignment[]? MatchStartAssignments = null);
+    MatchStartAssignment[]? MatchStartAssignments = null,
+    int ProtocolVersion = 0,
+    SessionSnapshot? SessionSnapshot = null);

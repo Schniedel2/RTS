@@ -15,6 +15,9 @@ public static class UnitFactory
         MobileUnit? unit;            
         switch (unitTypeName.ToLower())
         {
+            case "soldier":
+                unit = new Soldier(position, unitId);
+                break;
             case "gunner":
                 unit = new Gunner(position, unitId);
                 break;

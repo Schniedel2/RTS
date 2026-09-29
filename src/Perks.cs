@@ -2,6 +2,7 @@ using Microsoft.Xna.Framework;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using RTS.Network;
 
 namespace RTS;
 
@@ -114,6 +115,17 @@ public sealed class ArmyPerkState
     }
 
     public void Clear() => _sources.Clear();
+
+    internal PerkSourceSnapshot[] GetSnapshot() => _sources
+        .Select(source => new PerkSourceSnapshot(source.Key, source.Value.ToArray()))
+        .ToArray();
+
+    internal void ApplySnapshot(IEnumerable<PerkSourceSnapshot>? sources)
+    {
+        _sources.Clear();
+        foreach (PerkSourceSnapshot source in sources ?? [])
+            SetSource(source.SourceId, source.Grants ?? []);
+    }
 
     internal void CopyPermanentFrom(ArmyPerkState source)
     {
