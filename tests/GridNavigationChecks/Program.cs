@@ -82,6 +82,30 @@ Check(Math.Abs(SquadBenefits.OutgoingDamageMultiplier - 1.10f) < 0.001f &&
       Math.Abs(SquadBenefits.IncomingDamageMultiplier - 0.90f) < 0.001f &&
       Math.Abs(SquadBenefits.OutgoingDamageMultiplier * SquadBenefits.IncomingDamageMultiplier - 0.99f) < 0.001f,
     "Squad cohesion grants small offensive and defensive bonuses without amplifying equal squad fights");
+Check(Math.Abs(GameplayPacing.ScaleWork(2.0f, isMatchStarted: false) - 20.0f) < 0.001f &&
+      Math.Abs(GameplayPacing.ScaleWork(2.0f, isMatchStarted: true) - 2.0f) < 0.001f,
+    "Construction, production and research run ten times faster before game-start only");
+var steeringProfile = new GroundSteeringProfile(
+    90.0f, 180.0f, 60.0f, 0.35f, true, 2.0f, 120.0f, 10.0f, 6.0f);
+Check(Math.Abs(steeringProfile.MovingTurnRadiansPerSecond - MathHelper.PiOver2) < 0.001f &&
+      Math.Abs(steeringProfile.StationaryTurnRadiansPerSecond - MathHelper.Pi) < 0.001f &&
+      Math.Abs(steeringProfile.TurnInPlaceAlignment - 0.5f) < 0.001f &&
+      Math.Abs(steeringProfile.ReverseStartAlignment + 0.5f) < 0.001f &&
+      Math.Abs(steeringProfile.ClampedMinimumCurveSpeedFactor - 0.35f) < 0.001f,
+    "Ground steering profiles expose readable degree, curve-speed and reverse parameters");
+float straightSpeed = steeringProfile.GetCurveSpeedFactor(1.0f);
+float mediumCurveSpeed = steeringProfile.GetCurveSpeedFactor(MathF.Cos(MathHelper.ToRadians(45.0f)));
+float sharpCurveSpeed = steeringProfile.GetCurveSpeedFactor(0.0f);
+Check(Math.Abs(straightSpeed - 1.0f) < 0.001f &&
+      straightSpeed > mediumCurveSpeed && mediumCurveSpeed > sharpCurveSpeed &&
+      sharpCurveSpeed > steeringProfile.ClampedMinimumCurveSpeedFactor,
+    "Ground steering speed decreases continuously from straight travel through medium and sharp curves");
+var startedSessionSnapshot = new SessionSnapshot(
+    new WorldData(1, 1, [0], [0.0f]), [], [], [], 12.5, IsMatchStarted: true);
+SessionSnapshot? serializedStartedSnapshot = JsonSerializer.Deserialize<SessionSnapshot>(
+    JsonSerializer.Serialize(startedSessionSnapshot, NetworkJson.Options), NetworkJson.Options);
+Check(serializedStartedSnapshot?.IsMatchStarted == true,
+    "Late-join session snapshots preserve whether game-start has already occurred");
 Check(AIBaseDefenseController.IsWithinDefenseRadius(Vector3.Zero, new Vector3(36, 0, 0), 1.0f) &&
       !AIBaseDefenseController.IsWithinDefenseRadius(Vector3.Zero, new Vector3(36.1f, 0, 0), 1.0f),
     "AI base defense reacts only to threats inside its configured perimeter");
@@ -1614,6 +1638,72 @@ for (int frame = 0; frame < 120; frame++) heli.Update(new GameTime(TimeSpan.Zero
 Check(Math.Abs(heli.VisualPitchDegrees) + Math.Abs(heli.VisualRollDegrees) < tiltBeforeStop, "Hover damping settles flight tilt");
 // Exercise the actual tank steering loop at different frame rates, including
 // offset rear targets which straight reversing could never reach.
+Check(typeof(Tank).GetMethod("MoveAlongPath",
+        BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly) is null,
+    "Tank uses the shared MobileUnit route steering instead of a private movement loop");
+{
+    var steeringGrid = new GameGrid(48, 48, 1);
+    steeringGrid.BindTerrain(Terrain(48, 48));
+    Globals.World = World(steeringGrid);
+    Tank turningTank = Empty<Tank>();
+    Field(turningTank, typeof(Unit), "<Width>k__BackingField", 1);
+    Field(turningTank, typeof(Unit), "<Length>k__BackingField", 1);
+    Field(turningTank, typeof(MobileUnit), "<MovementProfile>k__BackingField", new GroundMovementProfile());
+    Field(turningTank, typeof(MobileUnit), "_plannedPath", new List<Point> { new(21, 20) });
+    turningTank.SetTransform(Matrix.CreateTranslation(20.5f, 0, 20.5f));
+    turningTank.MoveSpeed = 3;
+    turningTank.RotationSpeed = 1;
+    turningTank.CanTurnInPlace = true;
+    turningTank.GroundSteering = new(57.3f, 57.3f, 135.0f, 0.45f,
+        true, 1.4f, 110.0f, 5.0f, 6.0f);
+    Vector3 tankBeforeCorner = turningTank.Position;
+    typeof(Tank).GetMethod("MoveAlongPath", BindingFlags.Instance | BindingFlags.NonPublic)!
+        .Invoke(turningTank, [new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.1))]);
+    Check(Vector3.DistanceSquared(turningTank.Position, tankBeforeCorner) > 0.001f,
+        "A tank that can turn in place slows down but keeps moving into a 90-degree corner");
+}
+{
+    var steeringGrid = new GameGrid(48, 48, 1);
+    steeringGrid.BindTerrain(Terrain(48, 48));
+    Globals.World = World(steeringGrid);
+    Tank lookaheadTank = Empty<Tank>();
+    Field(lookaheadTank, typeof(Unit), "<Width>k__BackingField", 1);
+    Field(lookaheadTank, typeof(Unit), "<Length>k__BackingField", 1);
+    Field(lookaheadTank, typeof(MobileUnit), "<MovementProfile>k__BackingField", new GroundMovementProfile());
+    Field(lookaheadTank, typeof(MobileUnit), "_plannedPath",
+        new List<Point> { new(20, 19), new(20, 18), new(20, 17), new(21, 17), new(22, 17) });
+    lookaheadTank.SetTransform(Matrix.CreateTranslation(20.2f, 0, 20.5f));
+    lookaheadTank.CanOnlyMoveForward = true;
+    Vector3 fallback = steeringGrid.ToWorldPosition(new Point(20, 19), 0.0f);
+    Vector3 steeringTarget = (Vector3)typeof(MobileUnit).GetMethod(
+        "GetRouteSteeringTarget", BindingFlags.Instance | BindingFlags.NonPublic)!
+        .Invoke(lookaheadTank, [fallback])!;
+    Check(steeringGrid.ToCell(steeringTarget) == new Point(21, 17),
+        "Tank smooths a free corner by steering toward a safe waypoint beyond the bend");
+
+    steeringGrid.GetCell(21, 19).IsBlocked = true;
+    steeringTarget = (Vector3)typeof(MobileUnit).GetMethod(
+        "GetRouteSteeringTarget", BindingFlags.Instance | BindingFlags.NonPublic)!
+        .Invoke(lookaheadTank, [fallback])!;
+    Check(steeringGrid.ToCell(steeringTarget) == new Point(20, 17),
+        "Blocked corner shortcut falls back to a nearer confirmed route waypoint");
+}
+{
+    var corridorGrid = new GameGrid(24, 24, 1);
+    corridorGrid.BindTerrain(Terrain(24, 24));
+    MobileUnit probe = Unit(width: 1, length: 1);
+    probe.SetTransform(Matrix.CreateTranslation(4.5f, 0, 4.5f));
+    corridorGrid.GetCell(5, 4).IsBlocked = true;
+    Check(!corridorGrid.CanTraverseDirect(probe, new Point(4, 4), new Point(5, 5)),
+        "Direct vehicle corridors reject diagonals whose orthogonal corner cell is blocked");
+
+    corridorGrid.GetCell(5, 4).IsBlocked = false;
+    MobileUnit wideProbe = Unit(width: 2, length: 2);
+    wideProbe.SetTransform(Matrix.CreateTranslation(10.5f, 0, 10.5f));
+    corridorGrid.GetCell(11, 12).IsBlocked = true;
+    Check(!corridorGrid.CanTraverseDirect(wideProbe, new Point(10, 10), new Point(10, 13)),
+        "Direct vehicle corridors validate the complete hard footprint at every crossed cell");
+}
 foreach (float step in new[] { 1f / 60, 0.1f, 0.25f })
 foreach (Point destination in new[] { new Point(22, 18), new Point(22, 23), new Point(20, 19) })
 {
@@ -1629,9 +1719,9 @@ foreach (Point destination in new[] { new Point(22, 18), new Point(22, 23), new 
     tank.MoveSpeed = 3;
     tank.RotationSpeed = 1;
     tank.WaypointArrivalRadius = 0.2f;
-    tank.ReverseSpeed = 1.4f;
-    tank.ReverseWithoutTurningDistance = 6;
-    tank.TurnInPlaceDotThreshold = 0.995f;
+    tank.CanTurnInPlace = true;
+    tank.GroundSteering = new(57.3f, 57.3f, 135.0f, 0.45f,
+        true, 1.4f, 110.0f, 5.0f, 6.0f);
     var move = typeof(Tank).GetMethod("MoveAlongPath", BindingFlags.Instance | BindingFlags.NonPublic)!;
     for (int frame = 0; frame < 20 / step && tank.PlannedPath.Count > 0; frame++)
         move.Invoke(tank, new object[] { new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(step)) });
@@ -2244,11 +2334,46 @@ Check(waitingVehicle.CurrentCommand is null && navigationWorld.GameGrid.ToCell(w
 
 navigationWorld = MovementWorld();
 Globals.World = navigationWorld;
+var movingTurnVehicle = Mobile(new Vector3(5.5f, 0, 5.5f));
+movingTurnVehicle.CanOnlyMoveForward = true;
+movingTurnVehicle.CanTurnInPlace = true;
+movingTurnVehicle.RotationSpeed = 1;
+movingTurnVehicle.MoveSpeed = 2;
+movingTurnVehicle.GroundSteering = new(57.3f, 57.3f, 60.0f, 0.5f,
+    false, 0.0f, 180.0f, 5.0f, 0.0f);
+navigationWorld.GameGrid.TryMove(movingTurnVehicle, new Point(5, 5));
+movingTurnVehicle.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(6.5f, 4.5f)),
+    route: [new Point(6, 4)]);
+Vector3 beforeMovingTurn = movingTurnVehicle.Position;
+movingTurnVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.1)));
+Check(Vector3.DistanceSquared(movingTurnVehicle.Position, beforeMovingTurn) > 0.001f,
+    "CanTurnInPlace remains an added capability and does not stop a 45-degree moving turn");
+
+navigationWorld = MovementWorld();
+Globals.World = navigationWorld;
+var rightAngleVehicle = Mobile(new Vector3(5.5f, 0, 5.5f));
+rightAngleVehicle.CanOnlyMoveForward = true;
+rightAngleVehicle.CanTurnInPlace = true;
+rightAngleVehicle.MoveSpeed = 2;
+rightAngleVehicle.GroundSteering = new(90.0f, 90.0f, 110.0f, 0.4f,
+    false, 0.0f, 180.0f, 5.0f, 0.0f);
+navigationWorld.GameGrid.TryMove(rightAngleVehicle, new Point(5, 5));
+rightAngleVehicle.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(6.5f, 5.5f)),
+    route: [new Point(6, 5)]);
+Vector3 beforeRightAngleTurn = rightAngleVehicle.Position;
+rightAngleVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.1)));
+Check(Vector3.DistanceSquared(rightAngleVehicle.Position, beforeRightAngleTurn) > 0.001f,
+    "A configured ground vehicle slows down but keeps moving into a 90-degree turn");
+
+navigationWorld = MovementWorld();
+Globals.World = navigationWorld;
 var slowTurningVehicle = Mobile(new Vector3(5.5f, 0, 5.5f));
 slowTurningVehicle.CanOnlyMoveForward = true;
 slowTurningVehicle.CanTurnInPlace = true;
 slowTurningVehicle.RotationSpeed = 0.25f;
 slowTurningVehicle.MoveSpeed = 1;
+slowTurningVehicle.GroundSteering = new(14.3f, 14.3f, 25.0f, 0.5f,
+    false, 0.0f, 180.0f, 5.0f, 0.0f);
 navigationWorld.GameGrid.TryMove(slowTurningVehicle, new Point(5, 5));
 slowTurningVehicle.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(5.5f, 7.5f)),
     route: [new Point(5, 6), new Point(5, 7)]);
@@ -2286,7 +2411,9 @@ foreach (float step in new[] { 1f / 60, 0.1f, 0.25f })
     }
     Check(stayedClear && cornerVehicle.CurrentCommand is null &&
         navigationWorld.GameGrid.ToCell(cornerVehicle.Position) == new Point(7, 5),
-        $"Route lookahead negotiates building corners at timestep {step} without cutting obstacles");
+        $"Route lookahead negotiates building corners at timestep {step} without cutting obstacles " +
+        $"(clear={stayedClear}, command={cornerVehicle.CurrentCommand is not null}, " +
+        $"cell={navigationWorld.GameGrid.ToCell(cornerVehicle.Position)}, status={cornerVehicle.MovementStatus})");
 }
 
 // Host navigation snapshots restore an authoritative route, its progress and the queue.

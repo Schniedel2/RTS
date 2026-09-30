@@ -46,6 +46,16 @@ public sealed class Harvester : Car
         // routes with the generic car turning circle. Let it align before it
         // enters the next route cell, just like the tracked bulldozer.
         CanTurnInPlace = true;
+        GroundSteering = new(
+            MovingTurnDegreesPerSecond: MathHelper.ToDegrees(RotationSpeed),
+            StationaryTurnDegreesPerSecond: MathHelper.ToDegrees(RotationSpeed),
+            TurnInPlaceThresholdDegrees: 100.0f,
+            MinimumCurveSpeedFactor: 0.4f,
+            AllowReverse: true,
+            ReverseSpeed: 1.5f,
+            ReverseStartAngleDegrees: 110.0f,
+            ReverseAlignmentToleranceDegrees: 8.0f,
+            ReverseMaximumDistance: 5.0f);
         HitPoints = MaxHitPoints = 900.0f;
         SetMesh("harvester-1");
     }

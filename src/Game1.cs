@@ -13,6 +13,7 @@ public class Game1 : Game
         private int _frameCount;
         private int _framesPerSecond;
         private TimeSpan _fpsElapsedTime;
+        private TimeSpan _simulationTotalTime;
 
 
     public Game1()
@@ -80,9 +81,17 @@ public class Game1 : Game
     }
 
     protected override void Update(GameTime gameTime)
-    {        
-        gameTime.ElapsedGameTime *= (float)Globals.TimeFactor;        
-        _rtsGame.Update(gameTime, Globals._camera, GraphicsDevice.Viewport);
+    {
+        // Run complete normal-sized steps instead of multiplying ElapsedGameTime.
+        // Large delta times let fast vehicles skip collision/path transitions and
+        // make timers less reliable, whereas repeated steps preserve normal rules.
+        int simulationSteps = _rtsGame.SimulationStepsPerFrame;
+        for (int step = 0; step < simulationSteps; step++)
+        {
+            _simulationTotalTime += gameTime.ElapsedGameTime;
+            var simulationTime = new GameTime(_simulationTotalTime, gameTime.ElapsedGameTime);
+            _rtsGame.Update(simulationTime, Globals._camera, GraphicsDevice.Viewport);
+        }
             
         base.Update(gameTime);
     }

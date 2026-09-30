@@ -155,10 +155,21 @@ public class ConsoleCommands
         _console.RegisterCommand(
             "set-clock",
             SetClock);
-        _console.RegisterCommand("set-time-factor", SetTimeFactor);
         _console.RegisterCommand(
             "set-wind",
             SetWind);
+        _console.RegisterCommand(
+            "set-game-speed-normal",
+            _ => SetGameSpeed(1));
+        _console.RegisterCommand(
+            "set-game-speed-2x",
+            _ => SetGameSpeed(2));
+        _console.RegisterCommand(
+            "set-game-speed-4x",
+            _ => SetGameSpeed(4));
+        _console.RegisterCommand(
+            "set-game-speed-8x",
+            _ => SetGameSpeed(8));
         _console.RegisterCommand(
             "set-healthbars-always",
             _ => SetHealthBarMode(HealthBarDisplayMode.Always));
@@ -213,6 +224,23 @@ public class ConsoleCommands
     {
         Globals.HealthBarDisplayMode = mode;
         _console.Print($"Healthbars: {mode}.");
+    }
+
+    private void SetGameSpeed(int simulationSteps)
+    {
+        // A local time multiplier would make connected peers simulate different
+        // elapsed times. Keep this debug aid limited to a solo host/offline match.
+        if (_rtsGame.Network.IsConnected &&
+            (!_rtsGame.Network.IsHost || _rtsGame.Network.Members.Count > 0))
+        {
+            _console.Print("Game speed can only be changed in an offline or solo-hosted AI match.");
+            return;
+        }
+
+        _rtsGame.SimulationStepsPerFrame = Math.Clamp(simulationSteps, 1, 8);
+        _console.Print(_rtsGame.SimulationStepsPerFrame == 1
+            ? "Game speed: normal."
+            : $"Game speed: {_rtsGame.SimulationStepsPerFrame}x.");
     }
 
     private void StartNetworkSyncDiagnostics(string[] args)
@@ -1448,18 +1476,6 @@ public class ConsoleCommands
         _console.Print(
             $"Wind set to {angleDegrees:0.##} degrees at {speed:0.##} " +
             $"(X={windVelocity.X:0.##}, Z={windVelocity.Z:0.##}).");
-    }
-
-    private void SetTimeFactor(string[] args)
-    {
-        if (args.Length != 1 || !TryParseFloat(args[0], out float speedFactor))
-        {
-            _console.Print("Usage: set-time-factor <factor>");
-            return;
-        }
-        
-        Globals.TimeFactor = speedFactor;
-        _console.Print($"Speed factor set to {speedFactor:0.##}.");
     }
 
     /// <summary>Creates a local-only visual smoke emitter; it is not replicated over the network.</summary>

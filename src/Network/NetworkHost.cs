@@ -1385,7 +1385,8 @@ public sealed class NetworkHost
             }
 
             _earthworks.Update((float)HostSimulationInterval);
-            UpdateProduction((float)HostSimulationInterval);
+            UpdateProduction(GameplayPacing.ScaleWork(
+                (float)HostSimulationInterval, Globals.Game.IsMatchStarted));
             UpdateContainerEntries();
             SimulateHostProjectiles((float)HostSimulationInterval);
             UpdateDefensiveTargets();

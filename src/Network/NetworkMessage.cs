@@ -155,7 +155,8 @@ public sealed record RuntimeUnitSnapshot(string TypeId, Guid UnitId, Guid Creato
     int PurchasePrice, UnitState State, OccupantSnapshot[] Occupants,
     HarvestPhase? HarvestPhase = null, float CargoAmount = 0.0f);
 public sealed record SessionSnapshot(WorldData World, ArmySnapshot[] Armies,
-    RuntimeUnitSnapshot[] Units, VisibilitySnapshot[] Visibility, double HostTime);
+    RuntimeUnitSnapshot[] Units, VisibilitySnapshot[] Visibility, double HostTime,
+    bool IsMatchStarted = false);
 public sealed record SyncDiagnosticDigest(long Sequence, double HostTime,
     Dictionary<string, string> Categories, Dictionary<string, string> Items,
     Dictionary<Guid, SyncDiagnosticPose>? UnitPoses = null,

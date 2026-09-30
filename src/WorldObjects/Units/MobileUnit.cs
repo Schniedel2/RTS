@@ -21,13 +21,15 @@ public sealed record GroundNavigationState(float? TargetX, float? TargetZ, Point
 
 public class MobileUnit : Unit
 {
+    // CanTurnInPlace is an additional capability, not a driving restriction.
     public Guid? SquadLeaderId { get; internal set; }
     public override string StateTypeId => "mobile-unit-state";
     public int _pathRequestId;
     public float MoveSpeed { get; set; } = 8.0f;
     public float RotationSpeed { get; set; } = MathHelper.Pi;
     public float WaypointArrivalRadius { get; set; } = 0.2f;
-    public float ForwardMovementDotThreshold { get; set; } = 0.9f;
+    /// <summary>Optional driving data for forward-moving ground vehicles only.</summary>
+    public GroundSteeringProfile? GroundSteering { get; set; }
     public float HeadingSnapAngle { get; set; }
     public bool CanOnlyMoveForward { get; set; }
     public bool CanTurnInPlace { get; set; }
@@ -226,16 +228,19 @@ public class MobileUnit : Unit
         Point nextCell = _plannedPath[0];
         Point currentCell = Globals.World.GameGrid.ToCell(Position);
 
-        // The grid has already validated the transition into this route cell.
-        // Do not force a steering vehicle to hit the exact cell center: with a
-        // finite turning radius it can otherwise orbit around that point and
-        // continually steer from one side to the other.
-        if (currentCell == nextCell && _plannedPath.Count > 1 && !IsRouteCorner(0))
+        // Safe lookahead may pass inside a corner and reach a later confirmed
+        // route cell without touching every earlier cell center. Advance to that
+        // confirmed cell, while keeping the final waypoint for precise arrival.
+        int reachedRouteIndex = _plannedPath.IndexOf(currentCell);
+        int reachedIntermediateWaypoints = Math.Min(
+            reachedRouteIndex + 1,
+            _plannedPath.Count - 1);
+        while (reachedIntermediateWaypoints-- > 0)
         {
             CompleteWaypoint();
             if (_plannedPath.Count == 0) return;
-            nextCell = _plannedPath[0];
         }
+        nextCell = _plannedPath[0];
 
         Vector3 target = Globals.World.GameGrid.ToWorldPosition(nextCell, Position.Y);
         Vector3 toTarget = target - Position;
@@ -283,11 +288,31 @@ public class MobileUnit : Unit
 
         Vector3 forward = GetHorizontalDirection(Vector3.Forward);
         Vector3 steeringDirection = desiredDirection;
+        GroundSteeringProfile? steering = GroundSteering;
 
-        if (CanTurnInPlace &&
-            Vector3.Dot(forward, steeringDirection) < ForwardMovementDotThreshold)
+        if (steering is { AllowReverse: true } &&
+            Vector3.Dot(forward, steeringDirection) < steering.ReverseStartAlignment &&
+            distanceToTarget <= steering.ClampedReverseMaximumDistance)
         {
-            TurnTowards(steeringDirection, gameTime);
+            forward = TurnTowards(-steeringDirection, gameTime,
+                steering.MovingTurnRadiansPerSecond);
+            if (Vector3.Dot(-forward, steeringDirection) < steering.ReverseExitAlignment)
+            {
+                _turningTowardPath = true;
+                return;
+            }
+
+            float reverseDistance = Math.Min(
+                distanceToTarget,
+                steering.ClampedReverseSpeed * (float)gameTime.ElapsedGameTime.TotalSeconds);
+            TrackMovementAttempt(TryMoveTo(Position - forward * reverseDistance), gameTime);
+            return;
+        }
+
+        if (ShouldTurnInPlace(forward, steeringDirection))
+        {
+            TurnTowards(steeringDirection, gameTime,
+                steering?.StationaryTurnRadiansPerSecond ?? RotationSpeed);
             _turningTowardPath = true;
             return;
         }
@@ -295,11 +320,18 @@ public class MobileUnit : Unit
         // Keep correcting the heading while moving. Previously units which
         // could turn in place stopped steering as soon as they crossed the
         // coarse forward threshold, producing a left/right zig-zag.
-        forward = TurnTowards(steeringDirection, gameTime);
+        forward = TurnTowards(steeringDirection, gameTime,
+            steering?.MovingTurnRadiansPerSecond ?? RotationSpeed);
 
+        float alignment = Vector3.Dot(forward, steeringDirection);
+        movementDistance *= steering?.GetCurveSpeedFactor(alignment) ?? 1.0f;
         movementDistance = Math.Min(movementDistance, distanceToTarget);
         TrackMovementAttempt(TryMoveTo(Position + forward * movementDistance), gameTime);
     }
+
+    private bool ShouldTurnInPlace(Vector3 forward, Vector3 desiredDirection) =>
+        CanTurnInPlace && Vector3.Dot(forward, desiredDirection) <
+            (GroundSteering?.TurnInPlaceAlignment ?? 0.9f);
 
     private void TrackMovementAttempt(bool moved, GameTime gameTime)
     {
@@ -326,25 +358,22 @@ public class MobileUnit : Unit
         RequestMovementRecovery();
     }
 
-    private bool IsRouteCorner(int index)
-    {
-        if (index + 1 >= _plannedPath.Count) return false;
-        Point before = index == 0
-            ? _previousRouteCell ?? Globals.World.GameGrid.ToCell(Position)
-            : _plannedPath[index - 1];
-        Point incoming = _plannedPath[index] - before;
-        Point outgoing = _plannedPath[index + 1] - _plannedPath[index];
-        return incoming != Point.Zero && incoming != outgoing;
-    }
-
     private Vector3 GetRouteSteeringTarget(Vector3 fallback)
     {
         if (!CanOnlyMoveForward || _plannedPath.Count < 2) return fallback;
-        int last = 0;
-        // Look ahead only within a straight part of the confirmed route. A bend is
-        // approached at its center, so the steering never bypasses a blocked corner.
-        while (last + 1 < _plannedPath.Count && last < 3 && !IsRouteCorner(last)) last++;
-        return Globals.World.GameGrid.ToWorldPosition(_plannedPath[last], Position.Y);
+        GameGrid grid = Globals.World.GameGrid;
+        Point currentCell = grid.ToCell(Position);
+        int furthest = Math.Min(3, _plannedPath.Count - 1);
+
+        // Prefer the furthest safe point on the confirmed route. This may smooth
+        // a bend, but the direct corridor has to admit the complete hard footprint
+        // and all diagonal side cells. The next confirmed waypoint remains the
+        // fallback when a building, terrain rule or another hard occupant blocks it.
+        for (int index = furthest; index > 0; index--)
+            if (grid.CanTraverseDirect(this, currentCell, _plannedPath[index]))
+                return grid.ToWorldPosition(_plannedPath[index], Position.Y);
+
+        return fallback;
     }
 
     private void RequestMovementRecovery()
@@ -386,13 +415,19 @@ public class MobileUnit : Unit
         else RequestMovementRecovery();
     }
 
-    protected Vector3 TurnTowards(Vector3 desiredDirection, GameTime gameTime)
+    protected Vector3 TurnTowards(Vector3 desiredDirection, GameTime gameTime) =>
+        TurnTowards(desiredDirection, gameTime, RotationSpeed);
+
+    protected Vector3 TurnTowards(
+        Vector3 desiredDirection,
+        GameTime gameTime,
+        float turnRadiansPerSecond)
         {
             Vector3 currentForward = GetHorizontalDirection(Vector3.Forward);
             float turnAngle = MathF.Atan2(
                 Vector3.Cross(currentForward, desiredDirection).Y,
                 Vector3.Dot(currentForward, desiredDirection));
-            float maximumTurn = RotationSpeed *
+            float maximumTurn = Math.Max(0.0f, turnRadiansPerSecond) *
                 (float)gameTime.ElapsedGameTime.TotalSeconds;
             float appliedTurn = MathHelper.Clamp(
                 turnAngle,

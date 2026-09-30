@@ -38,16 +38,43 @@ verloren. Bewusstes Drehen auf der Stelle zählt nicht als Stillstand.
 
 ## Lenken und Darstellung
 
-Fahrzeuge schauen bis zu drei Wegpunkte auf einer geraden Routensektion voraus.
-An Richtungswechseln wird weiterhin der Zellmittelpunkt angefahren. Es gibt keine
-ungeprüften Abkürzungen über Gebäudeecken. Die bestehenden Footprint-, Terrain-
-und Diagonalprüfungen bleiben aktiv. Die letzte Zielzelle wird tatsächlich erreicht.
+Fahrzeuge dürfen bis zu drei Wegpunkte über eine Kurve hinweg vorausschauen. Vor
+der Wahl des Lenkziels prüft `GameGrid.CanTraverseDirect` den vollständigen direkten
+Korridor, ohne die Belegung zu verändern. Dabei gelten Terrain- und Pathfindingregeln,
+harte Belegungen, der vollständige Fahrzeug-Footprint und beide Seiten einer
+diagonalen Ecke. Ist ein weiter Punkt nicht sicher erreichbar, wird schrittweise auf
+einen näheren bestätigten Wegpunkt bis hin zum unmittelbar nächsten zurückgefallen.
+Erreicht die geglättete Fahrt einen späteren bestätigten Routenknoten, wird der
+übersprungene Fortschritt übernommen. Die letzte Zielzelle bleibt davon ausgenommen
+und wird weiterhin mit ihrem genauen Ankunftsradius erreicht.
 
 Kleine angenommene Host-Korrekturen werden nur in der Darstellung weich
 abgebaut (Position und Yaw). Grid und logische Position bleiben davon getrennt;
 große Versetzungen werden sofort dargestellt. Kann das lokale Grid eine
 Positionskorrektur wegen eines Konflikts noch nicht annehmen, bleibt dessen
 bisheriges Verhalten erhalten; die neue Navigation wird trotzdem übernommen.
+
+Vorwärts fahrende Bodenfahrzeuge beschreiben ihre Unterschiede über ein
+`GroundSteeringProfile`. Drehgeschwindigkeiten und Winkelschwellen werden in
+Grad beziehungsweise Grad pro Sekunde angegeben. Das Profil enthält getrennte
+Lenkraten für Fahrt und Stand, den Winkel für eine optionale Standdrehung, die
+minimale Kurvengeschwindigkeit sowie Rückwärtsfreigabe, -geschwindigkeit,
+-winkel und -distanz. `CanTurnInPlace` aktiviert ausschließlich die Fähigkeit
+zur Standdrehung; es verhindert keine Lenkung während der Fahrt. Infanterie und
+Flugbewegung verwenden dieses Bodenfahrzeugprofil nicht.
+
+Der Tank verwendet ebenfalls die gemeinsame `MobileUnit`-Wegfolge. Seine
+Rückwärtsfähigkeit kommt aus dem `GroundSteeringProfile`; eine eigene
+zellweise `MoveAlongPath`-Schleife existiert nicht mehr. Damit gelten
+Routenvorausschau, Waypoint-Fortschritt und Blockade-Recovery unverändert auch
+für den Tank.
+
+Die Fahrgeschwindigkeit wird innerhalb einer Kurve kontinuierlich aus dem
+aktuellen Richtungsfehler berechnet. Geradeaus gilt der Faktor `1`; bis zur im
+Profil konfigurierten Standdrehungsgrenze sinkt er mit einer geglätteten Kurve
+auf `MinimumCurveSpeedFactor`. Normale 45°- und 90°-Kurven werden damit fahrend
+gelenkt. Eine Standdrehung bleibt für schärfere Wendungen vorgesehen; ein
+zulässiges nahes Rückwärtsziel wird vorher als Rangiermanöver behandelt.
 
 ## Prüfen
 

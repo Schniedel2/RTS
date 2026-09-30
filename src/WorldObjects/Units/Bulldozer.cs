@@ -130,6 +130,16 @@ public class GDIBulldozer : Car
         // A tracked bulldozer can counter-rotate. Waiting until it faces the
         // next path segment prevents its 3x3 core from cutting building corners.
         CanTurnInPlace = true;
+        GroundSteering = new(
+            MovingTurnDegreesPerSecond: MathHelper.ToDegrees(RotationSpeed),
+            StationaryTurnDegreesPerSecond: MathHelper.ToDegrees(RotationSpeed),
+            TurnInPlaceThresholdDegrees: 100.0f,
+            MinimumCurveSpeedFactor: 0.4f,
+            AllowReverse: true,
+            ReverseSpeed: 1.5f,
+            ReverseStartAngleDegrees: 110.0f,
+            ReverseAlignmentToleranceDegrees: 8.0f,
+            ReverseMaximumDistance: 5.0f);
 
         Length = 4;
         Width = 3;
@@ -167,7 +177,9 @@ public class GDIBulldozer : Car
                 Building? building = (CurrentBuilding is Building site) ? site : null;
                 if (building != null)
                 {
-                    building.AdvanceConstruction(BuildRate * (float)gameTime.ElapsedGameTime.TotalSeconds);
+                    float buildPoints = BuildRate * (float)gameTime.ElapsedGameTime.TotalSeconds;
+                    building.AdvanceConstruction(GameplayPacing.ScaleWork(
+                        buildPoints, Globals.Game.IsMatchStarted));
                 }
             }
         }

@@ -22,9 +22,6 @@ public class Car : MobileUnit
         
     private bool _isManeuvering;
 
-    public float ReverseSpeed { get; set; } = 2.0f;
-    public float ReplanAngle { get; set; } = MathHelper.ToRadians(10.0f);
-
     public Car(
         Vector3 position,
         Guid unitId,        
@@ -46,12 +43,23 @@ public class Car : MobileUnit
         WaypointArrivalRadius = 1.5f;
         CanOnlyMoveForward = true;
         CanTurnInPlace = false;
+        GroundSteering = new(
+            MovingTurnDegreesPerSecond: MathHelper.ToDegrees(RotationSpeed),
+            StationaryTurnDegreesPerSecond: MathHelper.ToDegrees(RotationSpeed),
+            TurnInPlaceThresholdDegrees: 180.0f,
+            MinimumCurveSpeedFactor: 0.55f,
+            AllowReverse: true,
+            ReverseSpeed: 2.0f,
+            ReverseStartAngleDegrees: 100.0f,
+            ReverseAlignmentToleranceDegrees: 10.0f,
+            ReverseMaximumDistance: 6.0f);
     }
 
     public override bool TryReceiveGotoCommand(GameWorld map, GotoCommand command, bool appendToQueue = false, IReadOnlyList<Point>? route = null)
     {
         bool accepted = base.TryReceiveGotoCommand(map, command, appendToQueue, route);
-        _isManeuvering = accepted && CanOnlyMoveForward && !CanTurnInPlace;
+        _isManeuvering = accepted && CanOnlyMoveForward && !CanTurnInPlace &&
+            GroundSteering?.AllowReverse == true;
 
         return accepted;
     }
@@ -93,10 +101,12 @@ public class Car : MobileUnit
         }
 
         desiredDirection.Normalize();
-        Vector3 forward = TurnTowards(desiredDirection, gameTime);
+        GroundSteeringProfile steering = GroundSteering!;
+        Vector3 forward = TurnTowards(desiredDirection, gameTime,
+            steering.MovingTurnRadiansPerSecond);
         float directionDot = Vector3.Dot(forward, desiredDirection);
 
-        if (directionDot >= MathF.Cos(ReplanAngle))
+        if (directionDot >= steering.ReverseExitAlignment)
         {
             _isManeuvering = false;
 
@@ -106,7 +116,7 @@ public class Car : MobileUnit
             return;
         }
 
-        float movementDistance = ReverseSpeed *
+        float movementDistance = steering.ClampedReverseSpeed *
             (float)gameTime.ElapsedGameTime.TotalSeconds;
         // Reversing is only a visual maneuvering aid. If the space behind the
         // vehicle is occupied, keep rotating instead of repeatedly driving

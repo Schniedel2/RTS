@@ -29,6 +29,16 @@ public class RTSGame
     public IReadOnlyCollection<AIPlayer> AIPlayers => _aiPlayers.Values;
     private readonly Dictionary<Guid, (Player Actor, ArmyGoalController Controller)> _manualArmyGoals = [];
     private readonly Dictionary<Guid, ScoutingController> _manualArmyScouts = [];
+    public bool IsMatchStarted { get; private set; }
+    /// <summary>
+    /// Number of complete simulation steps executed per rendered frame. This is
+    /// intended for local AI test matches; each step keeps the original frame
+    /// duration so movement and timers retain their normal numerical behavior.
+    /// </summary>
+    public int SimulationStepsPerFrame { get; internal set; } = 1;
+    public float WorkSpeedMultiplier => IsMatchStarted
+        ? 1.0f
+        : GameplayPacing.PreMatchWorkMultiplier;
     public TeamHandler Teams { get; } = new();
     public ArmyHandler Armies { get; } = new();
     public PricingService Pricing { get; }
@@ -135,12 +145,13 @@ public class RTSGame
                 unit is Harvester cargo ? cargo.CargoAmount : 0.0f))
             .ToArray();
         return new SessionSnapshot(World.GetWorldData(), Armies.GetSnapshot(), units,
-            World.Visibility.GetSnapshot(), NetworkHost.HostTime);
+            World.Visibility.GetSnapshot(), NetworkHost.HostTime, IsMatchStarted);
     }
 
     internal void ApplySessionSnapshot(SessionSnapshot snapshot)
     {
         Network.AssertGameThread();
+        IsMatchStarted = snapshot.IsMatchStarted;
         World.Units.ClearForNetworkSnapshot();
         Armies.ApplySnapshot(snapshot.Armies);
         foreach (Player player in _players)
@@ -173,6 +184,8 @@ public class RTSGame
         Hud.Reset();
         _fogTexture.Reset();
     }
+
+    internal void MarkMatchStarted() => IsMatchStarted = true;
 
     private static bool IsSnapshotBuilding(string typeId) => typeId is
         "gdi-barracks" or "gdi-base" or "reaktor" or "turret-minigun" or

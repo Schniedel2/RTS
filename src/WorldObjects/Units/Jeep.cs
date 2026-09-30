@@ -25,11 +25,21 @@ public class Jeep : Car
     public Jeep(Vector3 position, Guid unitId, IMovementProfile? movementProfile = null)
         : base(position, unitId, movementProfile)
     {
-        MoveSpeed = 5.0f;
-        RotationSpeed = 1.0f;
+        MoveSpeed = 8.0f;
+        RotationSpeed = 4.0f;
         HeadingSnapAngle = 0.0f;
         CanOnlyMoveForward = true;
         CanTurnInPlace = true;
+        GroundSteering = new(
+            MovingTurnDegreesPerSecond: MathHelper.ToDegrees(RotationSpeed),
+            StationaryTurnDegreesPerSecond: MathHelper.ToDegrees(RotationSpeed),
+            TurnInPlaceThresholdDegrees: 110.0f,
+            MinimumCurveSpeedFactor: 0.55f,
+            AllowReverse: true,
+            ReverseSpeed: 2.0f,
+            ReverseStartAngleDegrees: 110.0f,
+            ReverseAlignmentToleranceDegrees: 10.0f,
+            ReverseMaximumDistance: 5.0f);
     
         TargetAngleMinimumDegrees = -120.0f;
         TargetAngleMaximumDegrees = 120.0f;

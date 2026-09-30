@@ -254,6 +254,80 @@ public class GameGrid
     }
 
     /// <summary>
+    /// Checks a direct center-to-center movement corridor without changing the
+    /// unit or grid. Every crossed center cell is tested with the unit's full
+    /// hard footprint. Diagonal steps additionally require both orthogonal
+    /// neighbors, so steering lookahead cannot cut a blocked grid corner.
+    /// </summary>
+    public bool CanTraverseDirect(MobileUnit unit, Point start, Point destination)
+    {
+        if (!Contains(start) || !Contains(destination))
+            return false;
+
+        HashSet<Point> startingFootprint = GetPathfindingStartingFootprint(unit, start);
+        Point previous = start;
+        foreach (Point next in EnumerateSupercoverCenters(start, destination).Skip(1))
+        {
+            if (!CanTraverseCenter(unit, next, startingFootprint))
+                return false;
+
+            if (next.X != previous.X && next.Y != previous.Y &&
+                (!CanTraverseCenter(unit, new Point(next.X, previous.Y), startingFootprint) ||
+                 !CanTraverseCenter(unit, new Point(previous.X, next.Y), startingFootprint)))
+                return false;
+
+            previous = next;
+        }
+
+        return true;
+    }
+
+    private bool CanTraverseCenter(MobileUnit unit, Point centerCell, HashSet<Point> startingFootprint) =>
+        CanPlace(unit, centerCell) &&
+        IsPathfindingAllowedFromFootprint(unit, centerCell, startingFootprint);
+
+    // Integer supercover traversal between cell centers. Equality represents a
+    // diagonal corner crossing; CanTraverseDirect validates both side cells.
+    private static IEnumerable<Point> EnumerateSupercoverCenters(Point start, Point destination)
+    {
+        int dx = destination.X - start.X;
+        int dy = destination.Y - start.Y;
+        int nx = Math.Abs(dx);
+        int ny = Math.Abs(dy);
+        int stepX = Math.Sign(dx);
+        int stepY = Math.Sign(dy);
+        int x = start.X;
+        int y = start.Y;
+        int ix = 0;
+        int iy = 0;
+        yield return start;
+
+        while (ix < nx || iy < ny)
+        {
+            long horizontalCrossing = (1L + 2L * ix) * ny;
+            long verticalCrossing = (1L + 2L * iy) * nx;
+            if (horizontalCrossing == verticalCrossing)
+            {
+                x += stepX;
+                y += stepY;
+                ix++;
+                iy++;
+            }
+            else if (horizontalCrossing < verticalCrossing)
+            {
+                x += stepX;
+                ix++;
+            }
+            else
+            {
+                y += stepY;
+                iy++;
+            }
+            yield return new Point(x, y);
+        }
+    }
+
+    /// <summary>
     /// Checks all cells touched by a prospective footprint. Mobile units snap
     /// their grid shape to 90° increments; buildings retain the supplied yaw.
     /// </summary>

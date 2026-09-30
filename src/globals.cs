@@ -75,5 +75,4 @@ public static class Globals
     public static bool FogOfWarEnabled = true;
     /// <summary>Visual fog edge radius in GameGrid cells. Gameplay visibility remains discrete.</summary>
     public static float FogOfWarEdgeSoftness = 1.25f;
-    public static float TimeFactor = 1.0f;
 }
