@@ -2387,6 +2387,30 @@ for (int frame = 0; frame < 500 && slowTurningVehicle.CurrentCommand is not null
 Check(slowTurningVehicle.CurrentCommand is null && navigationWorld.GameGrid.ToCell(slowTurningVehicle.Position) == new Point(5, 7),
     "A slowly turning vehicle completes its route after aligning");
 
+navigationWorld = MovementWorld();
+Globals.World = navigationWorld;
+var wideStraightVehicle = Mobile(new Vector3(12.5f, 0, 4.5f));
+Field(wideStraightVehicle, typeof(Unit), "<Width>k__BackingField", 3);
+Field(wideStraightVehicle, typeof(Unit), "<Length>k__BackingField", 4);
+wideStraightVehicle.CanOnlyMoveForward = true;
+wideStraightVehicle.CanTurnInPlace = true;
+wideStraightVehicle.MoveSpeed = 5.0f;
+wideStraightVehicle.RotationSpeed = 4.0f;
+wideStraightVehicle.GroundSteering = new(229.2f, 229.2f, 100.0f, 0.4f,
+    true, 1.5f, 110.0f, 8.0f, 5.0f);
+navigationWorld.GameGrid.TryMove(wideStraightVehicle, new Point(12, 4));
+Point[] twelveCellRoute = Enumerable.Range(5, 12).Select(y => new Point(12, y)).ToArray();
+wideStraightVehicle.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(12.5f, 16.5f)),
+    route: twelveCellRoute);
+for (int frame = 0; frame < 600 && wideStraightVehicle.CurrentCommand is not null; frame++)
+{
+    wideStraightVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.05)));
+    navigationWorld.PathfindingManager.Update();
+}
+Check(wideStraightVehicle.CurrentCommand is null &&
+    navigationWorld.GameGrid.ToCell(wideStraightVehicle.Position) == new Point(12, 16),
+    "A 3x4 harvester-style vehicle completes a twelve-cell route across open terrain without retries");
+
 foreach (float step in new[] { 1f / 60, 0.1f, 0.25f })
 {
     navigationWorld = MovementWorld();
@@ -2414,6 +2438,45 @@ foreach (float step in new[] { 1f / 60, 0.1f, 0.25f })
         $"Route lookahead negotiates building corners at timestep {step} without cutting obstacles " +
         $"(clear={stayedClear}, command={cornerVehicle.CurrentCommand is not null}, " +
         $"cell={navigationWorld.GameGrid.ToCell(cornerVehicle.Position)}, status={cornerVehicle.MovementStatus})");
+}
+
+// A selected steering target is retained between frames, while actual movement
+// may use neighboring free cells to describe a finite-radius curve.
+{
+    navigationWorld = MovementWorld();
+    Globals.World = navigationWorld;
+    var vehicle = Mobile(new Vector3(5.5f, 0, 5.5f));
+    vehicle.CanOnlyMoveForward = true;
+    navigationWorld.GameGrid.TryMove(vehicle, new Point(5, 5));
+    vehicle.SetPlannedPath([new(5, 4), new(5, 3), new(5, 2)]);
+    var steer = typeof(MobileUnit).GetMethod("GetRouteSteeringTarget", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    var moveTo = typeof(MobileUnit).GetMethod("TryMoveTo", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    steer.Invoke(vehicle, [new Vector3(5.5f, 0, 4.5f)]);
+    Check((bool)moveTo.Invoke(vehicle, [new Vector3(6.1f, 0, 5.4f)])! &&
+        navigationWorld.GameGrid.GetOccupant(6, 5) == vehicle,
+        "A steering vehicle may use a neighboring free cell for its actual turning arc");
+    navigationWorld.GameGrid.GetCell(7, 5).IsBlocked = true;
+    Check(!(bool)moveTo.Invoke(vehicle, [new Vector3(7.1f, 0, 5.4f)])! &&
+        navigationWorld.GameGrid.GetOccupant(6, 5) == vehicle,
+        "Actual turning movement still rejects blocked cells and preserves occupancy on failure");
+    navigationWorld.GameGrid.GetCell(7, 5).IsBlocked = false;
+    Check((bool)moveTo.Invoke(vehicle, [new Vector3(5.5f, 0, 4.8f)])! &&
+        navigationWorld.GameGrid.GetOccupant(5, 4) == vehicle &&
+        navigationWorld.GameGrid.GetOccupant(5, 5) is null,
+        "Accepted corridor movement atomically transfers the hard footprint");
+    vehicle.SetPlannedPath([new(6, 4), new(7, 4)]);
+    Check(typeof(MobileUnit).GetField("_steeringWaypoint", BindingFlags.Instance | BindingFlags.NonPublic)!
+        .GetValue(vehicle) is null, "Replacing a route discards its previous steering target");
+
+    Field(vehicle, typeof(Unit), "<ClearanceRegions>k__BackingField", new BoundingBox[]
+    {
+        new(new Vector3(-0.3f, 0, -2.4f), new Vector3(0.3f, 1, 2.4f))
+    });
+    vehicle.SetRotationYDegrees(45);
+    navigationWorld.GameGrid.TryUpdateFootprint(vehicle);
+    Check(navigationWorld.GameGrid.GetClearanceOwners(new Point(4, 3)).Contains(vehicle) &&
+        navigationWorld.GameGrid.GetOccupant(5, 4) == vehicle,
+        "Soft clearance follows unsnapped yaw while the hard footprint remains fixed");
 }
 
 // Host navigation snapshots restore an authoritative route, its progress and the queue.

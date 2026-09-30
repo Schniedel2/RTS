@@ -507,6 +507,18 @@ public class GameGrid
         return EnumerateCells(new Rectangle(left, top, width, length));
     }
 
+    /// <summary>Soft reservation at the actual continuous pose, without yaw snapping.</summary>
+    internal IReadOnlyList<Point> GetCurrentMovementClearanceCells(MobileUnit unit)
+    {
+        IReadOnlyList<BoundingBox> regions = unit.HasAuthoredClearance
+            ? unit.ClearanceRegions
+            : new[] { new BoundingBox(
+                new Vector3(-unit.Width * CellSize * 0.5f, 0, -unit.Length * CellSize * 0.5f),
+                new Vector3(unit.Width * CellSize * 0.5f, 1, unit.Length * CellSize * 0.5f)) };
+        return GetAuthoredRegionCells(regions, false, unit.Position,
+            GetYawDegrees(unit.Transform), sampleCellCenters: true);
+    }
+
     private bool CanUseMovementClearance(MobileUnit unit, Point centerCell)
     {
         foreach (Point cell in GetMovementClearanceCells(unit, centerCell))
@@ -623,7 +635,7 @@ public class GameGrid
             return true;
         // The core remains unchanged while the best-effort clearance follows
         // the rendered heading. Clearance overlap never blocks its owner.
-        RegisterClearance(unit, GetMovementClearanceCells(unit, ToCell(unit.Position)));
+        RegisterClearance(unit, GetCurrentMovementClearanceCells(unit));
         return true;
     }
 

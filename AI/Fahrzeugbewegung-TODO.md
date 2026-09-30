@@ -48,6 +48,7 @@ Abarbeiten mit dem Chat-Befehl: Arbeite den nächsten offenen Punkt aus "Fahrzeu
   - Fertig, wenn freie Kurven sichtbar geglättet werden, ohne dass Fahrzeuge Gebäudeecken oder gesperrte Zellen schneiden.
 
 - [ ] **Routenkorridor und tatsächliche Bewegung abstimmen**
+  - **Zwischenstand 30.09.2026:** Das bestätigte Lenkziel wird zwischen Updates festgehalten und begrenzt den Routenfortschritt. Die tatsächliche Kurve darf benachbarte freie Zellen verwenden; jeder Zellübergang bleibt durch `GameGrid.TryMove`, den vollständigen harten Footprint und Diagonalregeln geschützt. Die weiche Clearance folgt kontinuierlicher Position und freier Drehung, die Festfahrerkennung dem Lenkziel. Eine Regression für eine zwölf Zellen lange freie Fahrt mit 3x4-Footprint ist enthalten. Build und 521 Headless-Checks erfolgreich. Sichtbare Wiederholungsprüfung von Tank, Harvester und Bulldozer steht aus.
   - **Empfohlenes Modell:** `gpt-6-astra` mit `xhigh` Reasoning.
   - Eine geglättete Fahrkurve bleibt innerhalb eines vom Host geprüften Korridors.
   - Das GameGrid registriert weiterhin eine konsistente harte Belegung und eine zur Rotation passende weiche Clearance.

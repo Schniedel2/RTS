@@ -1,9 +1,16 @@
-# Example: call example.batch
-whoami
-session-open test
-say test-session gestartet.
-spawn tank 100 100 60
-spawn jeep 60 60 60
-spawn GDI-Bulldozer 100 120 0
+# Lokale Bewegungs-Testszene: Fahrzeuge einzeln um die beiden Reaktoren
+# schicken und besonders Wendungen dicht an den Gebäudeecken prüfen.
+session-open movement-validation-local
+disable Fogofwar
+disable Hide-unexplored
+enable Unitcommands
+enable Gamegrid
 
-map-load test1
+# Startreihe: Tank, Harvester und Bulldozer.
+spawn tank 119 100 0
+spawn harvester 128 100 0
+spawn gdi-bulldozer 137 100 0
+
+# Zwei feste Hindernisse für enge Kurven und Wendemanöver.
+spawn reaktor 128 88 0
+spawn reaktor 128 112 0

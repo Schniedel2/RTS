@@ -48,6 +48,17 @@ Erreicht die geglättete Fahrt einen späteren bestätigten Routenknoten, wird d
 übersprungene Fortschritt übernommen. Die letzte Zielzelle bleibt davon ausgenommen
 und wird weiterhin mit ihrem genauen Ankunftsradius erreicht.
 
+Das gewählte Lenkziel bleibt zwischen Updates gespeichert. Der Fortschritt darf nur
+Wegpunkte bis zu diesem bestätigten Lenkziel verbuchen. Die tatsächlich gefahrene
+Kurve darf benachbarte freie Zellen verwenden; jeder reale Zellübergang wird weiterhin
+vom Host über `GameGrid.TryMove` mit vollständigem Footprint und Diagonalregeln geprüft.
+Eine nur eine Zelle breite Gerade darf eine breite Einheit beim Einlenken daher nicht
+festhalten. Neue Routen, Stop, Recovery und Host-Korrekturen verwerfen das lokale
+Lenkziel. Die Festfahrerkennung misst dessen Annäherung, damit ausgelassene
+Zellmittelpunkte keinen falschen Retry auslösen.
+Die registrierte weiche Clearance folgt der tatsächlichen Position und ungerundeten
+Drehung auch innerhalb einer Zelle. Ihr weicher Charakter bleibt erhalten.
+
 Kleine angenommene Host-Korrekturen werden nur in der Darstellung weich
 abgebaut (Position und Yaw). Grid und logische Position bleiben davon getrennt;
 große Versetzungen werden sofort dargestellt. Kann das lokale Grid eine

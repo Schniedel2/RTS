@@ -102,6 +102,8 @@ public class MobileUnit : Unit
     ];
 
     private readonly List<Point> _plannedPath = [];
+    private Point? _steeringWaypoint;
+    private Point? _steeringRouteHead;
     private readonly Queue<(GotoCommand Command, Point[]? Route)> _commandQueue = [];
     public Vector2 LastQueuedTarget => _commandQueue is { Count: > 0 }
         ? _commandQueue.Last().Command.Target
@@ -231,7 +233,9 @@ public class MobileUnit : Unit
         // Safe lookahead may pass inside a corner and reach a later confirmed
         // route cell without touching every earlier cell center. Advance to that
         // confirmed cell, while keeping the final waypoint for precise arrival.
-        int reachedRouteIndex = _plannedPath.IndexOf(currentCell);
+        int permittedIndex = _steeringWaypoint is Point selected ? _plannedPath.IndexOf(selected) : 0;
+        int reachedRouteIndex = _plannedPath.IndexOf(currentCell, 0,
+            Math.Min(_plannedPath.Count, Math.Max(0, permittedIndex) + 1));
         int reachedIntermediateWaypoints = Math.Min(
             reachedRouteIndex + 1,
             _plannedPath.Count - 1);
@@ -360,9 +364,15 @@ public class MobileUnit : Unit
 
     private Vector3 GetRouteSteeringTarget(Vector3 fallback)
     {
-        if (!CanOnlyMoveForward || _plannedPath.Count < 2) return fallback;
+        if (!CanOnlyMoveForward || _plannedPath.Count == 0) return fallback;
         GameGrid grid = Globals.World.GameGrid;
         Point currentCell = grid.ToCell(Position);
+        if (_steeringRouteHead == _plannedPath[0] && _steeringWaypoint is Point retained &&
+            retained != currentCell && grid.CanTraverseDirect(this, currentCell, retained))
+            return grid.ToWorldPosition(retained, Position.Y);
+
+        _steeringRouteHead = _plannedPath[0];
+        _steeringWaypoint = _plannedPath[0];
         int furthest = Math.Min(3, _plannedPath.Count - 1);
 
         // Prefer the furthest safe point on the confirmed route. This may smooth
@@ -371,15 +381,25 @@ public class MobileUnit : Unit
         // fallback when a building, terrain rule or another hard occupant blocks it.
         for (int index = furthest; index > 0; index--)
             if (grid.CanTraverseDirect(this, currentCell, _plannedPath[index]))
+            {
+                _steeringWaypoint = _plannedPath[index];
                 return grid.ToWorldPosition(_plannedPath[index], Position.Y);
+            }
 
         return fallback;
+    }
+
+    private void ResetSteeringTarget()
+    {
+        _steeringWaypoint = null;
+        _steeringRouteHead = null;
     }
 
     private void RequestMovementRecovery()
     {
         if (!IsMovementAuthority || CurrentCommand is null || MovementStatus == MovementStatus.Planning)
             return;
+        ResetSteeringTarget();
         _plannedPath.Clear();
         _blockedMovementSeconds = 0;
         ResetMovementProgressWatchdog();
@@ -435,7 +455,8 @@ public class MobileUnit : Unit
                 maximumTurn);
 
             Matrix previousTransform = Transform;
-            Transform = Matrix.CreateRotationY(appliedTurn) * Transform;
+            Matrix candidateTransform = Matrix.CreateRotationY(appliedTurn) * Transform;
+            Transform = candidateTransform;
             // Rotation updates the soft movement clearance. The hard core footprint
             // remains stable, so a visual turn cannot invalidate an accepted route.
             if (!Globals.World.GameGrid.TryUpdateFootprint(this))
@@ -520,6 +541,7 @@ public class MobileUnit : Unit
 
         AdvanceWheelRotation(position);
         SetPosition(position);
+        grid.TryUpdateFootprint(this);
         return true;
     }
 
@@ -781,6 +803,7 @@ public class MobileUnit : Unit
 
     public void SetPlannedPath(IReadOnlyList<Point> path)
     {
+        ResetSteeringTarget();
         _plannedPath.Clear();
         _plannedPath.AddRange(path);
         _previousRouteCell = Globals.World?.GameGrid.ToCell(Position);
@@ -795,6 +818,7 @@ public class MobileUnit : Unit
 
     public override void ClearCommand()
     {
+        ResetSteeringTarget();
         _pathRequestId++;
         _retryMovementSeconds = 0;
         _movementRetryCount = 0;
@@ -901,6 +925,7 @@ public class MobileUnit : Unit
         }
         if (data.NavigationRevision == _replicatedNavigationRevision)
         {
+            ResetSteeringTarget();
             int consumed = Math.Clamp(data.PathProgress - _replicatedRouteStartProgress, 0, _replicatedRoute.Length);
             _plannedPath.Clear();
             _plannedPath.AddRange(_replicatedRoute.Skip(consumed));
@@ -960,7 +985,8 @@ public class MobileUnit : Unit
             return;
         }
 
-        Point waypoint = _plannedPath[0];
+        Point waypoint = _steeringWaypoint is Point selected && _plannedPath.Contains(selected)
+            ? selected : _plannedPath[0];
         Vector3 target = Globals.World.GameGrid.ToWorldPosition(waypoint, Position.Y);
         float distanceSquared = HorizontalDistanceSquared(Position, target);
         if (_progressWaypoint != waypoint ||
