@@ -85,8 +85,31 @@ Check(Math.Abs(SquadBenefits.OutgoingDamageMultiplier - 1.10f) < 0.001f &&
 Check(AIBaseDefenseController.IsWithinDefenseRadius(Vector3.Zero, new Vector3(36, 0, 0), 1.0f) &&
       !AIBaseDefenseController.IsWithinDefenseRadius(Vector3.Zero, new Vector3(36.1f, 0, 0), 1.0f),
     "AI base defense reacts only to threats inside its configured perimeter");
+MethodInfo availableReturningDefender = typeof(AIBaseDefenseController).GetMethod(
+    "IsAvailableReturningDefender", BindingFlags.Static | BindingFlags.NonPublic)!;
+Check((bool)availableReturningDefender.Invoke(null, [Empty<Tank>()])! &&
+      (bool)availableReturningDefender.Invoke(null, [Empty<Gunner>()])! &&
+      !(bool)availableReturningDefender.Invoke(null, [Empty<Reaktor>()])!,
+    "AI base defense returns mobile vehicle and infantry defenders but never buildings");
+MobileUnit returningDefender = Mobile(new Vector3(3.5f, 0, 4.5f));
+returningDefender.ReceiveCommand(new GotoCommand(new Vector2(18.5f, 19.5f)));
+object returnOrder = typeof(AIBaseDefenseController).GetMethod(
+    "CaptureReturnOrder", BindingFlags.Static | BindingFlags.NonPublic)!
+    .Invoke(null, [returningDefender])!;
+Vector2? capturedMovementTarget = (Vector2?)returnOrder.GetType()
+    .GetProperty("MovementTarget")!.GetValue(returnOrder);
+Check(capturedMovementTarget == new Vector2(18.5f, 19.5f),
+    "AI base defense remembers a defender's previous movement assignment");
 Check(AISquadPreparationController.RequiredGunners == 3,
     "AI prepares three squad gunners in addition to its reserved scout");
+MethodInfo selectScoutReplacement = typeof(AIController).GetMethod(
+    "SelectScoutReplacement", BindingFlags.Static | BindingFlags.NonPublic)!;
+GameplayDefinition? barracksScout = (GameplayDefinition?)selectScoutReplacement.Invoke(
+    null, [new[] { "gdi-barracks" }]);
+GameplayDefinition? factoryScout = (GameplayDefinition?)selectScoutReplacement.Invoke(
+    null, [new[] { "vehicle-factory" }]);
+Check(barracksScout?.TypeId == "gunner" && factoryScout?.TypeId == "jeep",
+    "AI selects an affordable catalog scout supported by its available producers");
 Guid strategyArmyId = Guid.NewGuid();
 AIStrategyProfile stableStrategyA = AIStrategyProfile.Create(12345, strategyArmyId);
 AIStrategyProfile stableStrategyB = AIStrategyProfile.Create(12345, strategyArmyId);

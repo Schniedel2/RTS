@@ -1,6 +1,7 @@
 using Microsoft.Xna.Framework;
 using RTS.Network;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -27,6 +28,15 @@ public sealed class AIBaseDefenseController(
     private float _orderElapsed;
     private Guid? _targetId;
     private Guid[] _assignedDefenders = [];
+    private readonly Dictionary<Guid, DefenseReturnOrder> _returnOrders = [];
+
+    private sealed record DefenseReturnOrder(
+        Guid UnitId,
+        Vector3 Position,
+        Vector2? MovementTarget,
+        Guid? FollowTargetId,
+        Guid? AttackTargetId,
+        Vector3? AttackGroundTarget);
 
     public bool IsEngaging => _targetId is not null;
     public string LastDecision { get; private set; } = "Watching the base perimeter.";
@@ -37,6 +47,7 @@ public sealed class AIBaseDefenseController(
         _orderElapsed = 0.0f;
         _targetId = null;
         _assignedDefenders = [];
+        _returnOrders.Clear();
         LastDecision = "Watching the base perimeter.";
     }
 
@@ -62,6 +73,7 @@ public sealed class AIBaseDefenseController(
                 _ = ReturnDefendersAsync(buildings);
             _targetId = null;
             _assignedDefenders = [];
+            _returnOrders.Clear();
             LastDecision = "No visible enemy threatens the base perimeter.";
             return;
         }
@@ -69,7 +81,9 @@ public sealed class AIBaseDefenseController(
         Unit[] defenders = world.Units.Units
             .Where(unit => unit.ArmyId == armyId && unit.UnitId != scoutId &&
                 !unit.IsDying && !unit.IsEmbarked && unit.AttackDamage > 0.0f &&
-                unit is Soldier or Tank && unit.Occupancy?.IsOperational != false &&
+                unit is MobileUnit && GameplayCatalog.HasAIRoles(
+                    unit.GameplayTypeId, AIUnitRole.Defender) &&
+                unit.Occupancy?.IsOperational != false &&
                 unit.CanAttackTarget(target))
             .OrderBy(unit => HorizontalDistanceSquared(unit.Position, target.Position))
             .ToArray();
@@ -84,6 +98,8 @@ public sealed class AIBaseDefenseController(
         bool defendersChanged = !_assignedDefenders.SequenceEqual(defenderIds);
         if (targetChanged || defendersChanged || _orderElapsed >= RefreshOrderSeconds)
         {
+            foreach (Unit defender in defenders)
+                _returnOrders.TryAdd(defender.UnitId, CaptureReturnOrder(defender));
             _targetId = target.UnitId;
             _assignedDefenders = defenderIds;
             _orderElapsed = 0.0f;
@@ -115,17 +131,47 @@ public sealed class AIBaseDefenseController(
 
     private async Task ReturnDefendersAsync(Building[] buildings)
     {
-        Guid[] existing = _assignedDefenders
-            .Where(id => world.Units.FindById(id) is Soldier unit && !unit.IsDying && !unit.IsEmbarked)
+        DefenseReturnOrder[] returning = _returnOrders.Values
+            .Where(order => world.Units.FindById(order.UnitId) is Unit unit &&
+                IsAvailableReturningDefender(unit))
             .ToArray();
-        if (existing.Length == 0)
+        if (returning.Length == 0)
             return;
 
         Building anchor = buildings.OfType<GDIBase>().FirstOrDefault() ?? buildings[0];
-        Vector3 destination = anchor.RallyPoint ?? anchor.Position;
-        await _commands.StopAsync(existing);
-        await _commands.GotoAsync(existing, destination);
+        Vector3 fallback = anchor.RallyPoint ?? anchor.Position;
+        await _commands.StopAsync(returning.Select(order => order.UnitId));
+        foreach (DefenseReturnOrder order in returning)
+        {
+            if (order.AttackTargetId is Guid attackId &&
+                world.Units.FindById(attackId) is Unit { IsDying: false })
+                await _commands.AttackTargetAsync([order.UnitId], attackId);
+            else if (order.FollowTargetId is Guid followId &&
+                world.Units.FindById(followId) is Unit { IsDying: false })
+                await _commands.FollowAsync([order.UnitId], followId);
+            else if (order.AttackGroundTarget is Vector3 groundTarget)
+                await _commands.AttackTerrainAsync([order.UnitId], groundTarget);
+            else
+            {
+                Vector2 target = order.MovementTarget ?? new Vector2(order.Position.X, order.Position.Z);
+                Vector3 destination = float.IsFinite(target.X) && float.IsFinite(target.Y)
+                    ? new Vector3(target.X, order.Position.Y, target.Y)
+                    : fallback;
+                await _commands.GotoAsync([order.UnitId], destination);
+            }
+        }
     }
+
+    private static DefenseReturnOrder CaptureReturnOrder(Unit unit) => new(
+        unit.UnitId,
+        unit.Position,
+        unit.CurrentCommand?.Target,
+        unit.FollowUnitId,
+        unit.AttackTargetId,
+        unit.AttackGroundTarget);
+
+    private static bool IsAvailableReturningDefender(Unit unit) =>
+        unit is MobileUnit && !unit.IsDying && !unit.IsEmbarked;
 
     public static bool IsWithinDefenseRadius(Vector3 building, Vector3 target, float cellSize)
     {

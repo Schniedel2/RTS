@@ -1135,13 +1135,16 @@ public abstract class Unit : WorldObject
             return;
 
         _exhaustElapsed %= emissionIntervalSeconds;
-        if (!_meshSet.TryGetExhaustWorldPosition(GetVisualWorldMatrix(), out Vector3 exhaustPosition))
-            return;
-
-        Globals.World.Particles.EmitSmoke(
-            exhaustPosition,
-            Vector3.Up,
-            settings ?? SmokeEmissionPresets.VehicleExhaust());
+        if (_meshSet.TryGetExhaustWorldPosition(GetVisualWorldMatrix(), out Vector3 exhaustPosition))
+            Globals.World.Particles.EmitSmoke(
+                exhaustPosition,
+                Vector3.Up,
+                settings ?? SmokeEmissionPresets.VehicleExhaust());
+        if (_meshSet.TryGetExhaust2WorldPosition(GetVisualWorldMatrix(), out Vector3 exhaustPosition2))
+            Globals.World.Particles.EmitSmoke(
+                exhaustPosition2,
+                Vector3.Up,
+                settings ?? SmokeEmissionPresets.VehicleExhaust());
     }
 
     /// <summary>

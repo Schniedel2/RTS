@@ -50,8 +50,8 @@ public class Tank : MobileUnit
         TargetAngleMinimumDegrees = -180.0f;
         TargetAngleMaximumDegrees = 180.0f;
         Behavior = UnitBehavior.Passive;
-        MoveSpeed = 3.0f;
-        RotationSpeed = 1.0f;
+        MoveSpeed = 4.0f;
+        RotationSpeed = 2.0f;
         SightRange = 24;
         HeadingSnapAngle = 0.0f;
         CanOnlyMoveForward = true;

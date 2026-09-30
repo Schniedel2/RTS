@@ -13,10 +13,11 @@ public class Reaktor : Building
         PowerProduction + (Occupancy?.Count(OccupantRole.Crew) ?? 0) *
         (GameplayCatalog.Find(PurchasableType.Building, GameplayTypeId)?
             .Building?.PowerProductionPerCrew ?? 0);
+    private int subType = 1;
 
     public Reaktor(
         Vector3 position,
-        Guid unitId,
+        Guid unitId,        
         int purchasePrice = 0
         ) : base(
             position,
@@ -24,14 +25,21 @@ public class Reaktor : Building
     {
         ApplyCatalogMetadata();
 
-        SetMesh("reaktor", deriveDimensions: true);
+        subType = 2;
+        if (subType == 1)
+            SetMesh("reaktor-1", deriveDimensions: true);
+        if (subType == 2)
+            SetMesh("reaktor-2", deriveDimensions: true);
     }
 
     public override void Update(GameTime gameTime)
     {
         if (IsCompleted)
         {
-            UpdateExhaust(gameTime, 0.1f, SmokeEmissionPresets.ReactorExhaust());
+            if (subType == 1)
+                UpdateExhaust(gameTime, 0.1f, SmokeEmissionPresets.ReactorExhaust());
+            if (subType == 2)   
+                UpdateExhaust(gameTime, 0.1f, SmokeEmissionPresets.ReactorExhaustSmall());
         }
         base.Update(gameTime);
     }

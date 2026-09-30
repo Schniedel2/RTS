@@ -267,6 +267,24 @@ public static class SmokeEmissionPresets
         Opacity = 0.65f
     };
 
+    public static SmokeEmissionSettings ReactorExhaustSmall() => new()
+    {
+        //  big white
+        Color = new Color(255, 255, 255),
+        ParticleCount = 3,
+        Intensity = 0.8f,
+        EmissionLength = 0.08f,
+        UpwardSpeed = 1.2f,
+        ForwardSpeed = 0.0f,
+        StartSize = 2.5f,
+        StartSizeVariation = 0.5f,
+        EndSize = 4.5f,
+        EndSizeVariation = 0.5f,
+        Lifetime = 2.5f,
+        Opacity = 0.65f
+    };
+
+
     public static SmokeEmissionSettings DestroyBuilding()
     {
         return SmokeEmissionPresets.VehicleWreck() with

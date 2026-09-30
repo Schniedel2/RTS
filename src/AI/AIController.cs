@@ -660,6 +660,8 @@ public sealed class ArmyGoalController
 /// <summary>Compatibility facade for autonomous AI players.</summary>
 public sealed class AIController
 {
+    private const float ScoutReplacementRetrySeconds = 3.0f;
+
     private enum SquadCyclePhase
     {
         InitialPreparation,
@@ -682,6 +684,7 @@ public sealed class AIController
     private SquadCyclePhase _squadCyclePhase;
     private AIStrategyProfile? _strategyProfile;
     private Guid? _scoutId;
+    private float _scoutReplacementElapsed = ScoutReplacementRetrySeconds;
     private string? _scoutingDecision;
 
     public AIGoalState Goal => _goals.Goal == AIGoalState.BaseDefenseReady
@@ -718,6 +721,7 @@ public sealed class AIController
         _threatAssessment = new AIThreatAssessment(armyId);
         _squadCyclePhase = SquadCyclePhase.InitialPreparation;
         _scoutId = null;
+        _scoutReplacementElapsed = ScoutReplacementRetrySeconds;
         _scoutingDecision = null;
         _strategyProfile = AIStrategyProfile.Create(matchSeed, armyId);
         _goals.Start(AIArmyGoal.EstablishEconomy);
@@ -757,6 +761,8 @@ public sealed class AIController
         }
 
         _scouting ??= new ScoutingController(world, ai.Player.Id, network);
+        _scoutReplacementElapsed += Math.Max(0.0f,
+            (float)gameTime.ElapsedGameTime.TotalSeconds);
         MobileUnit? scout = _scoutId is Guid scoutId
             ? world.Units.FindById(scoutId) as MobileUnit
             : null;
@@ -773,17 +779,18 @@ public sealed class AIController
             _scoutId = scout?.UnitId;
             if (scout is null)
             {
-                _scoutingDecision = "Base defense ready; waiting for a soldier who can scout.";
-                return;
+                _scoutingDecision = TryRequestReplacementScout(ai.Player, world, network);
             }
-
-            _scouting.Start([scout]);
-            int defenders = world.Units.Units.Count(unit =>
-                unit.UnitId != scout.UnitId && GameplayCatalog.HasAIRoles(unit.GameplayTypeId,
-                    AIUnitRole.Defender) &&
-                unit.ArmyId == ai.Player.ArmyId && !unit.IsDying && !unit.IsEmbarked);
-            _scoutingDecision = $"Scout {scout.UnitId.ToString()[..8]} is exploring unknown terrain; " +
-                $"{defenders} soldier(s) remain at the base.";
+            else
+            {
+                _scouting.Start([scout]);
+                int defenders = world.Units.Units.Count(unit =>
+                    unit.UnitId != scout.UnitId && GameplayCatalog.HasAIRoles(unit.GameplayTypeId,
+                        AIUnitRole.Defender) &&
+                    unit.ArmyId == ai.Player.ArmyId && !unit.IsDying && !unit.IsEmbarked);
+                _scoutingDecision = $"Scout {scout.UnitId.ToString()[..8]} is exploring unknown terrain; " +
+                    $"{defenders} soldier(s) remain at the base.";
+            }
         }
 
         _scouting.Update(gameTime);
@@ -852,5 +859,61 @@ public sealed class AIController
             _scoutingDecision = $"{_scoutingDecision} | {_defensePlanner.LastDecision}";
         else if (!_infrastructure.IsAirSupportReady)
             _scoutingDecision = $"{_scoutingDecision} | {_infrastructure.LastDecision}";
+    }
+
+    private string TryRequestReplacementScout(Player actor, GameWorld world, NetworkHandler network)
+    {
+        Building[] producers = world.Units.Units.OfType<Building>()
+            .Where(building => building.ArmyId == actor.ArmyId && building.IsCompleted &&
+                !building.IsDying)
+            .OrderBy(building => building.UnitId)
+            .ToArray();
+        bool scoutQueued = producers.Any(producer => producer.ProductionQueue.Orders.Any(order =>
+            GameplayCatalog.HasAIRoles(order.UnitTypeId, AIUnitRole.Scout)));
+        if (scoutQueued)
+            return "Scouting paused; waiting for the replacement scout already in production.";
+
+        GameplayDefinition? replacement = SelectScoutReplacement(
+            producers.Select(producer => producer.GameplayTypeId));
+        if (replacement is null)
+            return "Scouting paused; no completed building can currently produce a scout.";
+
+        Building? producer = producers.FirstOrDefault(candidate =>
+            replacement.Producers.Any(registered => string.Equals(
+                registered.TypeId, candidate.GameplayTypeId, StringComparison.OrdinalIgnoreCase)));
+        if (producer is null)
+            return "Scouting paused; no completed producer is available for a replacement scout.";
+
+        PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+            PurchasableType.Unit, replacement.TypeId, actor.ArmyId, producer.UnitId));
+        Army? army = Globals.Game.Armies.Find(actor.ArmyId);
+        if (!quote.IsAvailable || army is null || army.Resources < quote.FinalPrice)
+            return $"Scouting paused; waiting for {quote.FinalPrice} resources for a replacement " +
+                $"{replacement.DisplayName}.";
+        if (_scoutReplacementElapsed < ScoutReplacementRetrySeconds)
+            return $"Scouting paused; preparing a replacement {replacement.DisplayName}.";
+
+        _ = new PlayerCommandService(network, actor.Id)
+            .TrainUnitAsync(producer.UnitId, replacement.TypeId);
+        _scoutReplacementElapsed = 0.0f;
+        return $"Scouting paused; requested replacement {replacement.DisplayName}.";
+    }
+
+    private static GameplayDefinition? SelectScoutReplacement(
+        IEnumerable<string> availableProducerTypeIds)
+    {
+        HashSet<string> producers = availableProducerTypeIds
+            .Select(GameplayCatalog.Canonicalize)
+            .Where(typeId => !string.IsNullOrWhiteSpace(typeId))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return GameplayCatalog.All
+            .Where(definition => definition.Type == PurchasableType.Unit &&
+                definition.AI is AIUnitMetadata ai &&
+                (ai.Roles & AIUnitRole.Scout) != 0 &&
+                definition.Producers.Any(producer => producers.Contains(producer.TypeId)))
+            .OrderBy(definition => definition.BasePrice)
+            .ThenByDescending(definition => definition.AI!.Scouting)
+            .ThenBy(definition => definition.TypeId, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
     }
 }

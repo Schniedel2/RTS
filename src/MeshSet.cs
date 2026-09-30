@@ -280,6 +280,28 @@ public sealed class MeshSet
         return true;
     }
 
+    public bool TryGetExhaust2WorldPosition(Matrix world, out Vector3 position)
+    {
+        EnsurePivotCache();
+        if (_pivotExhaust2 is null)
+        {
+            position = Vector3.Zero;
+            return false;
+        }
+
+        Matrix currentWorld = world;
+        foreach (AttachmentStep step in _pivotExhaust2.Steps)
+        {
+            Matrix attachmentWorld = step.Owner.RootMesh.GetPivotWorldTransform(
+                step.Pivot, currentWorld, step.Owner._parameters);
+            currentWorld = step.Attachment.LocalTransform * attachmentWorld;
+        }
+
+        position = _pivotExhaust2.Owner.RootMesh.GetPivotWorldTransform(
+            _pivotExhaust2.Pivot, currentWorld, _pivotExhaust2.Owner._parameters).Translation;
+        return true;
+    }
+
     public void Draw(Effect effect, Matrix world, AnimationPose? pose = null) =>
         RootMesh.Draw(effect, world, _parameters,
             (placeholderName, attachmentWorld) => DrawAttachment(effect, placeholderName, attachmentWorld), pose);
@@ -344,7 +366,7 @@ public sealed class MeshSet
             {
                 if (pivot.Description.Name.Equals("pivot:exhaust", StringComparison.OrdinalIgnoreCase))
                     _pivotExhaust = pivot;
-                if (pivot.Description.Name.Equals("pivot:exhaust-2", StringComparison.OrdinalIgnoreCase))
+                if (pivot.Description.Name.Equals("pivot:exhaust2", StringComparison.OrdinalIgnoreCase))
                     _pivotExhaust2 = pivot;
                 if (pivot.Description.Name.Equals("pivot:turret", StringComparison.OrdinalIgnoreCase))
                     _pivotTurretYaw = pivot;
