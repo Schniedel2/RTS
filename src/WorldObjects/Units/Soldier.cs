@@ -330,6 +330,24 @@ public class Soldier : MobileUnit
         Globals.World.Particles.EmitRifleMuzzleFlash(muzzlePosition, barrelDirection);
     }
 
+    private AnimationPlayer? _seatPosePlayer;
+    private string? _seatPoseName;
+
+    public void DrawSeated(Effect effect, Matrix seatWorld, string? poseName)
+    {
+        if (_meshSet is null || IsDying) return;
+        string selected = !string.IsNullOrWhiteSpace(poseName) && _meshSet.RootMesh.Animations.ContainsKey(poseName)
+            ? poseName : "idle";
+        if (_seatPosePlayer is null || _seatPoseName != selected)
+        {
+            _seatPosePlayer = new AnimationPlayer(_meshSet.RootMesh.Animations);
+            _seatPosePlayer.Play(selected);
+            _seatPoseName = selected;
+        }
+        // Separate, frozen pose: walking/fire overlays remain untouched for exit.
+        _meshSet.Draw(effect, seatWorld, _seatPosePlayer.EvaluatePose());
+    }
+
     public override void Draw(Effect effect)
     {
         float sinkProgress = _isDying

@@ -1242,6 +1242,24 @@ public abstract class Unit : WorldObject
             Globals.MeshHandler.DrawMesh(effect, Globals.MeshHandler.Meshes["default"], GetVisualWorldMatrix());
     }
 
+    public void DrawSeatedOccupants(Effect effect)
+    {
+        if (_meshSet is null || Occupancy is null) return;
+        foreach (OccupantAssignment occupant in Occupancy.Occupants)
+        {
+            if (occupant.Role != OccupantRole.Driver && occupant.Role != OccupantRole.Passenger) continue;
+            string seatName = occupant.Role == OccupantRole.Driver ? "pivot:seat_driver" : "pivot:seat_passenger";
+            MeshSet.MeshSetPivot? seat = _meshSet.Pivots.FirstOrDefault(pivot =>
+                pivot.Name.Equals(seatName, StringComparison.OrdinalIgnoreCase));
+            if (seat is null || Globals.World.Units.FindById(occupant.UnitId) is not Soldier soldier ||
+                !soldier.IsEmbarked || soldier.ContainerUnitId != UnitId ||
+                !TryGetAnimatedPivotWorldTransform(seat.Path, out Matrix seatWorld)) continue;
+            effect.Parameters["UnitTextureUVOffset"]?.SetValue(soldier.UnitTextureUVOffset);
+            soldier.DrawSeated(effect, seatWorld, seat.Pose);
+        }
+        effect.Parameters["UnitTextureUVOffset"]?.SetValue(UnitTextureUVOffset);
+    }
+
     public override void DrawShadow(Effect effect)
     {
         Draw(effect);

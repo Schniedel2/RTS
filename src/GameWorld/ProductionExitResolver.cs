@@ -15,7 +15,8 @@ public static class ProductionExitResolver
         MobileUnit unit,
         Vector3 spawnPosition,
         Vector3 preferredExit,
-        out Vector3 exitPosition)
+        out Vector3 exitPosition,
+        Func<Point, bool>? acceptCell = null)
     {
         GameGrid grid = world.GameGrid;
         Vector2 outward = new(preferredExit.X - building.Position.X, preferredExit.Z - building.Position.Z);
@@ -47,7 +48,7 @@ public static class ProductionExitResolver
         bool TryCandidate(Vector3 candidate)
         {
             Point cell = grid.ToCell(candidate);
-            if (!grid.Contains(cell) || !unit.MovementProfile.CanEnter(world, unit, cell) ||
+            if (!grid.Contains(cell) || acceptCell?.Invoke(cell) == false || !unit.MovementProfile.CanEnter(world, unit, cell) ||
                 !grid.IsPathfindingAllowed(unit, cell))
                 return false;
             Vector2 travel = new(candidate.X - spawnPosition.X, candidate.Z - spawnPosition.Z);

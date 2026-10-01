@@ -41,6 +41,7 @@ public sealed class AIInfrastructureController(
 
     public void Update(GameTime gameTime)
     {
+        using var measurement = PerformanceMeasurements.Measure("AI.Infrastructure");
         float elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
         _thinkElapsed += elapsed;
         _executor.Update(gameTime);

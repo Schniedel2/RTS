@@ -167,7 +167,10 @@ public class UnitHandler
     {
         foreach (Unit unit in Units)
             if (!unit.IsEmbarked && Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
+            {
                 unit.DrawShadow(effect);
+                unit.DrawSeatedOccupants(effect);
+            }
     }
 
     public void DrawBuildings(Effect effect)
@@ -186,6 +189,7 @@ public class UnitHandler
                 Globals.SkinHandler.ApplyToEffect(effect, owner?.Skin ?? PlayerSkin.Green);
             effect.Parameters["UnitTextureUVOffset"]?.SetValue(unit.UnitTextureUVOffset);
             unit.Draw(effect);
+            unit.DrawSeatedOccupants(effect);
             unit.DrawOwnerFlag(effect, ResolveArmyFlagColor(unit));
         }
     }
@@ -220,6 +224,7 @@ public class UnitHandler
                 Globals.SkinHandler.ApplyToEffect(effect, owner?.Skin ?? PlayerSkin.Green);
             effect.Parameters["UnitTextureUVOffset"]?.SetValue(unit.UnitTextureUVOffset);
             unit.Draw(effect);
+            unit.DrawSeatedOccupants(effect);
         }
     }
 

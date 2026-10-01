@@ -7,9 +7,11 @@ enable Unitcommands
 enable Gamegrid
 
 # Startreihe: Tank, Harvester und Bulldozer.
+spawn jeep 110 100 0
 spawn tank 119 100 0
 spawn harvester 128 100 0
 spawn gdi-bulldozer 137 100 0
+spawn motorbike 145 100 0
 
 # Zwei feste Hindernisse für enge Kurven und Wendemanöver.
 spawn reaktor 128 88 0

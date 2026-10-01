@@ -14,6 +14,12 @@ public struct Telemetry
     public double Pathfinding_Total = 0.0;
     public double Pathfinding_Last = 0.0;        
     public double Pathfinding_Avg = 0.0;
+    public int AIUpdate_Calls = 0;
+    public double AIUpdate_Last = 0.0;
+    public double AIUpdate_Max = 0.0;
+    public int HostGoto_Calls = 0;
+    public double HostGoto_Last = 0.0;
+    public double HostGoto_Max = 0.0;
 
     public void Reset()
     {
@@ -22,6 +28,12 @@ public struct Telemetry
         Pathfinding_Total = 0.0;
         Pathfinding_Last = 0.0;
         Pathfinding_Avg = 0.0;
+        AIUpdate_Calls = 0;
+        AIUpdate_Last = 0.0;
+        AIUpdate_Max = 0.0;
+        HostGoto_Calls = 0;
+        HostGoto_Last = 0.0;
+        HostGoto_Max = 0.0;
     }
 }
 

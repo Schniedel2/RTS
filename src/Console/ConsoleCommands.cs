@@ -47,32 +47,36 @@ public class ConsoleCommands
         _console.RegisterCommand(
             "telemetry",
             Telemetry);
+        _console.RegisterCommand("telemetry-start", _ => Telemetry(["start"]));
+        _console.RegisterCommand("telemetry-stop", _ => Telemetry(["stop"]));
+        _console.RegisterCommand("telemetry-reset", _ => Telemetry(["reset"]));
+        _console.RegisterCommand("telemetry-save", _ => Telemetry(["save"]));
         _console.RegisterCommand("enable", Enable);
-        _console.RegisterCommand("enable Lighting", Enable);
-        _console.RegisterCommand("enable Shadowmap", Enable);
-        _console.RegisterCommand("enable Shadowmappreview", Enable);
-        _console.RegisterCommand("enable Gamegrid", Enable);
-        _console.RegisterCommand("enable Unitbounds", Enable);
-        _console.RegisterCommand("enable Unittransforms", Enable);
-        _console.RegisterCommand("enable Markers", Enable);
-        _console.RegisterCommand("enable Network", Enable);
-        _console.RegisterCommand("enable Path", Enable);
-        _console.RegisterCommand("enable Unitcommands", Enable);
-        _console.RegisterCommand("enable Hide-unexplored", Enable);
-        _console.RegisterCommand("enable Fogofwar", Enable);
+        _console.RegisterCommand("enable Lighting", _ => EnableFlag("Lighting", true));
+        _console.RegisterCommand("enable Shadowmap", _ => EnableFlag("Shadowmap", true));
+        _console.RegisterCommand("enable Shadowmappreview", _ => EnableFlag("Shadowmappreview", true));
+        _console.RegisterCommand("enable Gamegrid", _ => EnableFlag("Gamegrid", true));
+        _console.RegisterCommand("enable Unitbounds", _ => EnableFlag("Unitbounds", true));
+        _console.RegisterCommand("enable Unittransforms", _ => EnableFlag("Unittransforms", true));
+        _console.RegisterCommand("enable Markers", _ => EnableFlag("Markers", true));
+        _console.RegisterCommand("enable Network", _ => EnableFlag("Network", true));
+        _console.RegisterCommand("enable Path", _ => EnableFlag("Path", true));
+        _console.RegisterCommand("enable Unitcommands", _ => EnableFlag("Unitcommands", true));
+        _console.RegisterCommand("enable Hide-unexplored", _ => EnableFlag("Hide-unexplored", true));
+        _console.RegisterCommand("enable Fogofwar", _ => EnableFlag("Fogofwar", true));
         _console.RegisterCommand("disable", Disable);
-        _console.RegisterCommand("disable Lighting", Disable);
-        _console.RegisterCommand("disable Shadowmap", Disable);
-        _console.RegisterCommand("disable Shadowmappreview", Disable);
-        _console.RegisterCommand("disable Gamegrid", Disable);
-        _console.RegisterCommand("disable Unitbounds", Disable);
-        _console.RegisterCommand("disable Unittransforms", Disable);
-        _console.RegisterCommand("disable Markers", Disable);
-        _console.RegisterCommand("disable Network", Disable);
-        _console.RegisterCommand("disable Path", Disable);
-        _console.RegisterCommand("disable Unitcommands", Disable);
-        _console.RegisterCommand("disable Hide-unexplored", Disable);
-        _console.RegisterCommand("disable Fogofwar", Disable);
+        _console.RegisterCommand("disable Lighting", _ => EnableFlag("Lighting", false));
+        _console.RegisterCommand("disable Shadowmap", _ => EnableFlag("Shadowmap", false));
+        _console.RegisterCommand("disable Shadowmappreview", _ => EnableFlag("Shadowmappreview", false));
+        _console.RegisterCommand("disable Gamegrid", _ => EnableFlag("Gamegrid", false));
+        _console.RegisterCommand("disable Unitbounds", _ => EnableFlag("Unitbounds", false));
+        _console.RegisterCommand("disable Unittransforms", _ => EnableFlag("Unittransforms", false));
+        _console.RegisterCommand("disable Markers", _ => EnableFlag("Markers", false));
+        _console.RegisterCommand("disable Network", _ => EnableFlag("Network", false));
+        _console.RegisterCommand("disable Path", _ => EnableFlag("Path", false));
+        _console.RegisterCommand("disable Unitcommands", _ => EnableFlag("Unitcommands", false));
+        _console.RegisterCommand("disable Hide-unexplored", _ => EnableFlag("Hide-unexplored", false));
+        _console.RegisterCommand("disable Fogofwar", _ => EnableFlag("Fogofwar", false));
         _console.RegisterAsyncCommand(
             "session-host",
             CreateSession);
@@ -886,22 +890,64 @@ public class ConsoleCommands
 
     private void Telemetry(string[] args)
     {   
+        if (args.Length == 1 && args[0].Equals("start", StringComparison.OrdinalIgnoreCase))
+        {
+            Globals.Telemetry.Reset();
+            PerformanceMeasurements.Reset();
+            PerformanceMeasurements.Enabled = true;
+            _console.Print("Performance measurements started (inclusive game-thread time and allocations).");
+            return;
+        }
+        if (args.Length == 1 && args[0].Equals("stop", StringComparison.OrdinalIgnoreCase))
+        {
+            PerformanceMeasurements.Enabled = false;
+            _console.Print("Performance measurements stopped; use telemetry to inspect results.");
+            return;
+        }
+        if (args.Length == 1 && args[0].Equals("save", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                string directory = Path.Combine(AppContext.BaseDirectory, "Diagnostics");
+                Directory.CreateDirectory(directory);
+                string path = Path.Combine(directory, "performance-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff", CultureInfo.InvariantCulture) + ".txt");
+                string context = $"UTC: {DateTime.UtcNow:O}\nRuntime: {System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}\nOS: {System.Runtime.InteropServices.RuntimeInformation.OSDescription}\nUnits: {_world.Units.Units.Count()}\nFrames: {Globals.Telemetry.FramesProcessed}\n";
+                context += $"Planning budget: {PlanningScheduler.MaximumStepsPerUpdate} steps / {PlanningScheduler.MaximumMillisecondsPerUpdate} ms\nPending navigation jobs: {_world.PathfindingManager.Scheduler.PendingJobs}\n";
+                File.WriteAllText(path, context + PerformanceMeasurements.Report());
+                _console.Print("Performance report saved: " + path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _console.Print("Cannot save performance report: " + ex.Message);
+            }
+            return;
+        }
         if (args.Length == 1)
         {
             switch (args[0].ToLowerInvariant())
             {
                 case "reset":
                     Globals.Telemetry.Reset();
+                    PerformanceMeasurements.Reset();
+                    break;
+                default:
+                    _console.Print("Usage: telemetry [start|stop|reset|save]");
                     break;
             }
             return;
         }
 
-        _console.Print($"Pathfinding calls: {Globals.Telemetry.TryFindPath_Calls}");
-        _console.Print($"- Avg. Pathfinding time (ms): {Globals.Telemetry.Pathfinding_Avg}");
-        _console.Print($"- Last Pathfinding time (ms): {Globals.Telemetry.Pathfinding_Last}");
-        _console.Print($"- Total Pathfinding time (ms): {Globals.Telemetry.Pathfinding_Total}");
+        _console.Print($"Path searches started (all modes): {Globals.Telemetry.TryFindPath_Calls}");
+        _console.Print($"Synchronous diagnostic path time, last / total (ms): {Globals.Telemetry.Pathfinding_Last:0.00} / {Globals.Telemetry.Pathfinding_Total:0.00}");
+        _console.Print($"AI update calls: {Globals.Telemetry.AIUpdate_Calls}");
+        _console.Print($"- Last / max AI update (ms): {Globals.Telemetry.AIUpdate_Last:0.00} / {Globals.Telemetry.AIUpdate_Max:0.00}");
+        _console.Print($"Synchronous diagnostic Host Goto calls: {Globals.Telemetry.HostGoto_Calls}");
+        _console.Print($"- Last / max Host Goto (ms): {Globals.Telemetry.HostGoto_Last:0.00} / {Globals.Telemetry.HostGoto_Max:0.00}");
         _console.Print($"Frames processed: {Globals.Telemetry.FramesProcessed}");
+        PlanningScheduler planning = _world.PathfindingManager.Scheduler;
+        _console.Print($"Navigation jobs: {planning.PendingJobs}; last update: {planning.LastSteps} steps / {planning.LastMilliseconds:0.00} ms");
+        foreach (string line in PerformanceMeasurements.Report().Split('\n'))
+            if (!string.IsNullOrWhiteSpace(line)) _console.Print(line.TrimEnd('\r'));
         _console.Print($"Tiberium cells: {_world.Tiberium.Cells.Count}");
         _console.Print($"- Render chunks: {_world.Tiberium.RenderChunkCount}");
         _console.Print($"- Visible chunks: {_world.Tiberium.LastVisibleChunkCount}");

@@ -230,6 +230,7 @@ public sealed class NetworkInput
         if (message.Type == NetworkMessageType.StartMultiplayerGameCommand)
         {
             Globals.Game.MarkMatchStarted();
+            Globals.World.PathfindingManager.Reset();
             Globals.World.Units.ClearForMatchStart();
             Globals.Game.Armies.ClearPerks();
             Globals.Game.PrepareAIPlayersForMatch(message.MatchStartAssignments ?? []);

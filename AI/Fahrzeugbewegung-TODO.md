@@ -47,15 +47,16 @@ Abarbeiten mit dem Chat-Befehl: Arbeite den nächsten offenen Punkt aus "Fahrzeu
   - Ist die Verbindung nicht sicher, bleibt der nächste bestätigte Wegpunkt verbindlich.
   - Fertig, wenn freie Kurven sichtbar geglättet werden, ohne dass Fahrzeuge Gebäudeecken oder gesperrte Zellen schneiden.
 
-- [ ] **Routenkorridor und tatsächliche Bewegung abstimmen**
-  - **Zwischenstand 30.09.2026:** Das bestätigte Lenkziel wird zwischen Updates festgehalten und begrenzt den Routenfortschritt. Die tatsächliche Kurve darf benachbarte freie Zellen verwenden; jeder Zellübergang bleibt durch `GameGrid.TryMove`, den vollständigen harten Footprint und Diagonalregeln geschützt. Die weiche Clearance folgt kontinuierlicher Position und freier Drehung, die Festfahrerkennung dem Lenkziel. Eine Regression für eine zwölf Zellen lange freie Fahrt mit 3x4-Footprint ist enthalten. Build und 521 Headless-Checks erfolgreich. Sichtbare Wiederholungsprüfung von Tank, Harvester und Bulldozer steht aus.
+- [x] **Routenkorridor und tatsächliche Bewegung abstimmen**
+  - **Abgenommen 30.09.2026:** Das bestätigte Lenkziel begrenzt den Routenfortschritt; die tatsächliche Kurve darf benachbarte freie Zellen verwenden und jeder Zellübergang bleibt durch `GameGrid.TryMove`, vollständigen harten Footprint und Diagonalregeln geschützt. Die weiche Clearance folgt kontinuierlicher Position und freier Drehung, die Festfahrerkennung dem Lenkziel. Sichtbarer Test mit Tank, Harvester und Bulldozer um Reaktorecken: Fahrzeuge fahren nach der Korrektur geschmeidig. Der 3x4-Regressionscheck umfasst zwölf freie Zellen.
   - **Empfohlenes Modell:** `gpt-6-astra` mit `xhigh` Reasoning.
   - Eine geglättete Fahrkurve bleibt innerhalb eines vom Host geprüften Korridors.
   - Das GameGrid registriert weiterhin eine konsistente harte Belegung und eine zur Rotation passende weiche Clearance.
   - Der Fortschritt auf der ursprünglichen Route bleibt eindeutig, auch wenn nicht jeder Zellmittelpunkt exakt berührt wird.
   - Fertig, wenn lange oder breite Fahrzeuge keine optischen Überschneidungen erzeugen und nicht fälschlich als festgefahren gelten.
 
-- [ ] **Beschleunigung und Bremsen ergänzen**
+- [x] **Beschleunigung und Bremsen ergänzen**
+  - **Umgesetzt 30.09.2026:** Bodenfahrzeuge führen eine signierte aktuelle Geschwindigkeit. Das gemeinsame Fahrprofil definiert Beschleunigung und Bremsverzögerung. Kurvenwinkel und der physikalische Bremsweg bis zum letzten Ziel begrenzen die Zielgeschwindigkeit; Richtungswechsel bremsen zuerst bis null. Die Geschwindigkeit wird endlich im Netzwerkzustand übertragen und vor JSON-Serialisierung defensiv bereinigt. Regressionen prüfen Anfahren, Kurvenbremsung, punktgenaue Ankunft, Rückwärtsfahrt und NaN-Schutz.
   - **Empfohlenes Modell:** `gpt-6-sol` mit `high` Reasoning.
   - Fahrzeuge besitzen aktuelle Geschwindigkeit, Beschleunigung und Bremsverzögerung.
   - Vor engen Kurven und dem Endpunkt wird rechtzeitig verzögert.
@@ -129,3 +130,6 @@ Abarbeiten mit dem Chat-Befehl: Arbeite den nächsten offenen Punkt aus "Fahrzeu
 7. Fahrzeugprofile einzeln abstimmen.
 8. Netzwerk- und Festfahr-Erkennung prüfen.
 9. Diagnose und Soak-Test ergänzen.
+# Abgleich mit Architektur-TODO 02
+
+Der gemeinsame Fahrablauf ist in MobileUnit.DriveGroundRoute zusammengeführt; der zusätzliche Car-Rangierpfad wurde entfernt. 613 automatisierte Checks bestehen inklusive neuer profilbasierter Gegenrichtungsfahrten bei mehreren Zeitschritten. Das ersetzt weder die hier vorgesehenen vollständigen Lenkungschecks noch den Soak-Test. Insbesondere bleibt die optische Abnahme mit echten Jeep-/Harvester-/Tank-/Bulldozer-Modellen in Architektur-TODO 02 offen. Bei Folgearbeiten diesen Stand verwenden und keinen zweiten Car-Fahrcontroller einführen.

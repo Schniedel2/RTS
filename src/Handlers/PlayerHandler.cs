@@ -54,10 +54,12 @@ public class PlayerHandler
 
     public static bool SingleActor(UnitAction a) => a.Type is UnitActionType.TrainUnit or UnitActionType.Research or UnitActionType.AssembleSquad or UnitActionType.DisbandSquad or UnitActionType.LeaveContainer;
     public static List<Unit> Recipients(IEnumerable<Unit> units, UnitAction a) => units.Where(u => u.Actions.Any(b => b.Type == a.Type && b.TargetObjectName == a.TargetObjectName && b.MarkerType == a.MarkerType)).ToList();
+    public static List<Unit> ControllableUnits(IEnumerable<Unit> units) => units
+        .Where(unit => Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, unit.ArmyId)).ToList();
 
     public bool SelectAction(UnitAction action, bool alternateAction)
     {
-        var recipients = Recipients(_selectedUnits, action);
+        var recipients = Recipients(ControllableUnits(_selectedUnits), action);
         if (recipients.Count == 0 || SingleActor(action) && recipients.Count != 1) return false;
         //  single-use actions are handled immediately / current action-selection remains unchanged
        switch (action.Type)
@@ -211,7 +213,7 @@ public class PlayerHandler
         _scouting.Update(gameTime);
         if (_selectedUnits.RemoveAll(unit =>
                 !unit.IsSelectable ||
-                !Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, unit.ArmyId)) > 0)
+                !_map.Visibility.IsUnitVisibleToLocalPlayer(unit)) > 0)
         {
             ActiveAction = null;
             NotifySelectionChanged();
@@ -346,7 +348,7 @@ public class PlayerHandler
 
                 if (IsLeftButtonReleased(mouse))
                 {
-                    bool firstSelection = SelectedUnits.Count == 0;
+                    bool firstSelection = ControllableUnits(_selectedUnits).Count == 0;
                     if (firstSelection && !_isSelectingUnits)
                         SelectUnits(camera, viewport, _currentSelectionRect, 1);
 
@@ -408,8 +410,9 @@ public class PlayerHandler
     private (UnitAction Action, Unit? Target, List<Unit> Units) ResolveAction(Vector3 position)
     {
         Unit? target = FindUnitAt(Globals._camera, Globals.GraphicsDevice.Viewport, Mouse.GetState().Position);
-        var selection = ActiveAction is null && _selectedUnits.Any(u => u is MobileUnit)
-            ? _selectedUnits.Where(u => u is MobileUnit).ToList() : _selectedUnits;
+        var controlled = ControllableUnits(_selectedUnits);
+        var selection = ActiveAction is null && controlled.Any(u => u is MobileUnit)
+            ? controlled.Where(u => u is MobileUnit).ToList() : controlled;
         UnitActionType type = UnitActionType.None;
         if (selection.Count > 0)
         {
@@ -462,7 +465,7 @@ public class PlayerHandler
 
         Unit[] candidates = _map.Units.Units
             .Where(unit => unit.IsSelectable &&
-                Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, unit.ArmyId) &&
+                _map.Visibility.IsUnitVisibleToLocalPlayer(unit) &&
                 selection.Intersects(unit.GetScreenBounds(camera.View, camera.Projection, viewport)))
             .ToArray();
 
@@ -485,6 +488,7 @@ public class PlayerHandler
         ClearSelection(notify: false);
         foreach (Unit unit in units)
         {
+            if (!unit.IsSelectable || !_map.Visibility.IsUnitVisibleToLocalPlayer(unit)) continue;
             _selectedUnits.Add(unit);
             unit.Select();
         }
@@ -535,6 +539,7 @@ public class PlayerHandler
         private void RequestAction(UnitAction action, Vector3 targetPosition, Unit? targetUnit, float targetAngleY, List<Unit>? recipients = null)
         {            
             recipients ??= Recipients(_selectedUnits, action);
+            recipients = ControllableUnits(recipients);
             if (recipients.Count == 0)
                 return;
 

@@ -46,6 +46,7 @@ public sealed class AIDefensePlanner(
 
     public void Update(GameTime gameTime)
     {
+        using var measurement = PerformanceMeasurements.Measure("AI.DefensePlanner");
         float elapsed = Math.Max(0.0f, (float)gameTime.ElapsedGameTime.TotalSeconds);
         _thinkElapsed += elapsed;
         _crewActionElapsed += elapsed;

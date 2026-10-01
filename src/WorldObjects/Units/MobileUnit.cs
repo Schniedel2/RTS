@@ -10,7 +10,8 @@ namespace RTS;
 
 public sealed record MobileUnitState(float X, float Y, float Z, float YawDegrees, bool IsMoving,
     Guid? SquadLeaderId = null, GroundNavigationState? Navigation = null,
-    int PathProgress = 0, long NavigationRevision = 0);
+    int PathProgress = 0, long NavigationRevision = 0, float CurrentSpeed = 0.0f,
+    float ReverseClearanceRemaining = 0.0f);
 
 public enum MovementStatus { Idle, FollowingRoute, Waiting, Planning, Blocked }
 public sealed record QueuedMovementState(float X, float Z, Point[]? Route);
@@ -26,6 +27,8 @@ public class MobileUnit : Unit
     public override string StateTypeId => "mobile-unit-state";
     public int _pathRequestId;
     public float MoveSpeed { get; set; } = 8.0f;
+    /// <summary>Signed ground speed: positive forward, negative reverse.</summary>
+    public float CurrentSpeed { get; private set; }
     public float RotationSpeed { get; set; } = MathHelper.Pi;
     public float WaypointArrivalRadius { get; set; } = 0.2f;
     /// <summary>Optional driving data for forward-moving ground vehicles only.</summary>
@@ -125,9 +128,11 @@ public class MobileUnit : Unit
     internal static bool IsMovementAuthority =>
         Globals.Game?.Network is not { IsConnected: true, IsHost: false };
     public MovementStatus MovementStatus { get; private set; }
+    public int MovementRetryCount => _movementRetryCount;
     private float _retryMovementSeconds;
     private int _movementRetryCount;
     private bool _turningTowardPath;
+    private float _reverseClearanceRemaining;
     private Point? _previousRouteCell;
     private int _pathProgress;
     private long _navigationRevision;
@@ -251,8 +256,9 @@ public class MobileUnit : Unit
         toTarget.Y = 0.0f;
 
         float distanceToTarget = toTarget.Length();
-        float movementDistance = MoveSpeed *
-            (float)gameTime.ElapsedGameTime.TotalSeconds;
+        float deltaSeconds = Math.Max(0.0f, (float)gameTime.ElapsedGameTime.TotalSeconds);
+        if (!float.IsFinite(deltaSeconds)) deltaSeconds = 0.0f;
+        float movementDistance = Math.Max(0.0f, MoveSpeed) * deltaSeconds;
 
         // Vehicles normally use a generous arrival radius so they do not
         // wobble around ordinary destinations. At the final construction
@@ -290,47 +296,147 @@ public class MobileUnit : Unit
             return;
         }
 
+        DriveGroundRoute(gameTime, desiredDirection, distanceToTarget, arrivalRadius, deltaSeconds);
+    }
+
+    // All forward-driving ground units share this controller. Car and its
+    // subclasses configure profiles rather than maintaining another maneuver.
+    private void DriveGroundRoute(GameTime gameTime, Vector3 direction,
+        float distanceToTarget, float arrivalRadius, float seconds)
+    {
         Vector3 forward = GetHorizontalDirection(Vector3.Forward);
-        Vector3 steeringDirection = desiredDirection;
         GroundSteeringProfile? steering = GroundSteering;
-
-        if (steering is { AllowReverse: true } &&
-            Vector3.Dot(forward, steeringDirection) < steering.ReverseStartAlignment &&
-            distanceToTarget <= steering.ClampedReverseMaximumDistance)
+        if (_reverseClearanceRemaining <= 0.001f)
+            _reverseClearanceRemaining = 0.0f;
+        if (_reverseClearanceRemaining > 0.0f && steering is { AllowReverse: true })
         {
-            forward = TurnTowards(-steeringDirection, gameTime,
-                steering.MovingTurnRadiansPerSecond);
-            if (Vector3.Dot(-forward, steeringDirection) < steering.ReverseExitAlignment)
-            {
-                _turningTowardPath = true;
-                return;
-            }
-
-            float reverseDistance = Math.Min(
-                distanceToTarget,
-                steering.ClampedReverseSpeed * (float)gameTime.ElapsedGameTime.TotalSeconds);
-            TrackMovementAttempt(TryMoveTo(Position - forward * reverseDistance), gameTime);
+            DriveReverseClearance(gameTime, steering, seconds, forward);
             return;
         }
-
-        if (ShouldTurnInPlace(forward, steeringDirection))
+        bool reverse = steering is { AllowReverse: true } &&
+            steering.ClampedReverseSpeed > 0 &&
+            Vector3.Dot(forward, direction) < steering.ReverseStartAlignment &&
+            IsRemainingRouteWithin(steering.ClampedReverseMaximumDistance);
+        Vector3 heading = reverse ? -direction : direction;
+        bool stationaryTurn = CanTurnInPlace && (reverse
+            ? Vector3.Dot(forward, heading) < steering!.ReverseExitAlignment
+            : ShouldTurnInPlace(forward, heading));
+        if (stationaryTurn)
         {
-            TurnTowards(steeringDirection, gameTime,
-                steering?.StationaryTurnRadiansPerSecond ?? RotationSpeed);
+            if (steering is not null) ApproachGroundSpeed(0, steering, seconds);
+            TurnTowards(heading, gameTime, steering?.StationaryTurnRadiansPerSecond ?? RotationSpeed);
             _turningTowardPath = true;
             return;
         }
 
-        // Keep correcting the heading while moving. Previously units which
-        // could turn in place stopped steering as soon as they crossed the
-        // coarse forward threshold, producing a left/right zig-zag.
-        forward = TurnTowards(steeringDirection, gameTime,
-            steering?.MovingTurnRadiansPerSecond ?? RotationSpeed);
+        float targetSpeed = reverse ? -steering!.ClampedReverseSpeed : Math.Max(0, MoveSpeed);
+        if (steering is not null)
+        {
+            targetSpeed *= steering.GetCurveSpeedFactor(Vector3.Dot(forward, heading));
+            float remaining = Math.Max(0, GetRemainingRouteDistance() - arrivalRadius);
+            float stoppingSpeed = MathF.Sqrt(2 * steering.ClampedBrakingDeceleration * remaining);
+            targetSpeed = MathF.CopySign(Math.Min(Math.Abs(targetSpeed), stoppingSpeed), targetSpeed);
+            ApproachGroundSpeed(targetSpeed, steering, seconds);
+        }
+        else CurrentSpeed = targetSpeed;
 
-        float alignment = Vector3.Dot(forward, steeringDirection);
-        movementDistance *= steering?.GetCurveSpeedFactor(alignment) ?? 1.0f;
-        movementDistance = Math.Min(movementDistance, distanceToTarget);
-        TrackMovementAttempt(TryMoveTo(Position + forward * movementDistance), gameTime);
+        // Brake before changing travel direction; a steering wheel alone must
+        // not rotate a stopped chassis during the direction change.
+        if (CurrentSpeed == 0 || Math.Sign(CurrentSpeed) != Math.Sign(targetSpeed))
+        {
+            _turningTowardPath = true;
+            return;
+        }
+        float distance = Math.Min(distanceToTarget, Math.Abs(CurrentSpeed) * seconds);
+        Matrix beforeTurn = Transform;
+        float turnRate = steering?.MovingTurnRadiansPerSecond ?? RotationSpeed;
+        // Bound yaw by travelled distance for wheeled vehicles, including while
+        // accelerating. At cruise speed this retains the configured turn rate.
+        if (!CanTurnInPlace)
+            turnRate *= Math.Min(1, Math.Abs(CurrentSpeed) /
+                Math.Max(0.01f, reverse ? steering!.ClampedReverseSpeed : MoveSpeed));
+        forward = TurnTowards(heading, gameTime, turnRate);
+        bool moved = TryMoveAfterTurn(
+            Position + forward * MathF.CopySign(distance, CurrentSpeed), beforeTurn);
+        if (!moved && !reverse && !CanTurnInPlace &&
+            steering is { AllowReverse: true } && steering.ClampedReverseSpeed > 0.0f &&
+            (Vector3.Dot(GetHorizontalDirection(Vector3.Forward), direction) < 0.5f ||
+                _movementRetryCount > 0))
+        {
+            // A distant destination normally favors forward travel, but a
+            // wheeled vehicle beside a front obstacle first needs turning room.
+            CurrentSpeed = 0.0f;
+            float cellSize = Globals.World.GameGrid.CellSize;
+            float turningRadius = Math.Max(0.0f, MoveSpeed) /
+                Math.Max(0.01f, steering.MovingTurnRadiansPerSecond);
+            _reverseClearanceRemaining = Math.Clamp(
+                turningRadius + (Math.Max(Width, Length) * 0.5f + 0.75f) * cellSize,
+                cellSize * 1.5f,
+                cellSize * 6.0f);
+            DriveReverseClearance(gameTime, steering, seconds,
+                GetHorizontalDirection(Vector3.Forward));
+            return;
+        }
+        TrackMovementAttempt(moved, gameTime);
+    }
+
+    private void DriveReverseClearance(GameTime gameTime, GroundSteeringProfile steering,
+        float seconds, Vector3 forward)
+    {
+        ApproachGroundSpeed(-steering.ClampedReverseSpeed, steering, seconds);
+        if (CurrentSpeed >= 0.0f)
+        {
+            _turningTowardPath = true;
+            return;
+        }
+
+        float distance = Math.Min(_reverseClearanceRemaining, Math.Abs(CurrentSpeed) * seconds);
+        Vector3 before = Position;
+        bool moved = distance > 0.0f && TryMoveTo(Position - forward * distance);
+        if (moved)
+        {
+            _reverseClearanceRemaining = Math.Max(0.0f,
+                _reverseClearanceRemaining - MathF.Sqrt(HorizontalDistanceSquared(before, Position)));
+            if (_reverseClearanceRemaining <= 0.001f)
+                _reverseClearanceRemaining = 0.0f;
+        }
+        else
+        {
+            _reverseClearanceRemaining = 0.0f;
+        }
+        TrackMovementAttempt(moved, gameTime);
+    }
+    private void ApproachGroundSpeed(float targetSpeed, GroundSteeringProfile steering, float seconds)
+    {
+        if (!float.IsFinite(CurrentSpeed)) CurrentSpeed = 0.0f;
+        targetSpeed = float.IsFinite(targetSpeed) ? targetSpeed : 0.0f;
+        float rate = CurrentSpeed != 0.0f && Math.Sign(CurrentSpeed) != Math.Sign(targetSpeed) ||
+            Math.Abs(targetSpeed) < Math.Abs(CurrentSpeed)
+            ? steering.ClampedBrakingDeceleration
+            : steering.ClampedAcceleration;
+        CurrentSpeed = MathHelper.Clamp(targetSpeed,
+            CurrentSpeed - rate * seconds,
+            CurrentSpeed + rate * seconds);
+        if (!float.IsFinite(CurrentSpeed)) CurrentSpeed = 0.0f;
+    }
+
+    protected bool IsRemainingRouteWithin(float maximumDistance)
+        => GetRemainingRouteDistance(maximumDistance) <= maximumDistance;
+
+    private float GetRemainingRouteDistance(float stopAfter = float.PositiveInfinity)
+    {
+        if (_plannedPath.Count == 0) return 0.0f;
+
+        float distance = 0.0f;
+        Vector3 previous = Position;
+        foreach (Point cell in _plannedPath)
+        {
+            Vector3 waypoint = Globals.World.GameGrid.ToWorldPosition(cell, Position.Y);
+            distance += MathF.Sqrt(HorizontalDistanceSquared(previous, waypoint));
+            if (distance > stopAfter) return distance;
+            previous = waypoint;
+        }
+        return float.IsFinite(distance) ? distance : float.MaxValue;
     }
 
     private bool ShouldTurnInPlace(Vector3 forward, Vector3 desiredDirection) =>
@@ -349,6 +455,8 @@ public class MobileUnit : Unit
             }
             return;
         }
+
+        CurrentSpeed = 0.0f;
 
         if (MovementStatus != MovementStatus.Waiting)
         {
@@ -437,6 +545,28 @@ public class MobileUnit : Unit
 
     protected Vector3 TurnTowards(Vector3 desiredDirection, GameTime gameTime) =>
         TurnTowards(desiredDirection, gameTime, RotationSpeed);
+
+    /// <summary>
+    /// Restores a tentative steering turn when a vehicle which cannot turn in
+    /// place failed to translate in the same update.  Turning changes the soft
+    /// clearance immediately, so keep the grid representation in sync too.
+    /// </summary>
+    protected void RestoreStationaryTurn(Matrix transformBeforeTurn)
+    {
+        if (CanTurnInPlace) return;
+
+        Transform = transformBeforeTurn;
+        Globals.World.GameGrid.TryUpdateFootprint(this);
+    }
+
+    protected bool TryMoveAfterTurn(Vector3 targetPosition, Matrix transformBeforeTurn)
+    {
+        Vector3 positionBeforeMove = Position;
+        bool moved = TryMoveTo(targetPosition);
+        if (!moved || HorizontalDistanceSquared(positionBeforeMove, Position) == 0)
+            RestoreStationaryTurn(transformBeforeTurn);
+        return moved;
+    }
 
     protected Vector3 TurnTowards(
         Vector3 desiredDirection,
@@ -693,6 +823,7 @@ public class MobileUnit : Unit
         CurrentCommand = command;
         _pathRequestId++;
         _movementRetryCount = 0;
+        _reverseClearanceRemaining = 0.0f;
         _retryMovementSeconds = 0;
         MovementStatus = MovementStatus.Planning;
         NavigationChanged();
@@ -780,25 +911,53 @@ public class MobileUnit : Unit
 
         Point[] approaches = candidates.ToArray();
         int offset = approaches.Length == 0 ? 0 : (_movementRetryCount * 4) % approaches.Length;
-        foreach (Point candidate in approaches.Skip(offset).Concat(approaches.Take(offset)).Take(4))
+        Point[] selected = approaches.Skip(offset).Concat(approaches.Take(offset)).Take(4).ToArray();
+        if (selected.Length == 0)
         {
-            Vector3 world = map.GameGrid.ToWorldPosition(candidate, Position.Y);
-            Vector2 target = new(world.X, world.Z);
-            if (!map.PathfindingManager.TryFindPath(this, start, target, out List<Point> route))
-                continue;
-
-            bool accepted = StartGoto(map, new GotoCommand(target), route);
-            if (accepted)
+            CurrentCommand ??= new GotoCommand(new Vector2(constructionSite.Position.X, constructionSite.Position.Z));
+            OnPathSearchFailed();
+            return true;
+        }
+        CurrentCommand = new GotoCommand(new Vector2(constructionSite.Position.X, constructionSite.Position.Z));
+        MovementStatus = MovementStatus.Planning;
+        int requestId = ++_pathRequestId;
+        List<Point>? chosenRoute = null;
+        Vector2 chosenTarget = default;
+        bool Valid() => _pathRequestId == requestId && TargetBuildingId == constructionSite.UnitId &&
+            !IsDying && !IsEmbarked && map.GameGrid.IsRegistered(this) &&
+            ReferenceEquals(map.Units.FindById(constructionSite.UnitId), constructionSite) &&
+            !constructionSite.IsDying && !constructionSite.IsCompleted;
+        IEnumerable<int> Work()
+        {
+            foreach (Point candidate in selected)
             {
-                TargetBuildingId = constructionSite.UnitId;
-                NavigationChanged();
-                return true;
+                yield return 0;
+                Vector3 world = map.GameGrid.ToWorldPosition(candidate, Position.Y);
+                Vector2 target = new(world.X, world.Z);
+                Pathfinder.Search search = map.PathfindingManager.CreateSearch(this, start, target);
+                foreach (int step in search.Work()) yield return step;
+                if (!search.Succeeded) continue;
+                chosenRoute = search.Path;
+                chosenTarget = target;
+                yield break;
             }
         }
-
-        CurrentCommand ??= new GotoCommand(new Vector2(constructionSite.Position.X, constructionSite.Position.Z));
-        OnPathSearchFailed();
+        map.PathfindingManager.Scheduler.Enqueue(Work(), Valid, () =>
+        {
+            if (chosenRoute is null || map.GameGrid.ToCell(Position) != start) { OnPathSearchFailed(); return; }
+            if (StartGoto(map, new GotoCommand(chosenTarget), chosenRoute))
+            { TargetBuildingId = constructionSite.UnitId; NavigationChanged(); }
+        }, () => { if (Valid()) OnPathSearchFailed(); });
         return true;
+    }
+
+    internal void MarkHostPlanning(Vector2 target)
+    {
+        // The ordered Stop has already frozen the old route. Keep the accepted
+        // intent visible to AI controllers while the host builds its replacement.
+        CurrentCommand = new GotoCommand(target);
+        MovementStatus = MovementStatus.Planning;
+        NavigationChanged();
     }
 
     public void SetPlannedPath(IReadOnlyList<Point> path)
@@ -825,6 +984,8 @@ public class MobileUnit : Unit
         MovementStatus = MovementStatus.Idle;
         NavigationChanged();
         _blockedMovementSeconds = 0.0f;
+        CurrentSpeed = 0.0f;
+        _reverseClearanceRemaining = 0.0f;
         ResetMovementProgressWatchdog();
         _commandQueue?.Clear();
         if (CurrentCommand is not null || _plannedPath.Count > 0)
@@ -875,6 +1036,7 @@ public class MobileUnit : Unit
     internal UnitState GetMovementState(bool includeNavigation)
     {
         float yaw = GetYawDegrees(Transform);
+        float replicatedSpeed = float.IsFinite(CurrentSpeed) ? CurrentSpeed : 0.0f;
         bool isMoving = CurrentCommand is not null || _plannedPath.Count > 0 || IsLeavingBuilding;
         GroundNavigationState? navigation = includeNavigation ? new(
             CurrentCommand?.Target.X, CurrentCommand?.Target.Y, _plannedPath.ToArray(),
@@ -884,7 +1046,8 @@ public class MobileUnit : Unit
         return new UnitState(UnitId, StateRevision, StateTypeId, StateVersion,
             JsonSerializer.SerializeToUtf8Bytes(new MobileUnitState(
                 Position.X, Position.Y, Position.Z, yaw, isMoving, SquadLeaderId,
-                navigation, _pathProgress, _navigationRevision), NetworkJson.Options));
+                navigation, _pathProgress, _navigationRevision, replicatedSpeed,
+                _reverseClearanceRemaining), NetworkJson.Options));
     }
 
     public override void ApplyState(UnitState state)
@@ -894,8 +1057,12 @@ public class MobileUnit : Unit
             return;
         MobileUnitState? data = JsonSerializer.Deserialize<MobileUnitState>(state.Payload, NetworkJson.Options);
         if (data is null || !float.IsFinite(data.X) || !float.IsFinite(data.Y) ||
-            !float.IsFinite(data.Z) || !float.IsFinite(data.YawDegrees))
+            !float.IsFinite(data.Z) || !float.IsFinite(data.YawDegrees) ||
+            !float.IsFinite(data.CurrentSpeed) || !float.IsFinite(data.ReverseClearanceRemaining))
             return;
+
+        CurrentSpeed = data.CurrentSpeed;
+        _reverseClearanceRemaining = Math.Max(0.0f, data.ReverseClearanceRemaining);
 
         Matrix oldVisual = GetVisualWorldMatrix();
         Matrix transform = Matrix.CreateRotationY(MathHelper.ToRadians(data.YawDegrees));

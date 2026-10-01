@@ -127,3 +127,5 @@ NotifyUnitsSelected(Guid playerId, Guid[] unitIds, uint selectionRevision)
 Broadcast ist bewusst der einfache Weg: Es gibt keine Sonder-Routing-Logik und keine
 Autorisierung für diese reine UI-Nachricht. Spätere Fog-of-War- oder Zuschauerregeln
 können die Darstellung einschränken.
+
+Debug-Inspektion (01.10.2026): Sichtbare fremde Units können per Klick oder Auswahlrahmen ausgewählt werden. Die vorhandene Befehlsanzeige gilt auch für diese Auswahl. Auswahl und Steuerungsberechtigung sind getrennt: ActionPanel, Kontextaktionen, direkte Action-Auswahl und RequestAction verwenden ausschließlich lokal kontrollierbare Empfänger. Eine reine Fremdauswahl zeigt keine normalen Actions; der nächste Weltklick wählt erneut aus. Verschwindet eine Unit aus der Sicht oder ist sie nicht mehr auswählbar, wird sie aus der Auswahl entfernt. Auswahlgruppen beachten ebenfalls die Sichtbarkeit. Noch keine speziellen Debug-Actions oder Team-Anfragen implementiert. Build fehlerfrei; 656 Checks, einschließlich gemischter Empfänger und abgewiesener fremder Stop-/Goto-Actions. Keine grafische Abnahme behauptet.

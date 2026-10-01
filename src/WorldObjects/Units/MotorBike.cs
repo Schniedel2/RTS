@@ -1,14 +1,16 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using MonoGame.Framework.Devices.Sensors;
 using System;
 using System.Collections.Generic;
 using System.IO;
 
 namespace RTS;
 
-public class Jeep : Car
+public class MotorBike : Car
 {
-    public override string GameplayTypeId => "jeep";
+    public override string GameplayTypeId => "motorbike";
+    public override bool CanFireWeapon => false;
     // The turret angle is local to the hull.  Keeping it this way means that a
     // rotating hull does not automatically drag the turret around in world space.
     public override IReadOnlyList<UnitAction> Actions =>
@@ -16,39 +18,42 @@ public class Jeep : Car
         new(UnitActionType.Goto, "Goto", 0, 1),
         new(UnitActionType.Scouting, "AI: Scouting", 5, 1),
         new(UnitActionType.MoveAway, "AI: Move away", 4, 1),
-        new(UnitActionType.Attack, "Attack", 1, 1),
         new(UnitActionType.Follow, "Follow", 6, 1),
         new(UnitActionType.LeaveContainer, "Leave", 5, 1),
         new(UnitActionType.Stop, "Stop", 7, 1)
     ];
 
-    public Jeep(Vector3 position, Guid unitId, IMovementProfile? movementProfile = null)
+    public MotorBike(Vector3 position, Guid unitId, IMovementProfile? movementProfile = null)
         : base(position, unitId, movementProfile)
     {
-        MoveSpeed = 8.0f;
+        MoveSpeed = 16.0f;
         RotationSpeed = 4.0f;
         HeadingSnapAngle = 0.0f;
         CanOnlyMoveForward = true;
         // A wheeled vehicle needs translational movement to change its hull
         // direction. CanTurnInPlace is reserved for tracked/skid-steer units.
-        CanTurnInPlace = false;
+        CanTurnInPlace = true;
         GroundSteering = new(
+            Acceleration: 8.0f,
             MovingTurnDegreesPerSecond: MathHelper.ToDegrees(RotationSpeed),
             StationaryTurnDegreesPerSecond: MathHelper.ToDegrees(RotationSpeed),
             TurnInPlaceThresholdDegrees: 110.0f,
             MinimumCurveSpeedFactor: 0.55f,
             AllowReverse: true,
-            ReverseSpeed: 2.0f,
+            ReverseSpeed: 1.0f,
             ReverseStartAngleDegrees: 110.0f,
             ReverseAlignmentToleranceDegrees: 10.0f,
-            ReverseMaximumDistance: 5.0f);
+            ReverseMaximumDistance: 1.0f);
     
         TargetAngleMinimumDegrees = -120.0f;
         TargetAngleMaximumDegrees = 120.0f;
 
         AttackCooldown = 2.0f;
 
-        SetMesh("blue-pick-up-truck", deriveDimensions: true);
+        SetMesh("motorbike-1", deriveDimensions: true);
+        //_meshSet.SetAttachment("pivot:turret", Globals.MeshHandler.Meshes["TankTurret-1"]);
+        //_meshSet.SetAttachmentPath("pivot:turret/pivot:barrel", Globals.MeshHandler.Meshes["TankBarrel-2"]);
+
     }
 
     public override void Draw(Effect effect)

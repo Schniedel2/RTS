@@ -2,6 +2,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using RTS.Mapping;
 
 namespace RTS;
@@ -316,7 +317,7 @@ public sealed class MeshNode(string name, Vector3 pivot)
 /// <summary>A named, renderable model built from a <see cref="MeshNode"/> hierarchy and a set of render parameters.</summary>
 public class Mesh
 {
-    public sealed record Pivot(string Name, IReadOnlyList<MeshNode> NodePath);
+    public sealed record Pivot(string Name, IReadOnlyList<MeshNode> NodePath, string? Pose = null);
     public const string TurretAngle = "TurretAngle";
     public const string WheelAngleY = "HullAngleY";
     public const string WheelAngle = "WheelAngle";
@@ -529,7 +530,11 @@ public class Mesh
     {
         List<MeshNode> path = [.. ancestors, node];
         if (node.Name.StartsWith("pivot:", StringComparison.OrdinalIgnoreCase))
-            pivots.Add(new Pivot(node.Name, path));
+        {
+            string[] parts = node.Name.Split('|', StringSplitOptions.TrimEntries);
+            string? pose = parts.Skip(1).FirstOrDefault(part => part.StartsWith("pose:", StringComparison.OrdinalIgnoreCase));
+            pivots.Add(new Pivot(parts[0], path, pose is null ? null : pose[5..].Trim()));
+        }
         foreach (MeshNode child in node.Children)
             CollectPivots(child, path, pivots);
     }

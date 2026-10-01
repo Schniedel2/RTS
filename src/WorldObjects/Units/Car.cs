@@ -1,5 +1,5 @@
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
+
 using System;
 using System.Collections.Generic;
 
@@ -20,7 +20,7 @@ public class Car : MobileUnit
         new(UnitActionType.Stop, "Stop", 7, 1)
     ];
         
-    private bool _isManeuvering;
+
 
     public Car(
         Vector3 position,
@@ -55,72 +55,4 @@ public class Car : MobileUnit
             ReverseMaximumDistance: 6.0f);
     }
 
-    public override bool TryReceiveGotoCommand(GameWorld map, GotoCommand command, bool appendToQueue = false, IReadOnlyList<Point>? route = null)
-    {
-        bool accepted = base.TryReceiveGotoCommand(map, command, appendToQueue, route);
-        _isManeuvering = accepted && CanOnlyMoveForward && !CanTurnInPlace &&
-            GroundSteering?.AllowReverse == true;
-
-        return accepted;
-    }
-
-    protected override void MoveAlongPath(GameTime gameTime)
-    {
-        if (PlannedPath.Count == 0) return;
-        if (!_isManeuvering)
-        {
-            base.MoveAlongPath(gameTime);
-            return;
-        }
-
-        if (!CurrentCommand.HasValue)
-        {
-            _isManeuvering = false;
-            return;
-        }
-
-        // Align with the first path segment, not with the final command target.
-        // The latter may lie behind a building which the calculated route is
-        // deliberately leading around. Reversing towards that final target can
-        // otherwise wedge a vehicle into the building before it starts its path.
-        Vector2 target = CurrentCommand.Value.Target;
-        if (PlannedPath.Count > 0)
-        {
-            Vector3 waypoint = Globals.World.GameGrid.ToWorldPosition(PlannedPath[0], Position.Y);
-            target = new Vector2(waypoint.X, waypoint.Z);
-        }
-        Vector3 desiredDirection = new(
-            target.X - Position.X,
-            0.0f,
-            target.Y - Position.Z);
-
-        if (desiredDirection == Vector3.Zero)
-        {
-            _isManeuvering = false;
-            return;
-        }
-
-        desiredDirection.Normalize();
-        GroundSteeringProfile steering = GroundSteering!;
-        Vector3 forward = TurnTowards(desiredDirection, gameTime,
-            steering.MovingTurnRadiansPerSecond);
-        float directionDot = Vector3.Dot(forward, desiredDirection);
-
-        if (directionDot >= steering.ReverseExitAlignment)
-        {
-            _isManeuvering = false;
-
-            //if (!TryReplanPath(map))
-            //    ClearCommand();
-
-            return;
-        }
-
-        float movementDistance = steering.ClampedReverseSpeed *
-            (float)gameTime.ElapsedGameTime.TotalSeconds;
-        // Reversing is only a visual maneuvering aid. If the space behind the
-        // vehicle is occupied, keep rotating instead of repeatedly driving
-        // into the blocker. TurnTowards above still advances the heading.
-        _ = TryMoveTo(Position - forward * movementDistance);
-    }
 }

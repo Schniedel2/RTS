@@ -87,6 +87,7 @@ public sealed class ArmyGoalController
     public void Update(GameTime gameTime, Player actor, GameWorld world, NetworkHandler network,
         Action<AIPlayerStatus>? setStatus = null)
     {
+        using var measurement = PerformanceMeasurements.Measure("AI.ArmyGoals");
         if (!network.IsHost || Goal == AIGoalState.WaitingForMatch)
             return;
 
@@ -589,6 +590,7 @@ public sealed class ArmyGoalController
     internal static bool TryFindBuildingSite(GameWorld world, Building preview, Vector3 searchOrigin,
         int minimumRadius, int maximumRadius, out Vector3 position)
     {
+        using var measurement = PerformanceMeasurements.Measure("AI.BuildSiteSearch");
         Point center = world.GameGrid.ToCell(searchOrigin);
         foreach (Point cell in CandidateCells(center, minimumRadius, maximumRadius))
         {

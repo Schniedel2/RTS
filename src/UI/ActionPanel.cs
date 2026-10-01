@@ -42,6 +42,7 @@ public sealed class ActionPanel
         _disabledActions.Clear();
         _actionCosts.Clear();
         _missingPerks.Clear();
+        selectedUnits = PlayerHandler.ControllableUnits(selectedUnits);
         if (selectedUnits.Count == 0)
         {
             _activeAction = null;

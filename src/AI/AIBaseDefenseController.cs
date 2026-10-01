@@ -53,6 +53,7 @@ public sealed class AIBaseDefenseController(
 
     public void Update(GameTime gameTime, Guid? scoutId)
     {
+        using var measurement = PerformanceMeasurements.Measure("AI.BaseDefense");
         float elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
         _thinkElapsed += elapsed;
         _orderElapsed += elapsed;
@@ -103,7 +104,7 @@ public sealed class AIBaseDefenseController(
             _targetId = target.UnitId;
             _assignedDefenders = defenderIds;
             _orderElapsed = 0.0f;
-            _ = EngageAsync(defenderIds, target);
+            _ = EngageAsync(defenders, target, targetChanged || defendersChanged);
         }
         LastDecision = $"{defenderIds.Length} defender(s) intercept visible threat {ShortId(target.UnitId)}.";
     }
@@ -123,9 +124,20 @@ public sealed class AIBaseDefenseController(
             .FirstOrDefault();
     }
 
-    private async Task EngageAsync(Guid[] defenderIds, Unit target)
+    private async Task EngageAsync(Unit[] defenders, Unit target, bool assignmentChanged)
     {
-        await _commands.GotoAsync(defenderIds, target.Position);
+        // Attack orders are refreshed periodically, but an already travelling
+        // defender does not need another complete A* route every two seconds.
+        // Re-route the whole group when its assignment changes; afterwards only
+        // units which have exhausted their route need a new approach order.
+        Guid[] movingIds = defenders
+            .Where(unit => assignmentChanged || unit.CurrentCommand is null &&
+                (unit is not MobileUnit mobile || mobile.PlannedPath.Count == 0))
+            .Select(unit => unit.UnitId)
+            .ToArray();
+        if (movingIds.Length > 0)
+            await _commands.GotoAsync(movingIds, target.Position);
+        Guid[] defenderIds = defenders.Select(unit => unit.UnitId).ToArray();
         await _commands.AttackTargetAsync(defenderIds, target.UnitId);
     }
 

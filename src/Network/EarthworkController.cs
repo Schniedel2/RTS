@@ -18,6 +18,7 @@ public sealed class EarthworkController(GameWorld world, Guid hostId, Action<Net
         public float WorkTime, RetryTime, StalledTime;
         public Vector3 LastPosition = worker.Position;
         public Point? Approach;
+        public bool Planning;
     }
     private readonly Dictionary<Guid, Job> _jobs = [];
     public int ActiveJobs => _jobs.Count;
@@ -111,15 +112,7 @@ public sealed class EarthworkController(GameWorld world, Guid hostId, Action<Net
             if (job.Approach is not null && worker.CurrentCommand is not null && job.StalledTime < 5) continue;
             if (job.RetryTime > 0) continue;
             job.RetryTime = 2; job.WorkTime = 0; job.StalledTime = 0;
-            Point? destination = FindApproach(worker, cell, reach);
-            if (destination is not Point next) continue; // Wait; occupied routes may open again.
-            job.Approach = next;
-            Vector3 nextPosition = world.GameGrid.ToWorldPosition(next, 0);
-            if (world.GameGrid.ToCell(worker.Position) == next) continue;
-            var command = new NetworkMessage(NetworkMessageType.GotoCommand, hostId, UnitIds: new[] { worker.UnitId },
-                X: nextPosition.X, Z: nextPosition.Z, EarthworkOrderId: job.Order.Id);
-            worker.TryReceiveGotoCommand(world, new GotoCommand(new(nextPosition.X, nextPosition.Z)));
-            publish(command);
+            if (!job.Planning) QueueApproach(job, cell, reach);
         }
     }
 
@@ -149,8 +142,9 @@ public sealed class EarthworkController(GameWorld world, Guid hostId, Action<Net
         } while (remaining > 0.0001f);
     }
 
-    private Point? FindApproach(GDIBulldozer worker, Point cell, float reach)
+    private void QueueApproach(Job job, Point cell, float reach)
     {
+        GDIBulldozer worker = job.Worker;
         Vector3 target = world.GameGrid.ToWorldPosition(cell, 0);
         List<Point> candidates = [];
         int radius = (int)MathF.Ceiling(reach / world.GameGrid.CellSize);
@@ -162,11 +156,38 @@ public sealed class EarthworkController(GameWorld world, Guid hostId, Action<Net
                     worker.MovementProfile.CanEnter(world, worker, p) && world.GameGrid.IsPathfindingAllowed(worker, p)) candidates.Add(p);
             }
         // Prefer driving across the actual work tile, with reachable blade positions as fallback.
-        foreach (Point p in candidates.OrderBy(p => Vector2.DistanceSquared(p.ToVector2(), cell.ToVector2())))
+        Point? chosen = null;
+        List<Point>? route = null;
+        int requestId = worker._pathRequestId;
+        Point start = world.GameGrid.ToCell(worker.Position);
+        bool Valid() => _jobs.TryGetValue(worker.UnitId, out Job? current) && ReferenceEquals(current, job) &&
+            !worker.IsDying && !worker.IsEmbarked && worker._pathRequestId == requestId &&
+            job.Index < job.Cells.Count && job.Cells[job.Index] == cell;
+        IEnumerable<int> Work()
         {
-            Vector3 point = world.GameGrid.ToWorldPosition(p, 0);
-            if (new Pathfinder(world).TryFindPath_AStar(worker, worker.MovementProfile, new(point.X, point.Z), out _)) return p;
+            foreach (Point p in candidates.OrderBy(p => Vector2.DistanceSquared(p.ToVector2(), cell.ToVector2())))
+            {
+                yield return 0;
+                Vector3 point = world.GameGrid.ToWorldPosition(p, 0);
+                Pathfinder.Search search = world.PathfindingManager.CreateSearch(worker, start, new(point.X, point.Z));
+                foreach (int step in search.Work()) yield return step;
+                if (!search.Succeeded) continue;
+                chosen = p; route = search.Path; yield break;
+            }
         }
-        return null;
+        job.Planning = true;
+        world.PathfindingManager.Scheduler.Enqueue(Work(), Valid, () =>
+        {
+            job.Planning = false;
+            if (chosen is not Point next || world.GameGrid.ToCell(worker.Position) != start) return;
+            job.Approach = next;
+            Vector3 nextPosition = world.GameGrid.ToWorldPosition(next, 0);
+            if (start == next) return;
+            var command = new NetworkMessage(NetworkMessageType.GotoCommand, hostId, UnitIds: new[] { worker.UnitId },
+                X: nextPosition.X, Z: nextPosition.Z, EarthworkOrderId: job.Order.Id,
+                Routes: [new UnitRoute(worker.UnitId, route!.ToArray(), nextPosition.X, nextPosition.Z)]);
+            worker.TryReceiveGotoCommand(world, new GotoCommand(new(nextPosition.X, nextPosition.Z)), route: route);
+            publish(command);
+        }, () => job.Planning = false);
     }
 }

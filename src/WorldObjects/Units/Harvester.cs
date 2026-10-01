@@ -42,10 +42,8 @@ public sealed class Harvester : Car
         Width = 3;
         Height = 2.0f;
         MoveSpeed = 5.0f;
-        // The harvester's large 3x3 core cannot reliably follow tight grid
-        // routes with the generic car turning circle. Let it align before it
-        // enters the next route cell, just like the tracked bulldozer.
-        CanTurnInPlace = true;
+        // Wheeled steering: change hull direction only while translating.
+        CanTurnInPlace = false;
         GroundSteering = new(
             MovingTurnDegreesPerSecond: MathHelper.ToDegrees(RotationSpeed),
             StationaryTurnDegreesPerSecond: MathHelper.ToDegrees(RotationSpeed),
@@ -62,8 +60,24 @@ public sealed class Harvester : Car
 
     internal void ApplyHarvestState(HarvestPhase phase, float cargoAmount)
     {
+        // Arrival at storage is deliberately tolerant: stop at the accepted
+        // approach instead of continuing to chase its exact waypoint while
+        // unloading. Apply this on every peer through the HarvestCommand and
+        // invalidate any movement search that was still in flight.
+        if (phase is HarvestPhase.Unloading or HarvestPhase.Harvesting)
+            base.Stop();
         HarvestPhase = phase;
         CargoAmount = Math.Clamp(cargoAmount, 0.0f, CargoCapacity);
+    }
+
+    public bool IsWithinHarvestReach(Vector3 resourcePosition, float cellSize)
+    {
+        // Approach cells may lie exactly two units from a crystal. Driving
+        // finishes within its arrival radius rather than at the exact center;
+        // accept that same tolerance instead of issuing the approach forever.
+        float radius = 2.0f + Math.Min(WaypointArrivalRadius, cellSize * 0.35f);
+        Vector2 distance = new(Position.X - resourcePosition.X, Position.Z - resourcePosition.Z);
+        return distance.LengthSquared() <= radius * radius;
     }
 
     public override void Stop()

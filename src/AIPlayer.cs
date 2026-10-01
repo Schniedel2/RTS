@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Microsoft.Xna.Framework;
 
 namespace RTS;
@@ -38,6 +39,14 @@ public sealed class AIPlayer
         Controller.BeginMatch(matchSeed, armyId);
     }
 
-    public void Update(GameTime gameTime, GameWorld world, Network.NetworkHandler network) =>
+    public void Update(GameTime gameTime, GameWorld world, Network.NetworkHandler network)
+    {
+        using var measurement = PerformanceMeasurements.Measure("AI.Player");
+        long started = Stopwatch.GetTimestamp();
         Controller.Update(gameTime, this, world, network);
+        double elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        Globals.Telemetry.AIUpdate_Calls++;
+        Globals.Telemetry.AIUpdate_Last = elapsed;
+        Globals.Telemetry.AIUpdate_Max = Math.Max(Globals.Telemetry.AIUpdate_Max, elapsed);
+    }
 }

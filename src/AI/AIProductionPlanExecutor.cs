@@ -65,6 +65,7 @@ public sealed class AIProductionPlanExecutor(
 
     public void Update(GameTime gameTime)
     {
+        using var measurement = PerformanceMeasurements.Measure("AI.ProductionPlan");
         if (!IsBusy || CurrentStep is not AIProductionPlanStep step)
             return;
         _retryElapsed += Math.Max(0.0f, (float)gameTime.ElapsedGameTime.TotalSeconds);

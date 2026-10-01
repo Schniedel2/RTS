@@ -66,26 +66,13 @@ public class MeshHandler
         Meshes["tank-1"] = BBModelLoader.Load(Path.Combine(directory, "vehicles/tank-1.bbmodel"), Color.White);
         Meshes["heli-1"] = BBModelLoader.Load(Path.Combine(directory, "vehicles/heli-1.bbmodel"), Color.White);
         Meshes["harvester-1"] = BBModelLoader.Load(Path.Combine(directory, "vehicles/harvester-1.bbmodel"), Color.White);
-
-
-        Meshes["TankBody-1"] = BBModelLoader.Load(Path.Combine(directory, "TankBody-1.bbmodel"), Color.White);
-
-        Meshes["TankTurret-1"] = BBModelLoader.Load(Path.Combine(directory, "TankTurret-1.bbmodel"), Color.White);
-        Meshes["TankBarrel-1"] = BBModelLoader.Load(Path.Combine(directory, "TankBarrel-1.bbmodel"), Color.White);
-        Meshes["TankBarrel-2"] = BBModelLoader.Load(Path.Combine(directory, "TankBarrel-1.bbmodel"), Color.White);
-
-        Meshes["bulldozer-1"] = BBModelLoader.Load(Path.Combine(directory, "bulldozer-1.bbmodel"), Color.White);
-        //Meshes["bulldozer-1"].LocalTransform = Matrix.CreateScale(0.5f);
+        Meshes["heli-1"] = BBModelLoader.Load(Path.Combine(directory, "vehicles/heli-1.bbmodel"), Color.White);
+        Meshes["bulldozer-1"] = BBModelLoader.Load(Path.Combine(directory, "vehicles/bulldozer-1.bbmodel"), Color.White);
+        Meshes["motorbike-1"] = BBModelLoader.Load(Path.Combine(directory, "vehicles/motorbike-1.bbmodel"), Color.White);
+        Meshes["motorbike-1"].LocalTransform = Matrix.CreateScale(0.25f);
 
         Meshes["blue-pick-up-truck"] = BBModelLoader.Load(Path.Combine(directory, "blue-pick-up-truck.bbmodel"), Color.White);
         Meshes["blue-pick-up-truck"].LocalTransform = Matrix.CreateScale(1.0f);
-
-        Meshes["TankBarrel-1"].LocalTransform = Matrix.CreateScale(0.4f);
-        Meshes["TankBarrel-2"].LocalTransform = Matrix.CreateScale(0.4f, 0.4f, 0.6f);
-
-        // TankBody receives its matching mask automatically when imported;
-        // the turret is deliberately a complete player-skin surface.
-        Meshes["TankTurret-1"].SetFullSkinMaterialMask();
 
         // Apply after all permanent mesh scales have been configured.
         foreach (Mesh mesh in Meshes.Values)

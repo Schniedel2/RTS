@@ -55,6 +55,7 @@ public sealed class AISquadPreparationController(
 
     public void Update(GameTime gameTime, Guid? reservedScoutId)
     {
+        using var measurement = PerformanceMeasurements.Measure("AI.SquadPreparation");
         float elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
         _thinkElapsed += elapsed;
         _orderElapsed += elapsed;
@@ -129,7 +130,8 @@ public sealed class AISquadPreparationController(
         {
             State = AISquadPreparationState.Gathering;
             LastDecision = $"Gathering the {_profile.DisplayName} squad at the barracks rally point.";
-            if (_orderElapsed >= OrderRetrySeconds)
+            if (_orderElapsed >= OrderRetrySeconds && !members.Append(leader)
+                .Any(unit => unit.MovementStatus == MovementStatus.Planning))
             {
                 Vector3 rallyPoint = barracks.RallyPoint ?? FindFallbackRallyPoint(barracks);
                 _ = _commands.GotoAsync([leader.UnitId, .. members.Select(member => member.UnitId)], rallyPoint);

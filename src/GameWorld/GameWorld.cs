@@ -194,6 +194,7 @@ public class GameWorld
 
     public void Load(string mapName)
     {
+        PathfindingManager.Reset();
         string mapDirectory = Path.Combine(Globals.MapsDirectory, mapName);
         _terrain = new Terrain(mapDirectory);
         GameGrid.BindTerrain(_terrain);
@@ -224,6 +225,7 @@ public class GameWorld
 
     public void ApplyWorldData(RTS.Network.WorldData worldData)
     {
+        PathfindingManager.Reset();
         _terrain.ApplyWorldData(worldData);
         GameplayMarkers.ApplyStates(worldData.GameplayMarkers);
         ApplyMapObjectStates(worldData.MapObjects);

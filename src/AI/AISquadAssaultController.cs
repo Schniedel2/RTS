@@ -69,6 +69,7 @@ public sealed class AISquadAssaultController(
 
     public void Update(GameTime gameTime)
     {
+        using var measurement = PerformanceMeasurements.Measure("AI.SquadAssault");
         if (State == AISquadAssaultState.MissionComplete)
             return;
 

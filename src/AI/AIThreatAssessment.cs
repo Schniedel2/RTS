@@ -42,6 +42,7 @@ public sealed class AIThreatAssessment(Guid armyId)
 
     public void Update(GameTime gameTime, GameWorld world)
     {
+        using var measurement = PerformanceMeasurements.Measure("AI.ThreatAssessment");
         float elapsed = Math.Max(0.0f, (float)gameTime.ElapsedGameTime.TotalSeconds);
         float lossDecay = MathF.Pow(0.5f, elapsed / LossHalfLifeSeconds);
         _lossInfantry *= lossDecay;

@@ -7,14 +7,18 @@ namespace RTS;
 public class PathfindingManager
 {
     private readonly Pathfinder _pathfinder;
+    private readonly GameWorld _map;
+    private long _sessionGeneration = -1;
+    private Network.NetworkHandler? _network;
 
     private readonly Queue<PathRequest> _requests = [];
 
     public int PendingRequests =>
-        _requests.Count;
+        _requests.Count + Scheduler.PendingJobs;
 
     public PathfindingManager(GameWorld map)
     {
+        _map = map;
         _pathfinder = new Pathfinder(map);
     }
 
@@ -25,6 +29,7 @@ public class PathfindingManager
         int pathRequestId)
     {
         if (!MobileUnit.IsMovementAuthority) return;
+        EnsureSession();
         Debug($"request unit={ShortId(unit.UnitId)} target=({target.X:0.0},{target.Y:0.0}) request={pathRequestId}");
         _requests.Enqueue(
             new PathRequest(
@@ -34,72 +39,52 @@ public class PathfindingManager
                 pathRequestId));
     }
 
-    public void Update()
+    public PlanningScheduler Scheduler { get; } = new();
+    public Pathfinder.Search CreateSearch(MobileUnit unit, Point start, Vector2 target) =>
+        _pathfinder.CreateSearch(unit, unit.MovementProfile, start, target);
+
+    public void Reset()
     {
-        if (!MobileUnit.IsMovementAuthority)
-        {
-            _requests.Clear();
-            return;
-        }
-        // Discard stale work cheaply, but do not let a cancelled backlog consume
-        // an entire frame. UpdateRequest stops after one real path search.
-        for (int discarded = 0; discarded < 64; discarded++)
-            if (UpdateRequest()) break;
+        while (_requests.TryDequeue(out PathRequest request))
+            if (request.Unit._pathRequestId == request.PathRequestId && request.Unit.CurrentCommand?.Target == request.Target)
+                request.Unit.OnPathSearchFailed();
+        Scheduler.Reset();
+        _network = Globals.Game?.Network;
+        _sessionGeneration = _network?.SessionGeneration ?? 0;
     }
 
-    bool UpdateRequest()
+    private void EnsureSession()
     {
-        // Zunächst absichtlich nur EINEN
-        // Pathfinding-Auftrag pro Frame bearbeiten.
-
-        if (_requests.Count == 0)
-            return true;
-
-        PathRequest request = _requests.Dequeue();
-        MobileUnit unit = request.Unit;
-
-        if (unit._pathRequestId != request.PathRequestId)
+        Network.NetworkHandler? network = Globals.Game?.Network;
+        if (!ReferenceEquals(_network, network) || (network?.SessionGeneration ?? 0) != _sessionGeneration)
         {
-            Debug($"discard stale request unit={ShortId(unit.UnitId)} request={request.PathRequestId} current={unit._pathRequestId}");
-            return false;
+            if (_network is not null) Reset();
+            _network = network;
+            _sessionGeneration = network?.SessionGeneration ?? 0;
         }
+    }
 
-        // Unit könnte inzwischen einen neuen
-        // Befehl bekommen haben.
-        if (unit.CurrentCommand == null)
+    public void Update(int maximumSteps = PlanningScheduler.MaximumStepsPerUpdate,
+        double maximumMilliseconds = PlanningScheduler.MaximumMillisecondsPerUpdate)
+    {
+        EnsureSession();
+        if (!MobileUnit.IsMovementAuthority) { Reset(); return; }
+        for (int count = 0; count < 64 && _requests.TryDequeue(out PathRequest request); count++)
         {
-            Debug($"discard cancelled request unit={ShortId(unit.UnitId)} request={request.PathRequestId}");
-            return false;
-        }
-
-        if (!unit.CurrentCommand.Value.Target.Equals(
-                request.Target))
-        {
-            Debug($"discard replaced request unit={ShortId(unit.UnitId)} request={request.PathRequestId}");
-            return false;
-        }
-
-        if (_pathfinder.TryFindPath(
-                unit,
-                request.MovementProfile,
-                request.Target,
-                out List<Point> path))
-        {
-            if (unit._pathRequestId == request.PathRequestId)
+            MobileUnit unit = request.Unit;
+            bool Valid() => unit._pathRequestId == request.PathRequestId && !unit.IsDying && !unit.IsEmbarked &&
+                unit.CurrentCommand?.Target == request.Target && _map.GameGrid.IsRegistered(unit);
+            if (!Valid()) continue;
+            Point start = _map.GameGrid.ToCell(unit.Position);
+            Pathfinder.Search search = _pathfinder.CreateSearch(unit, request.MovementProfile, start, request.Target);
+            Scheduler.Enqueue(search.Work(), Valid, () =>
             {
-                Debug($"path found unit={ShortId(unit.UnitId)} request={request.PathRequestId} waypoints={path.Count}");
-                unit.SetPlannedPath(path);
-            }
+                if (search.Succeeded && _map.GameGrid.ToCell(unit.Position) == start) unit.SetPlannedPath(search.Path);
+                else unit.OnPathSearchFailed();
+            }, () => { if (Valid()) unit.OnPathSearchFailed(); });
         }
-        else
-        {
-            Debug($"path failed unit={ShortId(unit.UnitId)} request={request.PathRequestId}; waiting before retry");
-            unit.OnPathSearchFailed();
-        }
-
-        return true;
+        Scheduler.Update(maximumSteps, maximumMilliseconds);
     }
-
     private readonly record struct PathRequest(
         MobileUnit Unit,
         IMovementProfile MovementProfile,
@@ -114,6 +99,8 @@ public class PathfindingManager
 
     public bool TryFindPath(MobileUnit unit, Point start, Vector2 target, out List<Point> path)
     {
+        // Synchronous compatibility for diagnostics. Runtime gameplay enqueues
+        // CreateSearch(...).Work() into Scheduler instead.
         path = [];
         return MobileUnit.IsMovementAuthority &&
             _pathfinder.TryFindPathFrom(unit, unit.MovementProfile, start, target, out path);

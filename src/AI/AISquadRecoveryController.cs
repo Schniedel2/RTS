@@ -49,6 +49,7 @@ public sealed class AISquadRecoveryController(
 
     public void Update()
     {
+        using var measurement = PerformanceMeasurements.Measure("AI.SquadRecovery");
         if (!IsActive || IsRecovered)
             return;
         AverageHealthFraction = CalculateAverageHealth();

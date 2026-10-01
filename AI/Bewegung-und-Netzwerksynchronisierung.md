@@ -86,6 +86,19 @@ Profil konfigurierten Standdrehungsgrenze sinkt er mit einer geglätteten Kurve
 auf `MinimumCurveSpeedFactor`. Normale 45°- und 90°-Kurven werden damit fahrend
 gelenkt. Eine Standdrehung bleibt für schärfere Wendungen vorgesehen; ein
 zulässiges nahes Rückwärtsziel wird vorher als Rangiermanöver behandelt.
+Ob ein Ziel nah genug für Rückwärtsfahrt ist, bestimmt die verbleibende Länge der
+bestätigten Route und nicht der Abstand zur unmittelbar nächsten Zelle. Dadurch
+drehen Fahrzeuge für lange Fahrten um und behalten Rückwärtsfahrt für kurze
+Rangierwege bei.
+
+Bodenfahrzeuge führen eine signierte Geschwindigkeit in Welt-Einheiten pro Sekunde:
+positive Werte bedeuten Vorwärtsfahrt, negative Rückwärtsfahrt. Das gemeinsame
+`GroundSteeringProfile` enthält Beschleunigung und Bremsverzögerung in Welt-Einheiten
+pro Sekunde². Der Lenkwinkel begrenzt die Kurvengeschwindigkeit; aus verbleibender
+Routenlänge und Bremsverzögerung wird zusätzlich die sichere Geschwindigkeit bis zum
+Endpunkt berechnet. Ein Wechsel der Fahrtrichtung bremst zunächst bis null. Aktuelle
+Geschwindigkeit wird im `MobileUnitState` übertragen. Nicht-endliche Werte werden
+beim Anwenden verworfen und vor der JSON-Serialisierung als null ausgegeben.
 
 ## Prüfen
 
@@ -96,3 +109,12 @@ Warteschlangen, Retry-Abstände, langsames Drehen, Gebäudeecken bei verschieden
 Zeitschritten, JSON-Routen, Client-Autorität und visuelle Korrekturen.
 Eine längere Multiplayer-Partie mit vielen Harvestern und Bulldozern bleibt der
 praktische Test für Verkehrsstaus und das sichtbare Fahrgefühl.
+# Gemeinsamer Bodenfahrablauf (Architektur-TODO 02)
+
+`MobileUnit.MoveAlongPath` übernimmt Route und Vorausschau; `DriveGroundRoute` führt für alle vorwärtsfahrenden Bodenfahrzeuge die gemeinsame Fahrentscheidung aus. `Car` besitzt keinen eigenen Goto-/Rangierzustand mehr. Unterschiede kommen aus `GroundSteeringProfile` und `CanTurnInPlace`.
+
+Kurze rückwärtige Restwege werden mit negativem CurrentSpeed gefahren. Für Radfahrzeuge skaliert die Drehrate mit der Geschwindigkeit; bei abgelehnter Translation wird die vorläufige Drehung zurückgenommen. Auch der Wechsel zwischen Vorwärts- und Rückwärtsfahrt erzeugt keine Standdrehung. Fahrzeuge mit CanTurnInPlace dürfen sich weiterhin gezielt im Stand ausrichten. Geschwindigkeit, Route und Ausrichtung verwenden weiterhin den bestehenden MobileUnitState; ein zusätzlicher Car-Zustand ist nicht erforderlich.
+
+Scheitert bei einem Radfahrzeug ein scharfer Vorwärtsbogen direkt an einem Hindernis, fährt derselbe Controller zunächst gerade zurück. Die begrenzte Freiraumdistanz wird aus Wendekreis und Footprint abgeleitet. Danach wechselt das Fahrzeug wieder in die normale Vorwärtskurve. Der verbleibende Rücksetzweg gehört zum MobileUnitState, damit eine Zustandsübernahme das Manöver fortsetzt. Werte bis 0,001 werden als abgeschlossen behandelt, um einen durch Fließkommareste dauerhaft aktiven Rücksetzmodus zu vermeiden.
+
+Automatisierte Prüfung: 613 Checks. Optische Abnahme mit geladenen Modellen noch offen, siehe Architektur-TODO 02. Produktionsausfahrt und Helikopterflug bleiben separate Abläufe.

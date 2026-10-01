@@ -132,7 +132,7 @@ GameplayDefinition? barracksScout = (GameplayDefinition?)selectScoutReplacement.
     null, [new[] { "gdi-barracks" }]);
 GameplayDefinition? factoryScout = (GameplayDefinition?)selectScoutReplacement.Invoke(
     null, [new[] { "vehicle-factory" }]);
-Check(barracksScout?.TypeId == "gunner" && factoryScout?.TypeId == "jeep",
+Check(barracksScout?.TypeId == "gunner" && factoryScout?.TypeId is "jeep" or "motorbike",
     "AI selects an affordable catalog scout supported by its available producers");
 Guid strategyArmyId = Guid.NewGuid();
 AIStrategyProfile stableStrategyA = AIStrategyProfile.Create(12345, strategyArmyId);
@@ -678,6 +678,43 @@ var barracks = Barracks(Guid.NewGuid());
 UnitList(units).Add(barracks);
 var input = new NetworkInput(transport);
 var host = new NetworkHost(transport, input, world);
+// Exercise the actual host scheduler across update boundaries, including
+// interleaved senders and append orders. Deferred requests retain their payload.
+var scheduledRequests = (System.Collections.Concurrent.ConcurrentQueue<NetworkMessage>)
+    typeof(NetworkHost).GetField("_requestQueue", BindingFlags.Instance | BindingFlags.NonPublic)!
+        .GetValue(host)!;
+NetworkMessage[] TakeHostRequests() => ((IEnumerable<NetworkMessage>)typeof(NetworkHost)
+    .GetMethod("TakeRequestsForUpdate", BindingFlags.Instance | BindingFlags.NonPublic)!
+    .Invoke(host, null)!).ToArray();
+Guid scheduledUnit = Guid.NewGuid();
+NetworkMessage gotoA = NetworkCommands.CreateGotoRequest(ownerId, [scheduledUnit], 2, 0, 2);
+NetworkMessage gotoB = NetworkCommands.CreateGotoRequest(ownerId, [scheduledUnit], 3, 0, 3);
+NetworkMessage stopAfterGoto = NetworkCommands.CreateStopRequest(ownerId, [scheduledUnit]);
+foreach (var queuedOrder in new[] { gotoA, gotoB, stopAfterGoto }) scheduledRequests.Enqueue(queuedOrder);
+Check(TakeHostRequests().SequenceEqual(new[] { gotoA }) &&
+    TakeHostRequests().SequenceEqual(new[] { gotoB, stopAfterGoto }) && TakeHostRequests().Length == 0,
+    "Host deferral preserves Goto A, Goto B, Stop and never resurrects an older Goto after Stop");
+NetworkMessage otherPlayerGoto = NetworkCommands.CreateGotoRequest(Guid.NewGuid(), [Guid.NewGuid()], 4, 0, 4);
+NetworkMessage attackAfterGoto = NetworkCommands.CreateAttackTargetRequest(ownerId, [scheduledUnit], Guid.NewGuid());
+NetworkMessage appendGoto = NetworkCommands.CreateGotoRequest(ownerId, [scheduledUnit], 5, 0, 5,
+    appendToQueue: true, routes: [new UnitRoute(scheduledUnit, [new Point(4, 4), new Point(5, 5)], 5, 5)]);
+NetworkMessage appendNext = NetworkCommands.CreateGotoRequest(ownerId, [scheduledUnit], 6, 0, 6, appendToQueue: true);
+NetworkMessage[] mixedOrders = [gotoA, otherPlayerGoto, gotoB, attackAfterGoto, appendGoto, appendNext, stopAfterGoto];
+foreach (var queuedOrder in mixedOrders) scheduledRequests.Enqueue(queuedOrder);
+var consumedOrders = new List<NetworkMessage>();
+for (int frame = 0; frame < 5; frame++)
+{
+    NetworkMessage[] batch = TakeHostRequests();
+    Check(batch.Count(message => message.Type == NetworkMessageType.GotoRequest) == 1,
+        "Host keeps its one-Goto budget while draining interleaved player requests");
+    consumedOrders.AddRange(batch);
+}
+Check(consumedOrders.SequenceEqual(mixedOrders) && scheduledRequests.IsEmpty &&
+    ReferenceEquals(consumedOrders[4], appendGoto),
+    "Host preserves cross-player FIFO, Goto/Attack order, Shift sequence and supplied route payloads");
+for (int index = 0; index < 33; index++) scheduledRequests.Enqueue(stopAfterGoto);
+Check(TakeHostRequests().Length == 32 && TakeHostRequests().Length == 1,
+    "Host retains the general 32-request limit independently of the Goto budget");
 NetworkMessage? Request(NetworkMessage request) => (NetworkMessage?)typeof(NetworkHost)
     .GetMethod("TryCreateSetRallyPointCommand", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { request });
 NetworkMessage Wire(NetworkMessage message) => JsonSerializer.Deserialize<NetworkMessage>(
@@ -1078,9 +1115,29 @@ startMarkers.Add(GameplayMarkerType.PlayerStart, new Vector3(9.5f, 0, 9.5f), 225
 Field(world, typeof(GameWorld), "<GameplayMarkers>k__BackingField", startMarkers);
 typeof(NetworkHost).GetMethod("RememberStartPositionWish", BindingFlags.Instance | BindingFlags.NonPublic)!
     .Invoke(host, new object[] { NetworkCommands.CreateStartPositionWishRequest(ownerId, 2) });
+var matchHarvest = (HarvestSystem)typeof(NetworkHost)
+    .GetField("_harvest", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(host)!;
+var matchHarvestJobs = (System.Collections.IDictionary)typeof(HarvestSystem)
+    .GetField("_jobs", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(matchHarvest)!;
+matchHarvestJobs.Add(Guid.NewGuid(), Activator.CreateInstance(
+    typeof(HarvestSystem).GetNestedType("HarvestJob", BindingFlags.NonPublic)!, new object[] { new Point(2, 2) })!);
+var matchMedics = (MedicSystem)typeof(NetworkHost)
+    .GetField("_medics", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(host)!;
+var matchMedicJobs = (System.Collections.IDictionary)typeof(MedicSystem)
+    .GetField("_medicJobs", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(matchMedics)!;
+matchMedicJobs.Add(Guid.NewGuid(), Activator.CreateInstance(
+    typeof(MedicSystem).GetNestedType("MedicJob", BindingFlags.NonPublic)!, new object[] { Guid.NewGuid() })!);
+var rejectedHarvestStart = (NetworkMessage?)typeof(NetworkHost)
+    .GetMethod("TryCreateStartMultiplayerGameCommand", BindingFlags.Instance | BindingFlags.NonPublic)!
+    .Invoke(host, new object[] { NetworkCommands.CreateStartMultiplayerGameRequest(Guid.NewGuid()) });
+Check(rejectedHarvestStart is null && matchHarvest.ActiveJobCount == 1,
+    "Rejected game-start preserves active harvest jobs");
+Check(matchMedics.ActiveJobCount == 1, "Rejected game-start preserves medic pursuit jobs");
 var startCommand = (NetworkMessage?)typeof(NetworkHost)
     .GetMethod("TryCreateStartMultiplayerGameCommand", BindingFlags.Instance | BindingFlags.NonPublic)!
     .Invoke(host, new object[] { NetworkCommands.CreateStartMultiplayerGameRequest(hostId) });
+Check(matchHarvest.ActiveJobCount == 0, "Accepted game-start resets host harvest jobs before the next match");
+Check(matchMedics.ActiveJobCount == 0, "Accepted game-start resets medic pursuit jobs before the next match");
 Check(startCommand is { Type: NetworkMessageType.StartMultiplayerGameCommand, ResourceAmount: 10000 } &&
     startCommand.MatchStartAssignments?.Length == 2, "Host creates one multiplayer start assignment per player");
 MatchStartAssignment[] matchAssignments = startCommand!.MatchStartAssignments!;
@@ -1532,7 +1589,7 @@ Check(heli.IsLanded && Math.Abs(heli.Position.Z - 28.5f) < 0.01f, "Diverted land
 
 // Import the actual user-authored models with atlas metadata, without a graphics device.
 Globals.MaterialMaskTextureHandler = textureHandler;
-foreach (string relative in new[] { "vehicles/heli-1.bbmodel", "buildings/helipad-1.bbmodel", "blue-pick-up-truck.bbmodel" })
+foreach (string relative in new[] { "vehicles/heli-1.bbmodel", "buildings/helipad-1.bbmodel", "blue-pick-up-truck.bbmodel", "vehicles/motorbike-1.bbmodel", "Soldier-2.bbmodel" })
 {
     string modelPath = Path.GetFullPath(Path.Combine("Content/models", relative));
     using var modelJson = JsonDocument.Parse(File.ReadAllText(modelPath));
@@ -1552,6 +1609,15 @@ foreach (string relative in new[] { "vehicles/heli-1.bbmodel", "buildings/helipa
     Globals.MeshHandler.Meshes[Path.GetFileNameWithoutExtension(relative)] = actualMesh;
 }
 var actualHeli = new Helicopter(new(10, 0, 10), Guid.NewGuid());
+var bikeMeshSet = new MeshSet(Globals.MeshHandler.Meshes["motorbike-1"]);
+var driverSeat = bikeMeshSet.Pivots.Single(p => p.Name == "pivot:seat_driver");
+Check(driverSeat.Pose == "motorbike-driver", "Seat metadata references an animation without the pose prefix");
+Check(bikeMeshSet.TryGetPivotWorldTransform("pivot:seat_driver", Matrix.CreateTranslation(10, 0, 10), out var seatTransform), "Annotated seat remains accessible by its ordinary pivot name");
+Check(float.IsFinite(seatTransform.Translation.X), "Annotated seat yields a valid world transform");
+Check(Globals.MeshHandler.Meshes["Soldier-2"].Animations.ContainsKey(driverSeat.Pose!), "Authored soldier contains the driver's seat pose");
+var actualBike = new MotorBike(new(10, 0, 10), Guid.NewGuid());
+Check(!actualBike.CanFireWeapon, "Basic motorcycle cannot fire weapons");
+Check(actualBike.Occupancy is not null && !actualBike.Occupancy.IsOperational, "Empty motorcycle requires a driver");
 var actualMeshSet = new MeshSet(Globals.MeshHandler.Meshes["heli-1"]);
 Check(actualMeshSet.SetPivotRotation("pivot:rotor_main", Quaternion.CreateFromAxisAngle(Vector3.Up, 1)), "Actual main rotor pivot is animated");
 Check(actualMeshSet.Pivots.Any(p => p.Name == "pivot:turret"), "Actual helicopter turret pivot imports");
@@ -1986,6 +2052,77 @@ Check(harvesterDebug.Contains("Harvest=Idle") && harvesterDebug.Contains("cargo=
     harvesterDebug.Contains("Goto (") && harvesterDebug.Contains("path="),
     "Harvester debug text combines AI phase, cargo and movement command");
 
+var savedUnloadWorld = Globals.World;
+var unloadTestWorld = World(new GameGrid(32, 32, 1));
+Field(unloadTestWorld, typeof(GameWorld), "<Units>k__BackingField", new UnitHandler());
+Globals.World = unloadTestWorld;
+UnitList(Globals.World.Units).Add(returnHarvester);
+returnHarvester.TryReceiveGotoCommand(Globals.World,
+    new GotoCommand(new Vector2(12.5f, 14.5f)), route: new[] { new Point(12, 14) });
+returnHarvester.TryReceiveGotoCommand(Globals.World,
+    new GotoCommand(new Vector2(18.5f, 14.5f)), appendToQueue: true,
+    route: new[] { new Point(18, 14) });
+int unloadingRequestId = returnHarvester._pathRequestId;
+Deliver(new NetworkMessage(NetworkMessageType.HarvestCommand, Guid.NewGuid(),
+    UnitId: returnHarvester.UnitId, HarvestPhase: HarvestPhase.Unloading, CargoAmount: 300));
+Check(returnHarvester.HarvestPhase == HarvestPhase.Unloading && returnHarvester.CargoAmount == 300 &&
+    returnHarvester.CurrentCommand is null && returnHarvester.PlannedPath.Count == 0 &&
+    returnHarvester.MovementStatus == MovementStatus.Idle && returnHarvester.CurrentSpeed == 0 &&
+    returnHarvester.GetDebugCommandText().EndsWith("Idle"),
+    "Replicated unloading stops the approach route and clears queued movement without losing cargo");
+Check(returnHarvester._pathRequestId > unloadingRequestId,
+    "Unloading invalidates movement results that are still being planned");
+Deliver(new NetworkMessage(NetworkMessageType.HarvestCommand, Guid.NewGuid(),
+    UnitId: returnHarvester.UnitId, HarvestPhase: HarvestPhase.Unloading, CargoAmount: 150));
+Check(returnHarvester.CargoAmount == 150 && returnHarvester.CurrentCommand is null &&
+    returnHarvester.HarvestPhase == HarvestPhase.Unloading,
+    "Repeated unloading replication remains stationary and updates cargo");
+Check(returnHarvester.IsWithinHarvestReach(returnHarvester.Position + new Vector3(2.2f, 0, 0), 1) &&
+    !returnHarvester.IsWithinHarvestReach(returnHarvester.Position + new Vector3(2.4f, 0, 0), 1),
+    "Harvest reach accepts arrival tolerance at a two-unit approach but rejects distant resources");
+returnHarvester.TryReceiveGotoCommand(unloadTestWorld,
+    new GotoCommand(new Vector2(12.5f, 14.5f)), route: new[] { new Point(12, 14) });
+int harvestArrivalRequest = returnHarvester._pathRequestId;
+Deliver(new NetworkMessage(NetworkMessageType.HarvestCommand, Guid.NewGuid(),
+    UnitId: returnHarvester.UnitId, HarvestPhase: HarvestPhase.Harvesting, CargoAmount: 284.6f));
+Check(returnHarvester.HarvestPhase == HarvestPhase.Harvesting &&
+    Math.Abs(returnHarvester.CargoAmount - 284.6f) < 0.001f &&
+    returnHarvester.CurrentCommand is null && returnHarvester.PlannedPath.Count == 0 &&
+    returnHarvester._pathRequestId > harvestArrivalRequest,
+    "Replicated harvesting halts the last approach waypoint and invalidates late movement results");
+UnitList(unloadTestWorld.Units).Add(refinery);
+using (var approachNetwork = new NetworkHandler())
+{
+    var approachInput = new NetworkInput(approachNetwork);
+    var approachHost = new NetworkHost(approachNetwork, approachInput, unloadTestWorld);
+    Field(approachHost, typeof(NetworkHost), "_sessionGeneration", approachNetwork.SessionGeneration);
+    var approachHarvest = (HarvestSystem)typeof(NetworkHost)
+        .GetField("_harvest", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(approachHost)!;
+    Type harvestJobType = typeof(HarvestSystem).GetNestedType("HarvestJob", BindingFlags.NonPublic)!;
+    object approachJob = Activator.CreateInstance(harvestJobType, new object[] { new Point(2, 2) })!;
+    harvestJobType.GetProperty("Phase")!.SetValue(approachJob, HarvestPhase.ReturningToSilo);
+    harvestJobType.GetProperty("SiloId")!.SetValue(approachJob, refinery.UnitId);
+    harvestJobType.GetProperty("MoveIssued")!.SetValue(approachJob, true);
+    harvestJobType.GetProperty("StorageApproach")!.SetValue(approachJob, new Vector3(15.5f, 0, 15.5f));
+    var approachJobs = (System.Collections.IDictionary)typeof(HarvestSystem)
+        .GetField("_jobs", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(approachHarvest)!;
+    approachJobs.Add(returnHarvester.UnitId, approachJob);
+    returnHarvester.TryReceiveGotoCommand(unloadTestWorld, new GotoCommand(new Vector2(15.5f, 15.5f)),
+        route: new[] { new Point(15, 15) });
+    Field(returnHarvester, typeof(MobileUnit), "_movementRetryCount", 3);
+    approachHarvest.UpdateAsync(new GameTime(TimeSpan.Zero, TimeSpan.Zero), 0).GetAwaiter().GetResult();
+    Check(returnHarvester.CurrentCommand is null && returnHarvester.HarvestPhase == HarvestPhase.ReturningToSilo &&
+        approachJobs.Contains(returnHarvester.UnitId) &&
+        harvestJobType.GetProperty("StorageApproach")!.GetValue(approachJob) is null &&
+        !(bool)harvestJobType.GetProperty("MoveIssued")!.GetValue(approachJob)!,
+        "Host stops a repeatedly blocked storage approach while preserving the return job");
+    Check(((HashSet<Point>)harvestJobType.GetProperty("FailedStorageApproaches")!.GetValue(approachJob)!)
+        .Contains(new Point(15, 15)), "Host excludes the failed storage corner from the next approach search");
+}
+UnitList(unloadTestWorld.Units).Remove(refinery);
+UnitList(Globals.World.Units).Remove(returnHarvester);
+Globals.World = savedUnloadWorld;
+
 var exitTerrain = Terrain(50, 50);
 var exitGrid = new GameGrid(50, 50, 1);
 exitGrid.BindTerrain(exitTerrain);
@@ -2015,6 +2152,17 @@ Check(ProductionExitResolver.TryResolve(exitWorld, rotatedFactory, producedVehic
     new Pathfinder(exitWorld).TryFindPath(producedVehicle, producedVehicle.MovementProfile,
         new Vector2(unloadApproach.X, unloadApproach.Z), out _),
     "Returning vehicle receives reachable unload approach outside rotated storage footprint");
+Point failedUnloadCell = exitGrid.ToCell(unloadApproach);
+Check(ProductionExitResolver.TryResolve(exitWorld, rotatedFactory, producedVehicle,
+    producedVehicle.Position, blockedExit, out Vector3 alternativeUnload,
+    cell => cell != failedUnloadCell) && exitGrid.ToCell(alternativeUnload) != failedUnloadCell &&
+    exitGrid.CanPlace(producedVehicle, alternativeUnload,
+        MathHelper.ToDegrees(MathF.Atan2(-(alternativeUnload.X - producedVehicle.Position.X),
+            -(alternativeUnload.Z - producedVehicle.Position.Z)))),
+    "Storage approach recovery skips the failed corner and chooses another collision-free placement");
+Check(!ProductionExitResolver.TryResolve(exitWorld, rotatedFactory, producedVehicle,
+    producedVehicle.Position, blockedExit, out _, _ => false),
+    "Storage approach recovery reports failure when all candidates are excluded");
 
 var clearTerrain = Terrain(20, 20);
 var clearGrid = new GameGrid(20, 20, 1);
@@ -2261,7 +2409,7 @@ Check(cacheFinder.TryFindPathFrom(cacheUnit, countedProfile, new Point(1, 1),
 Check(Globals.Telemetry.TryFindPath_Calls == callsBefore + 1,
     "Direct host searches contribute exactly once to telemetry");
 Check(countedProfile.Visits.Where(pair => pair.Key != new Point(1, 1) && pair.Key != new Point(18, 18))
-    .All(pair => pair.Value == 1), "A search checks each intermediate footprint at most once");
+    .All(pair => pair.Value <= 2), "Search caches footprints and performs at most one final corridor revalidation");
 cacheGrid.GetCell(18, 18).IsBlocked = true;
 Check(!cacheFinder.TryFindPathFrom(cacheUnit, countedProfile, new Point(1, 1),
     new Vector2(18.5f, 18.5f), out _), "Search caches never hide new world obstacles");
@@ -2351,6 +2499,151 @@ Check(Vector3.DistanceSquared(movingTurnVehicle.Position, beforeMovingTurn) > 0.
 
 navigationWorld = MovementWorld();
 Globals.World = navigationWorld;
+var blockedManeuveringCar = new Car(new Vector3(5.5f, 0, 5.5f), Guid.NewGuid())
+{
+    GroundSteering = new(12.0f, 12.0f, 180.0f, 0.5f,
+        true, 2.0f, 100.0f, 10.0f, 6.0f)
+};
+navigationWorld.GameGrid.TryMove(blockedManeuveringCar, new Point(5, 5));
+navigationWorld.GameGrid.GetCell(5, 4).IsBlocked = true;
+blockedManeuveringCar.TryReceiveGotoCommand(navigationWorld,
+    new GotoCommand(new Vector2(7.5f, 5.5f)), route: [new Point(6, 5), new Point(7, 5)]);
+Matrix beforeBlockedManeuver = blockedManeuveringCar.Transform;
+blockedManeuveringCar.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.5)));
+Check(Vector3.DistanceSquared(blockedManeuveringCar.Position,
+        beforeBlockedManeuver.Translation) > 0.0001f &&
+    Vector3.Dot(blockedManeuveringCar.Transform.Forward,
+        beforeBlockedManeuver.Forward) > 0.9999f,
+    "A car blocked during a sharp forward turn reverses without rotating in place");
+MobileUnitState? clearanceState = JsonSerializer.Deserialize<MobileUnitState>(
+    blockedManeuveringCar.GetState().Payload, NetworkJson.Options);
+Check(clearanceState is { ReverseClearanceRemaining: > 0.0f, CurrentSpeed: < 0.0f },
+    "Reverse clearance progress is part of the replicated vehicle state");
+
+navigationWorld = MovementWorld();
+Globals.World = navigationWorld;
+var frontBlockedJeepProfile = new Car(new Vector3(12.5f, 0, 10.5f), Guid.NewGuid())
+{
+    MoveSpeed = 8.0f,
+    CanTurnInPlace = false,
+    GroundSteering = new(229.2f, 229.2f, 110.0f, 0.55f,
+        true, 2.0f, 110.0f, 10.0f, 5.0f)
+};
+navigationWorld.GameGrid.TryMove(frontBlockedJeepProfile, new Point(12, 10));
+navigationWorld.GameGrid.GetCell(12, 9).IsBlocked = true;
+Point[] rearLongRoute = Enumerable.Range(11, 12).Select(z => new Point(12, z)).ToArray();
+frontBlockedJeepProfile.TryReceiveGotoCommand(navigationWorld,
+    new GotoCommand(new Vector2(12.5f, 22.5f)), route: rearLongRoute);
+bool reversedForClearance = false;
+bool rotatedWhileStationary = false;
+for (int frame = 0; frame < 800 && frontBlockedJeepProfile.CurrentCommand is not null; frame++)
+{
+    Matrix previous = frontBlockedJeepProfile.Transform;
+    frontBlockedJeepProfile.Update(new GameTime(
+        TimeSpan.FromSeconds(frame * 0.05), TimeSpan.FromSeconds(0.05)));
+    reversedForClearance |= frontBlockedJeepProfile.CurrentSpeed < 0.0f &&
+        frontBlockedJeepProfile.Position.Z > previous.Translation.Z;
+    rotatedWhileStationary |= frontBlockedJeepProfile.Position == previous.Translation &&
+        Vector3.Dot(frontBlockedJeepProfile.Transform.Forward, previous.Forward) < 0.99999f;
+    navigationWorld.PathfindingManager.Update();
+}
+Check(reversedForClearance && !rotatedWhileStationary &&
+    frontBlockedJeepProfile.CurrentCommand is null &&
+    navigationWorld.GameGrid.ToCell(frontBlockedJeepProfile.Position) == rearLongRoute[^1],
+    "A Jeep-style vehicle backs away from a close front obstacle, turns, and completes a distant rear route " +
+    $"(reversed={reversedForClearance}, stationaryYaw={rotatedWhileStationary}, " +
+    $"command={frontBlockedJeepProfile.CurrentCommand is not null}, " +
+    $"cell={navigationWorld.GameGrid.ToCell(frontBlockedJeepProfile.Position)}, " +
+    $"position={frontBlockedJeepProfile.Position}, speed={frontBlockedJeepProfile.CurrentSpeed}, " +
+    $"clearance={JsonSerializer.Deserialize<MobileUnitState>(frontBlockedJeepProfile.GetState().Payload, NetworkJson.Options)?.ReverseClearanceRemaining}, " +
+    $"path={frontBlockedJeepProfile.PlannedPath.Count}, forward={frontBlockedJeepProfile.Transform.Forward}, " +
+    $"status={frontBlockedJeepProfile.MovementStatus})");
+
+Check(typeof(Car).GetMethod("MoveAlongPath", BindingFlags.Instance | BindingFlags.NonPublic |
+    BindingFlags.DeclaredOnly) is null,
+    "Car and its subclasses inherit the common route controller");
+// Profile-driven controller: counter-direction routes at multiple time steps.
+foreach (var configuration in new[] {
+    (Name: "Jeep", Speed: 8f, Rate: 4f, Pivot: false, Reverse: 2f, Threshold: 110f),
+    (Name: "Harvester", Speed: 5f, Rate: 4f, Pivot: false, Reverse: 1.5f, Threshold: 100f),
+    (Name: "Tank", Speed: 4f, Rate: 3f, Pivot: true, Reverse: 1.4f, Threshold: 135f),
+    (Name: "Bulldozer", Speed: 5f, Rate: 4f, Pivot: true, Reverse: 1.5f, Threshold: 100f) })
+foreach (float step in new[] { 1f / 60, 0.1f, 0.25f })
+foreach (int length in new[] { 3, 12 })
+{
+    navigationWorld = MovementWorld();
+    Globals.World = navigationWorld;
+    var driver = new Car(new Vector3(12.5f, 0, 10.5f), Guid.NewGuid());
+    driver.MoveSpeed = configuration.Speed;
+    driver.CanTurnInPlace = configuration.Pivot;
+    driver.GroundSteering = new(MathHelper.ToDegrees(configuration.Rate),
+        MathHelper.ToDegrees(configuration.Rate), configuration.Threshold, 0.4f,
+        true, configuration.Reverse, 110, 8, 5);
+    navigationWorld.GameGrid.TryMove(driver, new Point(12, 10));
+    Point[] route = Enumerable.Range(11, length).Select(z => new Point(12, z)).ToArray();
+    driver.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(12.5f, 10.5f + length)), route: route);
+    bool stationaryYaw = false;
+    for (int frame = 0; frame < 40 / step && driver.CurrentCommand is not null; frame++)
+    {
+        Matrix previous = driver.Transform;
+        driver.Update(new GameTime(TimeSpan.FromSeconds(frame * step), TimeSpan.FromSeconds(step)));
+        stationaryYaw |= driver.Position == previous.Translation &&
+            Vector3.Dot(driver.Transform.Forward, previous.Forward) < 0.99999f;
+        navigationWorld.PathfindingManager.Update();
+    }
+    Check(driver.CurrentCommand is null &&
+        navigationWorld.GameGrid.ToCell(driver.Position) == route[^1] &&
+        (configuration.Pivot || !stationaryYaw),
+        $"Shared {configuration.Name} profile completes rear route {length} at {step} without forbidden stationary yaw");
+    // State restoration must not depend on Car-only maneuver state.
+    UnitState sharedState = driver.GetState();
+    var restoredDriver = new Car(driver.Position, driver.UnitId);
+    restoredDriver.ApplyState(sharedState);
+    Check(restoredDriver.Position == driver.Position && restoredDriver.CurrentSpeed == driver.CurrentSpeed &&
+        restoredDriver.PlannedPath.SequenceEqual(driver.PlannedPath),
+        $"Shared {configuration.Name} navigation survives state restoration");
+    driver.Stop();
+    Matrix stopped = driver.Transform;
+    driver.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(step)));
+    Check(driver.CurrentSpeed == 0 && driver.Transform == stopped,
+        $"Shared {configuration.Name} profile remains stationary after Stop");
+}
+navigationWorld = MovementWorld();
+Globals.World = navigationWorld;
+var alignedBlockedCar = new Car(new Vector3(9.5f, 0, 9.05f), Guid.NewGuid());
+Field(alignedBlockedCar, typeof(Unit), "<Width>k__BackingField", 1);
+Field(alignedBlockedCar, typeof(Unit), "<Length>k__BackingField", 1);
+alignedBlockedCar.CanTurnInPlace = false;
+navigationWorld.GameGrid.TryMove(alignedBlockedCar, new Point(9, 9));
+alignedBlockedCar.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(9.5f, 6.5f)),
+    route: new[] { new Point(9, 8), new Point(9, 7), new Point(9, 6) });
+navigationWorld.GameGrid.GetCell(9, 8).IsBlocked = true;
+Field(alignedBlockedCar, typeof(MobileUnit), "_movementRetryCount", 1);
+Vector3 alignedStart = alignedBlockedCar.Position;
+bool alignedBackedUp = false;
+for (int frame = 0; frame < 20; frame++)
+{
+    alignedBlockedCar.Update(new GameTime(TimeSpan.FromSeconds(frame * 0.1), TimeSpan.FromSeconds(0.1)));
+    alignedBackedUp |= alignedBlockedCar.CurrentSpeed < 0;
+}
+Check(alignedBackedUp && alignedBlockedCar.Position.Z > alignedStart.Z &&
+    navigationWorld.GameGrid.ToCell(alignedBlockedCar.Position) != new Point(9, 8),
+    "A repeatedly blocked wheeled vehicle makes collision-checked reverse clearance even while aligned with the route");
+navigationWorld = MovementWorld();
+Globals.World = navigationWorld;
+var longTurnCar = new Car(new Vector3(9.5f, 0, 16.5f), Guid.NewGuid());
+navigationWorld.GameGrid.TryMove(longTurnCar, new Point(9, 16));
+Point[] longTurnRoute = Enumerable.Range(17, 12).Select(y => new Point(9, y)).ToArray();
+longTurnCar.TryReceiveGotoCommand(navigationWorld,
+    new GotoCommand(new Vector2(9.5f, 28.5f)), route: longTurnRoute);
+Matrix beforeLongCarTurn = longTurnCar.Transform;
+longTurnCar.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.1)));
+Check(Vector3.DistanceSquared(longTurnCar.Position, beforeLongCarTurn.Translation) > 0.0001f &&
+    Vector3.Dot(longTurnCar.Transform.Forward, beforeLongCarTurn.Forward) < 0.9999f,
+    "A car starts a moving turn toward a distant target instead of stationary reverse alignment");
+
+navigationWorld = MovementWorld();
+Globals.World = navigationWorld;
 var rightAngleVehicle = Mobile(new Vector3(5.5f, 0, 5.5f));
 rightAngleVehicle.CanOnlyMoveForward = true;
 rightAngleVehicle.CanTurnInPlace = true;
@@ -2402,6 +2695,11 @@ navigationWorld.GameGrid.TryMove(wideStraightVehicle, new Point(12, 4));
 Point[] twelveCellRoute = Enumerable.Range(5, 12).Select(y => new Point(12, y)).ToArray();
 wideStraightVehicle.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(12.5f, 16.5f)),
     route: twelveCellRoute);
+Matrix beforeLongRouteTurn = wideStraightVehicle.Transform;
+wideStraightVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.05)));
+Check(Vector3.DistanceSquared(wideStraightVehicle.Position, beforeLongRouteTurn.Translation) < 0.0001f &&
+    Vector3.Dot(beforeLongRouteTurn.Forward, wideStraightVehicle.Transform.Forward) < 0.999f,
+    "A vehicle turns toward a distant route behind it instead of reversing the whole journey");
 for (int frame = 0; frame < 600 && wideStraightVehicle.CurrentCommand is not null; frame++)
 {
     wideStraightVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.05)));
@@ -2410,6 +2708,82 @@ for (int frame = 0; frame < 600 && wideStraightVehicle.CurrentCommand is not nul
 Check(wideStraightVehicle.CurrentCommand is null &&
     navigationWorld.GameGrid.ToCell(wideStraightVehicle.Position) == new Point(12, 16),
     "A 3x4 harvester-style vehicle completes a twelve-cell route across open terrain without retries");
+
+navigationWorld = MovementWorld();
+Globals.World = navigationWorld;
+var shortReverseVehicle = Mobile(new Vector3(10.5f, 0, 10.5f));
+shortReverseVehicle.CanOnlyMoveForward = true;
+shortReverseVehicle.CanTurnInPlace = true;
+shortReverseVehicle.MoveSpeed = 5.0f;
+shortReverseVehicle.GroundSteering = new(180.0f, 180.0f, 100.0f, 0.4f,
+    true, 1.5f, 110.0f, 8.0f, 5.0f);
+navigationWorld.GameGrid.TryMove(shortReverseVehicle, new Point(10, 10));
+shortReverseVehicle.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(10.5f, 13.5f)),
+    route: [new(10, 11), new(10, 12), new(10, 13)]);
+float beforeReverseZ = shortReverseVehicle.Position.Z;
+shortReverseVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.1)));
+Check(shortReverseVehicle.Position.Z > beforeReverseZ,
+    "A nearby route behind a vehicle still uses its slower reverse maneuver");
+
+navigationWorld = MovementWorld();
+Globals.World = navigationWorld;
+var acceleratingVehicle = Mobile(new Vector3(8.5f, 0, 18.5f));
+acceleratingVehicle.CanOnlyMoveForward = true;
+acceleratingVehicle.CanTurnInPlace = true;
+acceleratingVehicle.MoveSpeed = 8.0f;
+acceleratingVehicle.GroundSteering = new(120.0f, 180.0f, 120.0f, 0.4f,
+    false, 0.0f, 180.0f, 5.0f, 0.0f, Acceleration: 4.0f, BrakingDeceleration: 5.0f);
+navigationWorld.GameGrid.TryMove(acceleratingVehicle, new Point(8, 18));
+Point[] accelerationRoute = Enumerable.Range(6, 12).Reverse().Select(y => new Point(8, y)).ToArray();
+acceleratingVehicle.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(8.5f, 6.5f)),
+    route: accelerationRoute);
+acceleratingVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.1)));
+float firstAccelerationSpeed = acceleratingVehicle.CurrentSpeed;
+MobileUnitState? speedSnapshot = JsonSerializer.Deserialize<MobileUnitState>(
+    acceleratingVehicle.GetState().Payload, NetworkJson.Options);
+float peakSpeed = firstAccelerationSpeed;
+float previousSpeed = firstAccelerationSpeed;
+bool brakedBeforeArrival = false;
+for (int frame = 0; frame < 600 && acceleratingVehicle.CurrentCommand is not null; frame++)
+{
+    acceleratingVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.05)));
+    if (acceleratingVehicle.CurrentCommand is not null &&
+        acceleratingVehicle.CurrentSpeed < previousSpeed - 0.001f)
+        brakedBeforeArrival = true;
+    peakSpeed = Math.Max(peakSpeed, acceleratingVehicle.CurrentSpeed);
+    previousSpeed = acceleratingVehicle.CurrentSpeed;
+}
+Check(firstAccelerationSpeed > 0.0f && firstAccelerationSpeed < acceleratingVehicle.MoveSpeed &&
+    peakSpeed > firstAccelerationSpeed,
+    "Ground vehicles accelerate over time instead of starting at maximum speed");
+Check(brakedBeforeArrival && acceleratingVehicle.CurrentCommand is null &&
+    acceleratingVehicle.CurrentSpeed == 0.0f &&
+    navigationWorld.GameGrid.ToCell(acceleratingVehicle.Position) == new Point(8, 6),
+    "Ground vehicles brake before the endpoint and stop without overshooting");
+Check(speedSnapshot is not null && float.IsFinite(speedSnapshot.CurrentSpeed) &&
+    Math.Abs(speedSnapshot.CurrentSpeed - firstAccelerationSpeed) < 0.001f,
+    "Mobile network state carries a finite reproducible current speed");
+Field(acceleratingVehicle, typeof(MobileUnit), "<CurrentSpeed>k__BackingField", float.NaN);
+MobileUnitState? sanitizedSpeedSnapshot = JsonSerializer.Deserialize<MobileUnitState>(
+    acceleratingVehicle.GetState().Payload, NetworkJson.Options);
+Check(sanitizedSpeedSnapshot?.CurrentSpeed == 0.0f,
+    "Non-finite runtime speed is sanitized before JSON network serialization");
+
+navigationWorld = MovementWorld();
+Globals.World = navigationWorld;
+var brakingForCurveVehicle = Mobile(new Vector3(5.5f, 0, 5.5f));
+brakingForCurveVehicle.CanOnlyMoveForward = true;
+brakingForCurveVehicle.MoveSpeed = 8.0f;
+brakingForCurveVehicle.GroundSteering = new(120.0f, 180.0f, 150.0f, 0.35f,
+    false, 0.0f, 180.0f, 5.0f, 0.0f, Acceleration: 4.0f, BrakingDeceleration: 5.0f);
+Field(brakingForCurveVehicle, typeof(MobileUnit), "<CurrentSpeed>k__BackingField", 8.0f);
+navigationWorld.GameGrid.TryMove(brakingForCurveVehicle, new Point(5, 5));
+brakingForCurveVehicle.TryReceiveGotoCommand(navigationWorld, new GotoCommand(new Vector2(15.5f, 3.5f)),
+    route: [new(5, 4), new(5, 3), new(6, 3), new(7, 3), new(8, 3), new(9, 3),
+        new(10, 3), new(11, 3), new(12, 3), new(13, 3), new(14, 3), new(15, 3)]);
+brakingForCurveVehicle.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(0.1)));
+Check(brakingForCurveVehicle.CurrentSpeed < 8.0f && brakingForCurveVehicle.CurrentSpeed > 0.0f,
+    "A vehicle already at maximum speed brakes progressively when lookahead reveals a curve");
 
 foreach (float step in new[] { 1f / 60, 0.1f, 0.25f })
 {
@@ -2743,7 +3117,44 @@ Check(!((IEnumerable<string>)findDifferences.Invoke(null,
           [expectedDigest, divergentDigest])!).Contains($"movement:{diagnosticUnitId:N}"),
     "Sync diagnostics tolerate sampling time and ordinary replication lag but report large movement drift");
 
+PerformanceMeasurements.Reset();
+PerformanceMeasurements.Enabled = false;
+using (PerformanceMeasurements.Measure("disabled")) { }
+Check(!PerformanceMeasurements.Report().Contains("disabled |"), "Disabled telemetry creates no measurements");
+PerformanceMeasurements.Enabled = true;
+try
+{
+    using var outerMeasurement = PerformanceMeasurements.Measure("outer");
+    using (PerformanceMeasurements.Measure("inner")) GC.KeepAlive(new byte[4096]);
+    throw new InvalidOperationException("measurement test");
+}
+catch (InvalidOperationException) { }
+string nestedReport = PerformanceMeasurements.Report();
+Check(nestedReport.Contains("outer | 1 |") && nestedReport.Contains("inner | 1 |"),
+    "Nested measurements complete on exception and preserve separate invocation counts");
+string innerRow = nestedReport.Split('\n').Single(line => line.StartsWith("inner |"));
+Check(long.Parse(innerRow.Split('|')[5].Trim()) >= 4096,
+    "Measurements record allocations on the calling thread");
+using (PerformanceMeasurements.Measure("stale")) PerformanceMeasurements.Reset();
+Check(!PerformanceMeasurements.Report().Contains("stale |"), "Reset invalidates an in-flight measurement");
+PerformanceMeasurements.Enabled = false;
+
+checks += IncrementalPlanningChecks.Run();
+checks += HarvestSystemChecks.Run();
+checks += MedicSystemChecks.Run();
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");
+if (args.Length == 2 && args[0] == "--performance-baseline")
+{
+    string report = PerformanceBaseline.Run();
+    File.WriteAllText(args[1], report);
+    Console.WriteLine(report);
+}
+if (args.Length == 2 && args[0] == "--incremental-baseline")
+{
+    string report = PerformanceBaseline.Run(incremental: true);
+    File.WriteAllText(args[1], report);
+    Console.WriteLine(report);
+}
 
 sealed class CountingMovementProfile : IMovementProfile
 {

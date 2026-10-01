@@ -11,6 +11,9 @@ public class GameGrid
     private readonly Unit?[,] _occupants;
     private readonly GridCell[,] _cells;
     private Terrain? _terrain;
+    private long _navigationRevision;
+    public long NavigationRevision => _navigationRevision + (_terrain?.HeightRevision ?? 0);
+    private void NavigationChanged() => _navigationRevision++;
 
     public bool Contains(Point cell) => cell.X >= 0 && cell.Y >= 0 && cell.X < Width && cell.Y < Height;
 
@@ -41,6 +44,7 @@ public class GameGrid
 
     public void BindTerrain(Terrain terrain)
     {
+        NavigationChanged();
         _terrain = terrain;
         foreach (GridCell cell in _cells)
             cell.TerrainRevision = -1;
@@ -108,11 +112,12 @@ public class GameGrid
         _cells = new GridCell[width, height];
         for (int y = 0; y < height; y++)
             for (int x = 0; x < width; x++)
-                _cells[x, y] = new GridCell();
+                _cells[x, y] = new GridCell(NavigationChanged);
     }
 
     private void Clear(Unit unit)
     {
+        if (unit is not MobileUnit && _occupiedCells.ContainsKey(unit)) NavigationChanged();
         if (_occupiedCells.TryGetValue(unit, out IReadOnlyList<Point>? cells))
         {
             foreach (Point cell in cells)
@@ -373,8 +378,11 @@ public class GameGrid
         foreach (Point cell in cells)
             _occupants[cell.X, cell.Y] = unit;
         _occupiedCells[unit] = cells;
+        if (unit is not MobileUnit) NavigationChanged();
         if (unit is Building)
+        {
             RegisterClearance(unit, GetClearanceCells(unit, position, rotationDegrees));
+        }
         return true;
     }
 
@@ -461,7 +469,7 @@ public class GameGrid
         return cells;
     }
 
-    private bool IsRegistered(Unit unit) => _occupiedCells.ContainsKey(unit);
+    internal bool IsRegistered(Unit unit) => _occupiedCells.ContainsKey(unit);
 
     /// <summary>Hard occupancy used by movement. Unauthored mobile units use a square core.</summary>
     private IReadOnlyList<Point> GetMovementFootprintCells(Unit unit, Point centerCell)

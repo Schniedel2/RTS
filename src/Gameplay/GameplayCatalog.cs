@@ -133,6 +133,7 @@ public static class GameplayCatalog
                 AIMovementDomain.Air, AntiInfantry: 0.5f, AntiVehicle: 0.9f,
                 AntiBuilding: 0.4f, Mobility: 1.0f, Scouting: 0.8f,
                 PreferredMaximumCount: 4)),
+        Unit("motorbike", "Motorbike", 400, [Producer("vehicle-factory", 4), Producer("gdi-barracks", 4)], new(AIUnitRole.Scout | AIUnitRole.Support, AIMovementDomain.GroundVehicle, AntiInfantry: 0.25f, Defense: 0.15f, Mobility: 1.0f, Scouting: 1.0f, PreferredMaximumCount: 5)),
 
         new(PurchasableType.Research, ResearchProjects.AirTechnologyId, "Air Technology", 1000,
             BaseRequired, [Producer("gdi-base", 15)], 4, 4,

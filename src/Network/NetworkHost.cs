@@ -5,11 +5,14 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
+using System.Diagnostics;
 
 namespace RTS.Network;
 
 public sealed class NetworkHost
 {
+    private static readonly Dictionary<NetworkMessageType, string> RequestMeasurementNames =
+        Enum.GetValues<NetworkMessageType>().ToDictionary(type => type, type => "Host.Request." + type);
     private readonly NetworkHandler _networkHandler;
     private readonly GameWorld _world;
     private readonly EarthworkController _earthworks;
@@ -17,13 +20,31 @@ public sealed class NetworkHost
     private readonly ConcurrentQueue<NetworkMessage> _requestQueue = new();
     private readonly SemaphoreSlim _updateGate = new(1, 1);
     private readonly Dictionary<Guid, Vector2> _gotoQueueEnds = [];
-    private readonly Dictionary<Guid, HarvestJob> _harvestJobs = [];
+    private readonly Dictionary<Guid, long> _planningVersions = [];
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<NetworkMessage, Dictionary<Guid, long>> _requestVersions = new();
+    private GotoPlan? _pendingGoto;
+    private bool _pendingGotoReady;
+    private int _pendingSchedulerGeneration;
+    private sealed class GotoPlan(NetworkMessage request)
+    {
+        public NetworkMessage Request { get; } = request;
+        public NetworkMessage? Result;
+        public Dictionary<Guid, long> Versions = [];
+        public long GridRevision;
+        public bool Invalidated;
+    }
+    private sealed class DestinationPlan
+    {
+        public bool Succeeded;
+        public Vector2 Target;
+        public Point[] Route = [];
+    }
+    private readonly HarvestSystem _harvest;
     private readonly Dictionary<Guid, int> _startPositionWishes = [];
-    private readonly Dictionary<Guid, double> _nextPatientHealTimes = [];
-    private readonly Dictionary<Guid, MedicJob> _medicJobs = [];
-    private readonly HashSet<Guid> _medicsHoldingPosition = [];
+    private readonly MedicSystem _medics;
     private const int MaximumQueuedRequests = 1024;
     private const int MaximumRequestsPerUpdate = 32;
+    private const int MaximumGotoRequestsPerUpdate = 1;
     private const int MaximumStateUpdatesPerTick = 32;
     private const int MaximumGotoPathAttemptsPerUnit = 12;
     private const double HostSimulationInterval = 0.1;
@@ -37,27 +58,6 @@ public sealed class NetworkHost
     public double HostTime => _hostTime;
     private readonly List<HostProjectile> _hostProjectiles = [];
     private readonly List<ProjectileImpact> _projectileImpacts = [];
-    private sealed class HarvestJob(Point fieldCenter)
-    {
-        public Point FieldCenter { get; } = fieldCenter;
-        public HarvestPhase Phase { get; set; } = HarvestPhase.DrivingToField;
-        public Point? ResourceCell { get; set; }
-        public Guid? SiloId { get; set; }
-        public bool MoveIssued { get; set; }
-        public float UnloadElapsed { get; set; }
-        public bool ResumeAfterUnload { get; set; } = true;
-        public Vector3? StorageApproach { get; set; }
-        public double RetryAfter { get; set; }
-    }
-    private sealed class MedicJob(Guid patientId)
-    {
-        public Guid PatientId { get; } = patientId;
-        public bool MoveIssued { get; set; }
-    }
-    private const int HarvestSearchRadius = 24;
-    private const float HarvestRatePerSecond = 18.0f;
-    private const float UnloadSeconds = 2.0f;
-
     private sealed class HostProjectile(
         Guid projectileId,
         Guid attackerId,
@@ -95,6 +95,12 @@ public sealed class NetworkHost
     {
         _networkHandler = networkHandler;
         _world = world;
+        _harvest = new HarvestSystem(world, Globals.Game.Armies, networkHandler.LocalPeerId,
+            PublishAsync, QueueHarvestRoute, () => networkHandler.SessionGeneration,
+            id => _planningVersions.GetValueOrDefault(id));
+        _medics = new MedicSystem(world, Globals.Game.Armies, networkHandler.LocalPeerId,
+            PublishAsync, CreateStopCommand, QueueMedicRoute, () => networkHandler.SessionGeneration,
+            id => _planningVersions.GetValueOrDefault(id));
         _earthworks = new EarthworkController(world, networkHandler.LocalPeerId, command =>
         {
             networkHandler.ApplyLocalCommand(command);
@@ -230,14 +236,18 @@ public sealed class NetworkHost
         if (generation == _sessionGeneration) return;
         _sessionGeneration = generation;
         _requestQueue.Clear();
+        if (_pendingGoto is GotoPlan abandoned) ReleasePlanningIntent(abandoned);
+        _pendingGoto = null;
+        _pendingGotoReady = false;
+        _planningVersions.Clear();
+        _requestVersions.Clear();
+        _world.PathfindingManager?.Reset();
         _earthworkBroadcasts.Clear();
         _earthworks.Reset();
         _gotoQueueEnds.Clear();
-        _harvestJobs.Clear();
+        _harvest.Reset();
         _startPositionWishes.Clear();
-        _nextPatientHealTimes.Clear();
-        _medicJobs.Clear();
-        _medicsHoldingPosition.Clear();
+        _medics.Reset();
         _hostProjectiles.Clear();
         _projectileImpacts.Clear();
         _hostTime = 0;
@@ -289,6 +299,10 @@ public sealed class NetworkHost
             return;
         if (message.Type == NetworkMessageType.SpawnRequest && message.UnitTypeId is null)
             return;
+        if (message.Type is NetworkMessageType.GotoRequest or NetworkMessageType.MoveAwayRequest &&
+            (!float.IsFinite(message.X) || !float.IsFinite(message.Z))) return;
+        if (message.Type == NetworkMessageType.GotoRequest &&
+            !_world.GameGrid.Contains(_world.GameGrid.ToCell(new Vector3(message.X, 0, message.Z)))) return;
 
         if (message.Type == NetworkMessageType.TextRequest && string.IsNullOrWhiteSpace(message.Text))
             return;
@@ -318,6 +332,7 @@ public sealed class NetworkHost
         if (_requestQueue.Count >= MaximumQueuedRequests)
             return;
 
+        RememberPlanningVersions(message);
         _requestQueue.Enqueue(message);
     }
 
@@ -347,29 +362,64 @@ public sealed class NetworkHost
             await PublishHelicoptersAsync();
             await PublishGroundMobileUnitsAsync();
             await PublishExploredVisibilityAsync();
-            await PublishHarvestersAsync(gameTime);
+            await _harvest.UpdateAsync(gameTime, _hostTime);
             await PublishProjectileImpactsAsync();
-            await UpdateAndPublishMedicsAsync();
+            await _medics.UpdateAsync(_hostTime);
 
-            for (int index = 0; index < MaximumRequestsPerUpdate; index++)
+            if (_pendingGoto is GotoPlan finished)
             {
-                if (!_requestQueue.TryDequeue(out NetworkMessage? request))
-                    return;
+                if (_pendingSchedulerGeneration != _world.PathfindingManager.Scheduler.Generation)
+                { _pendingGoto = null; _pendingGotoReady = true; finished.Result = null; }
+                if (!_pendingGotoReady) return;
+                using var publication = PerformanceMeasurements.Measure("Host.GotoPublish");
+                _pendingGoto = null;
+                _pendingGotoReady = false;
+                NetworkMessage? planned = FilterPlannedCommand(finished);
+                if (planned is not null) { CommitGotoEnds(planned); await PublishAsync(planned); }
+                ReleasePlanningIntent(finished);
+            }
+
+            foreach (NetworkMessage queuedRequest in TakeRequestsForUpdate())
+            {
+                using var measurement = PerformanceMeasurements.Measure(RequestMeasurementNames[queuedRequest.Type]);
+                NetworkMessage request = queuedRequest;
 
                 if (request.Type is NetworkMessageType.GotoRequest or NetworkMessageType.StopRequest or
                     NetworkMessageType.FollowRequest or NetworkMessageType.AttackTargetRequest or NetworkMessageType.AttackGroundRequest)
                     request = request with { UnitIds = (request.UnitIds ?? Array.Empty<Guid>()).Where(id =>
                         _world.Units.FindById(id) is not Helicopter helicopter || Globals.Game.Armies.CanControl(request.SenderId, helicopter.ArmyId)).ToArray() };
-                HandleMedicCommandOverride(request);
+                _medics.HandleCommandOverride(request, ExpandSquadUnitIds(request.UnitIds ?? []));
                 _earthworks.CancelForRequest(request);
-                if (request.Type is NetworkMessageType.GotoRequest or NetworkMessageType.MoveAwayRequest && request.UnitId is Guid singleId)
-                    _harvestJobs.Remove(singleId);
-                if (request.Type == NetworkMessageType.GotoRequest)
-                    foreach (Guid id in request.UnitIds ?? []) _harvestJobs.Remove(id);
+                _harvest.CancelForRequest(request);
+                if (request.Type is NetworkMessageType.GotoRequest or NetworkMessageType.MoveAwayRequest)
+                {
+                    GotoPlan planning = NewGotoPlan(request);
+                    // Filtering helicopter IDs above creates a record copy. Keep
+                    // the original admission versions, including newer queued Stop/Goto.
+                    if (_requestVersions.TryGetValue(queuedRequest, out Dictionary<Guid, long>? admittedVersions))
+                        planning.Versions = admittedVersions;
+                    _pendingGoto = planning;
+                    _pendingSchedulerGeneration = _world.PathfindingManager.Scheduler.Generation;
+                    _pendingGotoReady = false;
+                    if (!request.AppendToQueue)
+                    {
+                        await PublishAsync(CreateStopCommand(planning.Request with {
+                            UnitIds = planning.Versions.Keys.Where(id =>
+                                _world.Units.FindMobileUnitById(id) is MobileUnit mobile && PlanUnitValid(planning, mobile)).ToArray() }));
+                        foreach (Guid id in planning.Versions.Keys)
+                            if (_world.Units.FindMobileUnitById(id) is MobileUnit mobile && PlanUnitValid(planning, mobile))
+                                mobile.MarkHostPlanning(new Vector2(request.X, request.Z));
+                    }
+                    long generation = _sessionGeneration;
+                    _world.PathfindingManager.Scheduler.Enqueue(
+                        request.Type == NetworkMessageType.MoveAwayRequest ? PlanMoveAway(planning) : PlanGoto(planning),
+                        () => generation == _networkHandler.SessionGeneration && ReferenceEquals(_pendingGoto, planning),
+                        () => _pendingGotoReady = true, () => _pendingGotoReady = true, "Host.GotoPlanningSlice");
+                    break; // A later request cannot overtake this asynchronous FIFO head.
+                }
                 NetworkMessage? command = request.Type switch
                 {
                     NetworkMessageType.SpawnRequest => NetworkCommands.CreateSpawnCommand(_networkHandler.LocalPeerId, request),
-                    NetworkMessageType.GotoRequest => TryCreateGotoCommand(request),
                     NetworkMessageType.StopRequest => CreateStopCommand(request),
                     NetworkMessageType.AttackRequest => TryCreateAttackCommand(request),
                     NetworkMessageType.AttackTargetRequest => TryCreateAttackTargetCommand(request),
@@ -390,9 +440,8 @@ public sealed class NetworkHost
                     NetworkMessageType.SetRallyPointRequest => TryCreateSetRallyPointCommand(request),
                     NetworkMessageType.EarthworkRequest => _earthworks.Start(request),
                     NetworkMessageType.HelicopterOrderRequest => TryCreateHelicopterOrder(request),
-                    NetworkMessageType.HarvestRequest => TryCreateHarvestCommand(request),
-                    NetworkMessageType.MoveAwayRequest => TryCreateMoveAwayCommand(request),
-                    NetworkMessageType.HarvesterReturnRequest => TryCreateHarvesterReturnCommand(request),
+                    NetworkMessageType.HarvestRequest => _harvest.TryStart(request),
+                    NetworkMessageType.HarvesterReturnRequest => _harvest.TryReturn(request),
                     NetworkMessageType.CancelConstructionRequest => TryCreateCancelConstructionCommand(request),
                     NetworkMessageType.SellBuildingRequest => TryCreateSellBuildingCommand(request),
                     NetworkMessageType.DestroyBuildingRequest => TryCreateDestroyBuildingCommand(request),
@@ -425,6 +474,24 @@ public sealed class NetworkHost
         }
     }
 
+    // This game-thread consumer is the only reader removing requests. Deferred
+    // work stays at the head so Stop, Attack and Shift orders cannot overtake it.
+    private IEnumerable<NetworkMessage> TakeRequestsForUpdate()
+    {
+        int gotoRequests = 0;
+        int available = Math.Min(MaximumRequestsPerUpdate, _requestQueue.Count);
+        for (int index = 0; index < available; index++)
+        {
+            if (!_requestQueue.TryPeek(out NetworkMessage? next)) yield break;
+            if (next.Type == NetworkMessageType.GotoRequest &&
+                gotoRequests >= MaximumGotoRequestsPerUpdate)
+                yield break;
+            if (!_requestQueue.TryDequeue(out NetworkMessage? request)) yield break;
+            if (request.Type == NetworkMessageType.GotoRequest) gotoRequests++;
+            yield return request;
+        }
+    }
+
     private Task PublishExploredVisibilityAsync()
     {
         if (_hostTime < _nextExploredVisibilitySync) return Task.CompletedTask;
@@ -445,10 +512,105 @@ public sealed class NetworkHost
 
     private NetworkMessage? TryCreateGotoCommand(NetworkMessage request)
     {
+        using var measurement = PerformanceMeasurements.Measure("Host.GotoPlanning");
+        long started = Stopwatch.GetTimestamp();
+        try
+        {
+            return TryCreateGotoCommandCore(request);
+        }
+        finally
+        {
+            double elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            Globals.Telemetry.HostGoto_Calls++;
+            Globals.Telemetry.HostGoto_Last = elapsed;
+            Globals.Telemetry.HostGoto_Max = Math.Max(Globals.Telemetry.HostGoto_Max, elapsed);
+        }
+    }
+
+    private NetworkMessage? TryCreateGotoCommandCore(NetworkMessage request)
+    {
+        // Synchronous compatibility entry for the graphics-free checks. Runtime
+        // consumers enqueue PlanGoto into the shared navigation scheduler.
+        GotoPlan plan = NewGotoPlan(request);
+        foreach (int step in PlanGoto(plan)) { }
+        if (plan.Result is not null) CommitGotoEnds(plan.Result);
+        return plan.Result;
+    }
+
+    private void CommitGotoEnds(NetworkMessage command)
+    {
+        foreach (UnitRoute route in command.Routes ?? [])
+            if (route.TargetX is float x && route.TargetZ is float z) _gotoQueueEnds[route.UnitId] = new(x, z);
+    }
+
+    private NetworkMessage? FilterPlannedCommand(GotoPlan plan)
+    {
+        if (plan.Result is not NetworkMessage command || plan.GridRevision != _world.GameGrid.NavigationRevision) return null;
+        UnitRoute[] routes = (command.Routes ?? []).Where(route =>
+            _world.Units.FindMobileUnitById(route.UnitId) is MobileUnit unit && PlanUnitValid(plan, unit)).ToArray();
+        return routes.Length == 0 ? null : command with { Routes = routes, UnitIds = routes.Select(route => route.UnitId).ToArray() };
+    }
+
+    private GotoPlan NewGotoPlan(NetworkMessage request)
+    {
+        GotoPlan plan = new(request);
+        if (_requestVersions.TryGetValue(request, out Dictionary<Guid, long>? versions)) plan.Versions = versions;
+        else foreach (Guid id in ExpandSquadUnitIds(request.UnitIds ?? (request.UnitId is Guid single ? [single] : [])))
+            plan.Versions[id] = _planningVersions.GetValueOrDefault(id);
+        return plan;
+    }
+
+    private bool PlanVersionValid(GotoPlan plan, MobileUnit unit) =>
+        !unit.IsDying && !unit.IsEmbarked &&
+        Globals.Game.Armies.CanControl(plan.Request.SenderId, unit.ArmyId) &&
+        plan.Versions.TryGetValue(unit.UnitId, out long version) && version == _planningVersions.GetValueOrDefault(unit.UnitId);
+
+    private bool PlanUnitValid(GotoPlan plan, MobileUnit unit) =>
+        PlanVersionValid(plan, unit) && ReferenceEquals(_world.Units.FindById(unit.UnitId), unit);
+
+    private void RememberPlanningVersions(NetworkMessage request)
+    {
+        if (request.Type == NetworkMessageType.StartMultiplayerGameRequest && request.SenderId == _networkHandler.LocalPeerId)
+            foreach (MobileUnit mobile in _world.Units.Units.OfType<MobileUnit>())
+                _planningVersions[mobile.UnitId] = _planningVersions.GetValueOrDefault(mobile.UnitId) + 1;
+        bool replaces = !request.AppendToQueue && request.Type is NetworkMessageType.GotoRequest or
+            NetworkMessageType.StopRequest or NetworkMessageType.MoveAwayRequest or
+            NetworkMessageType.BuildConstructionRequest or NetworkMessageType.EnterUnitRequest or
+            NetworkMessageType.HarvesterReturnRequest or NetworkMessageType.HarvestRequest ||
+            request.Type == NetworkMessageType.UnitActionRequest && request.UnitActionType == UnitActionType.Stop;
+        Dictionary<Guid, long> versions = [];
+        IEnumerable<Guid> ids = ExpandSquadUnitIds(request.UnitIds ?? (request.UnitId is Guid id ? [id] : []));
+        foreach (Guid unitId in ids.Distinct())
+        {
+            if (_world.Units.FindMobileUnitById(unitId) is not MobileUnit unit ||
+                !Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId)) continue;
+            long version = _planningVersions.GetValueOrDefault(unitId);
+            if (replaces) _planningVersions[unitId] = ++version;
+            versions[unitId] = version;
+        }
+        _requestVersions.Remove(request);
+        _requestVersions.Add(request, versions);
+    }
+
+    private IEnumerable<int> PlanGoto(GotoPlan plan)
+    {
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            plan.Invalidated = false;
+            plan.Result = null;
+            foreach (int step in PlanGotoAttempt(plan)) yield return step;
+            if (!plan.Invalidated) yield break;
+        }
+    }
+
+    private IEnumerable<int> PlanGotoAttempt(GotoPlan plan)
+    {
+        NetworkMessage request = plan.Request;
+        yield return 0;
         Vector2 target = new(request.X, request.Z);
-        if (!float.IsFinite(target.X) || !float.IsFinite(target.Y)) return null;
+        if (!float.IsFinite(target.X) || !float.IsFinite(target.Y)) yield break;
         Point destination = _world.GameGrid.ToCell(new Vector3(target.X, 0, target.Y));
-        if (!_world.GameGrid.Contains(destination)) return null;
+        if (!_world.GameGrid.Contains(destination)) yield break;
         List<UnitRoute> routes = [];
         Guid[] requestedIds = request.UnitIds ?? [];
         Dictionary<Guid, Vector2> formationTargets = [];
@@ -484,6 +646,8 @@ public sealed class NetworkHost
 
         foreach (MobileUnit unit in units)
         {
+            yield return 0;
+            if (!PlanUnitValid(plan, unit)) continue;
             Guid id = unit.UnitId;
             Vector2 requestedTarget = formationTargets.GetValueOrDefault(id, target);
             Point requestedDestination = _world.GameGrid.ToCell(
@@ -498,7 +662,6 @@ public sealed class NetworkHost
             if (unit is Helicopter)
             {
                 routes.Add(new UnitRoute(id, [], requestedTarget.X, requestedTarget.Y));
-                _gotoQueueEnds[id] = requestedTarget;
                 continue;
             }
 
@@ -512,32 +675,75 @@ public sealed class NetworkHost
             {
                 reservedDestinations.Add(requestedDestination);
             }
-            else if (!TryAssignGotoDestination(unit, requestedTarget, requestedDestination, reservedDestinations,
-                request.AppendToQueue, distributeGroup, out assignedTarget, out proposed))
+            else
             {
+                DestinationPlan assigned = new();
+                foreach (int step in AssignGotoDestination(unit, requestedTarget, requestedDestination, reservedDestinations,
+                    request.AppendToQueue, distributeGroup, assigned))
+                {
+                    yield return step;
+                    if (!PlanVersionValid(plan, unit)) break;
+                }
+                if (!PlanUnitValid(plan, unit)) continue;
+                assignedTarget = assigned.Target;
+                proposed = assigned.Route;
+                if (!assigned.Succeeded)
+                {
                 // No useful position is reachable near the group destination.
                 // Sending an empty route cancels an older movement order and
                 // leaves the unit standing instead of running against a blocker.
                 assignedTarget = new Vector2(unit.Position.X, unit.Position.Z);
                 proposed = [];
+                }
             }
 
             routes.Add(new UnitRoute(id, proposed!, assignedTarget.X, assignedTarget.Y));
-            _gotoQueueEnds[id] = assignedTarget;
         }
-        return routes.Count == 0 ? null : NetworkCommands.CreateGotoCommand(_networkHandler.LocalPeerId,
-            request with { UnitIds = routes.Select(route => route.UnitId).ToArray() }, routes.ToArray());
+        // An unrelated building may have appeared while later units were planned.
+        // Revalidate every route before publishing the complete group command.
+        List<UnitRoute> accepted = [];
+        long validationRevision = _world.GameGrid.NavigationRevision;
+        foreach (UnitRoute route in routes)
+        {
+            MobileUnit? unit = _world.Units.FindMobileUnitById(route.UnitId);
+            if (unit is null || !PlanUnitValid(plan, unit)) continue;
+            bool valid = true;
+            Point from = request.AppendToQueue && _gotoQueueEnds.TryGetValue(unit.UnitId, out Vector2 queuedEnd)
+                ? _world.GameGrid.ToCell(new Vector3(queuedEnd.X, 0, queuedEnd.Y)) : _world.GameGrid.ToCell(unit.Position);
+            HashSet<Point> startingFootprint = _world.GameGrid.GetPathfindingStartingFootprint(unit, from);
+            bool CanUseCell(Point cell) => unit.MovementProfile.CanEnter(_world, unit, cell) &&
+                _world.GameGrid.IsPathfindingAllowedFromFootprint(unit, cell, startingFootprint);
+            foreach (Point cell in route.Cells)
+            {
+                yield return 0;
+                if (_world.GameGrid.NavigationRevision != validationRevision) { plan.Invalidated = true; yield break; }
+                // Client-supplied routes retain the existing minimal validation;
+                // collision checks during driving handle changes along those routes.
+                if (!distributeGroup && formationTargets.Count == 0 && request.Routes?.Any(supplied => supplied.UnitId == unit.UnitId) == true)
+                { from = cell; continue; }
+                if (Math.Abs(cell.X - from.X) > 1 || Math.Abs(cell.Y - from.Y) > 1 || !CanUseCell(cell) ||
+                    (cell.X != from.X && cell.Y != from.Y &&
+                        (!CanUseCell(new Point(cell.X, from.Y)) || !CanUseCell(new Point(from.X, cell.Y)))))
+                { valid = false; break; }
+                from = cell;
+            }
+            if (!PlanUnitValid(plan, unit)) continue;
+            accepted.Add(valid ? route : new UnitRoute(unit.UnitId, [], unit.Position.X, unit.Position.Z));
+        }
+        if (_world.GameGrid.NavigationRevision != validationRevision) { plan.Invalidated = true; yield break; }
+        plan.Result = accepted.Count == 0 ? null : NetworkCommands.CreateGotoCommand(_networkHandler.LocalPeerId,
+            request with { UnitIds = accepted.Select(route => route.UnitId).ToArray() }, accepted.ToArray());
+        plan.GridRevision = _world.GameGrid.NavigationRevision;
     }
 
-    private bool TryAssignGotoDestination(
+    private IEnumerable<int> AssignGotoDestination(
         MobileUnit unit,
         Vector2 requestedTarget,
         Point center,
         HashSet<Point> reservedDestinations,
         bool appendToQueue,
         bool distributeGroup,
-        out Vector2 assignedTarget,
-        out Point[] route)
+        DestinationPlan result)
     {
         Vector2 startPosition = appendToQueue && _gotoQueueEnds.TryGetValue(unit.UnitId, out Vector2 queuedEnd)
             ? queuedEnd
@@ -552,6 +758,7 @@ public sealed class NetworkHost
             {
                 for (int x = -radius; x <= radius; x++)
                 {
+                    yield return 0;
                     if (Math.Max(Math.Abs(x), Math.Abs(y)) != radius)
                         continue;
                     Point candidate = center + new Point(x, y);
@@ -566,24 +773,23 @@ public sealed class NetworkHost
                         : new Vector2(candidatePosition.X, candidatePosition.Z);
                     if (pathAttempts++ >= MaximumGotoPathAttemptsPerUnit)
                     {
-                        assignedTarget = default;
-                        route = [];
-                        return false;
+                        yield break;
                     }
-                    if (!_world.PathfindingManager.TryFindPath(unit, start, candidateTarget, out List<Point> path))
+                    Pathfinder.Search search = _world.PathfindingManager.CreateSearch(unit, start, candidateTarget);
+                    foreach (int step in search.Work()) yield return step;
+                    if (!search.Succeeded)
                         continue;
 
                     reservedDestinations.Add(candidate);
-                    assignedTarget = candidateTarget;
-                    route = path.ToArray();
-                    return true;
+                    result.Target = candidateTarget;
+                    result.Route = search.Path.ToArray();
+                    result.Succeeded = true;
+                    yield break;
                 }
             }
         }
 
-        assignedTarget = default;
-        route = [];
-        return false;
+        yield break;
     }
 
     private NetworkMessage CreateStopCommand(NetworkMessage request)
@@ -595,7 +801,7 @@ public sealed class NetworkHost
         foreach (Guid id in ids)
         {
             _gotoQueueEnds.Remove(id);
-            _harvestJobs.Remove(id);
+            _harvest.Cancel(id);
         }
         return NetworkCommands.CreateStopCommand(
             _networkHandler.LocalPeerId, request with { UnitIds = ids });
@@ -685,43 +891,20 @@ public sealed class NetworkHost
         _world.Units.Units.OfType<Soldier>().Where(unit =>
             unit != leader && unit.SquadLeaderId == leader.UnitId && !unit.IsDying);
 
-    private NetworkMessage? TryCreateHarvestCommand(NetworkMessage request)
-    {
-        if (request.UnitId is not Guid id || _world.Units.FindById(id) is not Harvester harvester ||
-            harvester.IsDying || !Globals.Game.Armies.CanControl(request.SenderId, harvester.ArmyId) ||
-            !float.IsFinite(request.X) || !float.IsFinite(request.Z)) return null;
-        Point center = _world.GameGrid.ToCell(new Vector3(request.X, 0, request.Z));
-        if (!_world.GameGrid.Contains(center)) return null;
-        harvester.Stop();
-        harvester.ApplyHarvestState(HarvestPhase.DrivingToField, harvester.CargoAmount);
-        _harvestJobs[id] = new HarvestJob(center);
-        return CreateHarvestStateCommand(harvester, HarvestPhase.DrivingToField);
-    }
-
-    private NetworkMessage? TryCreateHarvesterReturnCommand(NetworkMessage request)
-    {
-        if (request.UnitId is not Guid id || _world.Units.FindById(id) is not Harvester harvester ||
-            harvester.IsDying || harvester.CargoAmount <= 0.001f ||
-            !Globals.Game.Armies.CanControl(request.SenderId, harvester.ArmyId) ||
-            FindNearestSilo(harvester) is not Building storage)
-            return null;
-
-        harvester.Stop();
-        harvester.ApplyHarvestState(HarvestPhase.ReturningToSilo, harvester.CargoAmount);
-        _harvestJobs[id] = new HarvestJob(_world.GameGrid.ToCell(harvester.Position))
-        {
-            Phase = HarvestPhase.ReturningToSilo,
-            SiloId = storage.UnitId,
-            ResumeAfterUnload = false
-        };
-        return CreateHarvestStateCommand(harvester, HarvestPhase.ReturningToSilo);
-    }
-
     private NetworkMessage? TryCreateMoveAwayCommand(NetworkMessage request)
     {
+        GotoPlan plan = NewGotoPlan(request);
+        foreach (int step in PlanMoveAway(plan)) { }
+        if (plan.Result is not null) CommitGotoEnds(plan.Result);
+        return plan.Result;
+    }
+
+    private IEnumerable<int> PlanMoveAway(GotoPlan plan)
+    {
+        NetworkMessage request = plan.Request;
         if (request.UnitId is not Guid id || _world.Units.FindMobileUnitById(id) is not MobileUnit unit ||
             unit.IsDying || !Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId) ||
-            !float.IsFinite(request.X) || !float.IsFinite(request.Z)) return null;
+            !float.IsFinite(request.X) || !float.IsFinite(request.Z)) yield break;
 
         Vector2 away = new(unit.Position.X - request.X, unit.Position.Z - request.Z);
         if (away.LengthSquared() < 0.01f)
@@ -736,289 +919,75 @@ public sealed class NetworkHost
         {
             foreach (float offset in angleOffsets)
             {
+                yield return 0;
+                if (!PlanUnitValid(plan, unit)) yield break;
                 Vector2 direction = Vector2.Transform(away, Matrix.CreateRotationZ(MathHelper.ToRadians(offset)));
                 Vector2 destination = new Vector2(unit.Position.X, unit.Position.Z) + direction * distanceInCells * cellSize;
                 NetworkMessage candidate = NetworkCommands.CreateGotoRequest(request.SenderId, [id],
                     destination.X, unit.Position.Y, destination.Y);
-                NetworkMessage? command = TryCreateGotoCommand(candidate);
-                if (command is not null) return command;
+                GotoPlan trial = new(candidate) { Versions = plan.Versions };
+                foreach (int step in PlanGoto(trial)) yield return step;
+                if (trial.Result?.Routes?.Any(route => route.Cells.Length > 0) == true)
+                { plan.Result = trial.Result; plan.GridRevision = trial.GridRevision; yield break; }
             }
         }
-        return null;
+        yield break;
     }
 
-    private async Task PublishHarvestersAsync(GameTime gameTime)
+    private void QueueHarvestRoute(Harvester harvester,
+        IEnumerable<(Point? Resource, Vector3 Position)> candidates, Func<bool> valid,
+        Action<Point?, NetworkMessage?> completed, Action cancelled)
     {
-        float elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
-        foreach ((Guid id, HarvestJob job) in _harvestJobs.ToArray())
+        GotoPlan? chosen = null;
+        Point? chosenResource = null;
+        IEnumerable<int> Work()
         {
-            if (_world.Units.FindById(id) is not Harvester harvester || harvester.IsDying)
+            Guid sender = harvester.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army
+                ? army.OwnerPlayerIds.FirstOrDefault() : _networkHandler.LocalPeerId;
+            foreach (var candidate in candidates)
             {
-                _harvestJobs.Remove(id);
-                continue;
+                yield return 0;
+                if (!valid()) yield break;
+                GotoPlan trial = NewGotoPlan(NetworkCommands.CreateGotoRequest(sender, [harvester.UnitId],
+                    candidate.Position.X, candidate.Position.Y, candidate.Position.Z));
+                foreach (int step in PlanGoto(trial)) yield return step;
+                if (trial.Result?.Routes?.Any(route => route.Cells.Length > 0) != true) continue;
+                chosen = trial;
+                chosenResource = candidate.Resource;
+                yield break;
             }
-            if (_hostTime < job.RetryAfter)
-                continue;
-            if (job.Phase == HarvestPhase.DrivingToField)
-            {
-                if (harvester.CargoAmount >= harvester.CargoCapacity - 0.001f)
-                {
-                    await BeginReturnAsync(harvester, job); continue;
-                }
-                if (job.ResourceCell is not Point resourceCell ||
-                    !_world.Tiberium.Cells.TryGetValue(resourceCell, out TiberiumCell? resource) ||
-                    resource.Amount <= 0.001f)
-                {
-                    if (!TryFindTiberium(job.FieldCenter, out resourceCell))
-                    {
-                        if (harvester.CargoAmount <= 0.001f) DelayHarvestRetry(job);
-                        else await BeginReturnAsync(harvester, job);
-                        continue;
-                    }
-                    job.ResourceCell = resourceCell;
-                    job.MoveIssued = false;
-                }
-                Vector3 target = _world.GameGrid.ToWorldPosition(resourceCell, 0);
-                if (HorizontalDistanceSquared(harvester.Position, target) <= 4.0f)
-                {
-                    job.Phase = HarvestPhase.Harvesting;
-                    job.MoveIssued = false;
-                    await PublishHarvestStateAsync(harvester, job.Phase);
-                    continue;
-                }
-                if (!job.MoveIssued)
-                {
-                    if (await TryPublishReachableHarvestGotoAsync(harvester, job, resourceCell))
-                        job.MoveIssued = true;
-                    else
-                    {
-                        // Do not retry the same inaccessible crystal forever.
-                        // The next pass chooses another resource cell.
-                        job.ResourceCell = null;
-                        DelayHarvestRetry(job);
-                    }
-                    continue;
-                }
-                if (harvester.CurrentCommand is null)
-                {
-                    if (HorizontalDistanceSquared(harvester.Position, target) <= 4.0f)
-                    {
-                        job.Phase = HarvestPhase.Harvesting; job.MoveIssued = false;
-                        await PublishHarvestStateAsync(harvester, job.Phase);
-                    }
-                    else job.MoveIssued = false;
-                }
-                continue;
-            }
-            if (job.Phase == HarvestPhase.Harvesting)
-            {
-                if (job.ResourceCell is not Point cell || !_world.Tiberium.Cells.ContainsKey(cell))
-                {
-                    job.Phase = HarvestPhase.DrivingToField;
-                    await PublishHarvestStateAsync(harvester, job.Phase); continue;
-                }
-                float harvested = _world.Tiberium.TryHarvest(cell,
-                    Math.Min(harvester.CargoCapacity - harvester.CargoAmount, HarvestRatePerSecond * elapsed), _hostTime);
-                if (harvested > 0)
-                {
-                    harvester.ApplyHarvestState(job.Phase, harvester.CargoAmount + harvested);
-                    float remaining = _world.Tiberium.Cells.TryGetValue(cell, out TiberiumCell? value) ? value.Amount : 0;
-                    await PublishAsync(new(NetworkMessageType.TiberiumHarvestCommand, _networkHandler.LocalPeerId,
-                        CellX: cell.X, CellZ: cell.Y, TiberiumAmount: remaining, ServerTime: _hostTime));
-                    await PublishHarvestStateAsync(harvester, job.Phase);
-                }
-                if (harvester.CargoAmount >= harvester.CargoCapacity - 0.001f) await BeginReturnAsync(harvester, job);
-                else if (!_world.Tiberium.Cells.ContainsKey(cell))
-                {
-                    job.Phase = HarvestPhase.DrivingToField;
-                    await PublishHarvestStateAsync(harvester, job.Phase);
-                }
-                continue;
-            }
-            if (job.Phase == HarvestPhase.ReturningToSilo)
-            {
-                Building? silo = job.SiloId is Guid siloId ? _world.Units.FindById(siloId) as Building : null;
-                if (silo is null || silo.IsDying || !silo.IsCompleted || silo.ArmyId != harvester.ArmyId ||
-                    silo.AvailableResourceCapacity <= 0.001f)
-                {
-                    silo = FindNearestSilo(harvester); job.SiloId = silo?.UnitId;
-                    job.MoveIssued = false; job.StorageApproach = null;
-                }
-                if (silo is null)
-                {
-                    DelayHarvestRetry(job);
-                    continue;
-                }
-                if (job.StorageApproach is not Vector3 unload)
-                {
-                    Vector3 preferredUnload = silo.GetResourceUnloadPosition();
-                    if (!ProductionExitResolver.TryResolve(_world, silo, harvester,
-                        harvester.Position, preferredUnload, out unload))
-                    {
-                        DelayHarvestRetry(job);
-                        continue;
-                    }
-                    job.StorageApproach = unload;
-                }
-                if (HorizontalDistanceSquared(harvester.Position, unload) <= 6.25f)
-                {
-                    job.Phase = HarvestPhase.Unloading;
-                    job.UnloadElapsed = 0.0f;
-                    job.MoveIssued = false;
-                    await PublishHarvestStateAsync(harvester, job.Phase);
-                    continue;
-                }
-                if (!job.MoveIssued)
-                {
-                    job.MoveIssued = await PublishHarvesterGotoAsync(harvester, unload);
-                    if (!job.MoveIssued) DelayHarvestRetry(job);
-                    continue;
-                }
-                if (harvester.CurrentCommand is null)
-                {
-                    if (HorizontalDistanceSquared(harvester.Position, unload) <= 6.25f)
-                    {
-                        job.Phase = HarvestPhase.Unloading; job.UnloadElapsed = 0;
-                        await PublishHarvestStateAsync(harvester, job.Phase);
-                    }
-                    else job.MoveIssued = false;
-                }
-                continue;
-            }
-            job.UnloadElapsed += elapsed;
-            if (job.UnloadElapsed < UnloadSeconds) continue;
-            Building? storage = job.SiloId is Guid storageId ? _world.Units.FindById(storageId) as Building : null;
-            if (storage is null || storage.ArmyId != harvester.ArmyId || !storage.IsCompleted)
-            {
-                await BeginReturnAsync(harvester, job);
-                continue;
-            }
-            float accepted = storage.StoreResources(harvester.CargoAmount);
-            harvester.ApplyHarvestState(HarvestPhase.Unloading, harvester.CargoAmount - accepted);
-            if (harvester.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
-            {
-                army.Resources += (int)MathF.Floor(accepted);
-                await PublishAsync(new(NetworkMessageType.ArmyResourcesCommand, _networkHandler.LocalPeerId,
-                    ArmyId: armyId, ResourceAmount: army.Resources));
-            }
-            if (!job.ResumeAfterUnload && harvester.CargoAmount <= 0.001f)
-            {
-                await EndHarvestAsync(harvester);
-                continue;
-            }
-            job.Phase = harvester.CargoAmount > 0.001f ? HarvestPhase.ReturningToSilo : HarvestPhase.DrivingToField;
-            harvester.ApplyHarvestState(job.Phase, harvester.CargoAmount);
-            job.SiloId = null; job.MoveIssued = false; job.StorageApproach = null;
-            await PublishHarvestStateAsync(harvester, job.Phase);
         }
-    }
-
-    private bool TryFindTiberium(Point center, out Point cell)
-    {
-        Point? nearest = _world.Tiberium.Cells.Where(pair => pair.Value.Amount > 0.001f &&
-            Math.Abs(pair.Key.X - center.X) <= HarvestSearchRadius && Math.Abs(pair.Key.Y - center.Y) <= HarvestSearchRadius)
-            .OrderBy(pair => Math.Abs(pair.Key.X - center.X) + Math.Abs(pair.Key.Y - center.Y))
-            .Select(pair => (Point?)pair.Key).FirstOrDefault();
-        cell = nearest ?? default;
-        return nearest.HasValue;
-    }
-
-    private async Task<bool> TryPublishReachableHarvestGotoAsync(
-        Harvester harvester,
-        HarvestJob job,
-        Point preferredResource)
-    {
-        IEnumerable<Point> resources = _world.Tiberium.Cells
-            .Where(pair => pair.Value.Amount > 0.001f &&
-                Math.Abs(pair.Key.X - job.FieldCenter.X) <= HarvestSearchRadius &&
-                Math.Abs(pair.Key.Y - job.FieldCenter.Y) <= HarvestSearchRadius)
-            .OrderBy(pair => pair.Key == preferredResource ? 0 : 1)
-            .ThenBy(pair => Math.Abs(pair.Key.X - job.FieldCenter.X) +
-                Math.Abs(pair.Key.Y - job.FieldCenter.Y))
-            .Select(pair => pair.Key)
-            .Take(16);
-
-        foreach (Point resource in resources)
+        _world.PathfindingManager.Scheduler.Enqueue(Work(), valid, () =>
         {
-            // Harvesting works within two world units. Try the resource cell
-            // first, then nearby cells in increasing distance so a large
-            // footprint can work beside crystals near cliffs or buildings.
-            foreach (Point approach in HarvestApproachCells(resource))
+            NetworkMessage? result = chosen is null ? null : FilterPlannedCommand(chosen);
+            if (result is not null) CommitGotoEnds(result);
+            completed(chosenResource, result);
+        }, cancelled);
+    }
+
+    private void QueueMedicRoute(Medic medic, Vector3 target, Func<bool> valid,
+        Action<NetworkMessage?> completed, Action cancelled)
+    {
+        Guid sender = medic.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army &&
+            army.OwnerPlayerIds.Count > 0 ? army.OwnerPlayerIds.OrderBy(id => id).First() : _networkHandler.LocalPeerId;
+        GotoPlan plan = NewGotoPlan(NetworkCommands.CreateGotoRequest(sender, [medic.UnitId], target.X, target.Y, target.Z));
+        _world.PathfindingManager.Scheduler.Enqueue(PlanGoto(plan),
+            () => valid() && PlanUnitValid(plan, medic), () =>
             {
-                if (!_world.GameGrid.Contains(approach) ||
-                    !harvester.MovementProfile.CanEnter(_world, harvester, approach) ||
-                    !_world.GameGrid.IsPathfindingAllowed(harvester, approach))
-                    continue;
-
-                Vector3 target = _world.GameGrid.ToWorldPosition(approach, harvester.Position.Y);
-                if (HorizontalDistanceSquared(target,
-                        _world.GameGrid.ToWorldPosition(resource, target.Y)) > 4.0f)
-                    continue;
-                if (!await PublishHarvesterGotoAsync(harvester, target))
-                    continue;
-
-                job.ResourceCell = resource;
-                return true;
-            }
-        }
-        return false;
+                NetworkMessage? move = FilterPlannedCommand(plan);
+                if (move is not null) CommitGotoEnds(move);
+                completed(move);
+            }, cancelled);
     }
 
-    private static IEnumerable<Point> HarvestApproachCells(Point resource)
+    private void ReleasePlanningIntent(GotoPlan plan)
     {
-        yield return resource;
-        for (int radius = 1; radius <= 2; radius++)
-            for (int y = -radius; y <= radius; y++)
-                for (int x = -radius; x <= radius; x++)
-                    if (Math.Max(Math.Abs(x), Math.Abs(y)) == radius)
-                        yield return resource + new Point(x, y);
+        foreach (Guid id in plan.Versions.Keys)
+            if (_world.Units.FindMobileUnitById(id) is MobileUnit mobile &&
+                PlanUnitValid(plan, mobile) && mobile.MovementStatus == MovementStatus.Planning &&
+                mobile.CurrentCommand?.Target == new Vector2(plan.Request.X, plan.Request.Z))
+                mobile.ClearCommand();
     }
-
-    private Building? FindNearestSilo(Harvester harvester) => _world.Units.Units.OfType<Building>()
-        .Where(silo => silo.ResourceCapacity > 0.0f && silo.AvailableResourceCapacity > 0.001f &&
-            silo.ArmyId == harvester.ArmyId && silo.IsCompleted && !silo.IsDying)
-        .OrderBy(silo => HorizontalDistanceSquared(harvester.Position, silo.Position)).FirstOrDefault();
-
-    private async Task BeginReturnAsync(Harvester harvester, HarvestJob job)
-    {
-        job.Phase = HarvestPhase.ReturningToSilo; job.MoveIssued = false;
-        job.SiloId = FindNearestSilo(harvester)?.UnitId;
-        job.StorageApproach = null;
-        await PublishHarvestStateAsync(harvester, job.Phase);
-    }
-
-    private void DelayHarvestRetry(HarvestJob job)
-    {
-        job.MoveIssued = false;
-        job.RetryAfter = _hostTime + Harvester.HarvestRetrySeconds;
-    }
-
-    private async Task EndHarvestAsync(Harvester harvester)
-    {
-        _harvestJobs.Remove(harvester.UnitId);
-        harvester.ApplyHarvestState(HarvestPhase.Idle, harvester.CargoAmount);
-        await PublishHarvestStateAsync(harvester, HarvestPhase.Idle);
-    }
-
-    private async Task<bool> PublishHarvesterGotoAsync(Harvester harvester, Vector3 target)
-    {
-        Guid sender = harvester.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army
-            ? army.OwnerPlayerIds.FirstOrDefault() : _networkHandler.LocalPeerId;
-        NetworkMessage? command = TryCreateGotoCommand(NetworkCommands.CreateGotoRequest(sender,
-            [harvester.UnitId], target.X, target.Y, target.Z));
-        if (command is null) return false;
-        UnitRoute? route = command.Routes?.FirstOrDefault(candidate => candidate.UnitId == harvester.UnitId);
-        if (route is null || route.Cells.Length == 0)
-            return false;
-        await PublishAsync(command);
-        return true;
-    }
-
-    private NetworkMessage CreateHarvestStateCommand(Harvester harvester, HarvestPhase phase) =>
-        new(NetworkMessageType.HarvestCommand, _networkHandler.LocalPeerId, UnitId: harvester.UnitId,
-            HarvestPhase: phase, CargoAmount: harvester.CargoAmount);
-
-    private Task PublishHarvestStateAsync(Harvester harvester, HarvestPhase phase) => PublishAsync(CreateHarvestStateCommand(harvester, phase));
 
     private async Task PublishAsync(NetworkMessage command)
     {
@@ -1193,6 +1162,8 @@ public sealed class NetworkHost
                 Globals.Game.AIPlayers.Any(ai => ai.Id == player.Id));
         }).ToArray();
         _startPositionWishes.Clear();
+        _harvest.Reset();
+        _medics.Reset();
         return NetworkCommands.CreateStartMultiplayerGameCommand(
             _networkHandler.LocalPeerId, assignments);
     }
@@ -1444,166 +1415,6 @@ public sealed class NetworkHost
             constructionSite.MarkNetworkStateSent(_hostTime, StateHeartbeatInterval);
             sentUpdates++;
         }
-    }
-
-    private void HandleMedicCommandOverride(NetworkMessage request)
-    {
-        bool stop = request.Type == NetworkMessageType.StopRequest ||
-            request.Type == NetworkMessageType.UnitActionRequest && request.UnitActionType == UnitActionType.Stop;
-        bool overrideMovement = stop || request.Type is NetworkMessageType.GotoRequest or
-            NetworkMessageType.FollowRequest or NetworkMessageType.AttackTargetRequest or
-            NetworkMessageType.AttackGroundRequest or NetworkMessageType.MoveAwayRequest;
-        if (!overrideMovement)
-            return;
-
-        IEnumerable<Guid> ids = ExpandSquadUnitIds(request.UnitIds ?? []);
-        if (request.Type == NetworkMessageType.MoveAwayRequest && request.UnitId is Guid singleId)
-            ids = ids.Append(singleId);
-        foreach (Guid id in ids.Distinct())
-        {
-            if (_world.Units.FindById(id) is not Medic medic ||
-                !Globals.Game.Armies.CanControl(request.SenderId, medic.ArmyId))
-                continue;
-            _medicJobs.Remove(id);
-            if (stop)
-                _medicsHoldingPosition.Add(id);
-            else
-                _medicsHoldingPosition.Remove(id);
-        }
-    }
-
-    private async Task UpdateAndPublishMedicsAsync()
-    {
-        Medic[] medics = _world.Units.Units.OfType<Medic>()
-            .Where(medic => !medic.IsDying && !medic.IsEmbarked)
-            .ToArray();
-        HashSet<Guid> activeMedicIds = medics.Select(medic => medic.UnitId).ToHashSet();
-        foreach (Guid id in _medicJobs.Keys.Where(id => !activeMedicIds.Contains(id)).ToArray())
-            _medicJobs.Remove(id);
-        _medicsHoldingPosition.RemoveWhere(id => !activeMedicIds.Contains(id));
-
-        Soldier[] soldiers = _world.Units.Units.OfType<Soldier>()
-            .Where(patient => !patient.IsDying && !patient.IsEmbarked && patient.HitPoints > 0.0f)
-            .ToArray();
-        float healingRadius = Medic.HealingRadiusInCells * _world.GameGrid.CellSize;
-        float healingRadiusSquared = healingRadius * healingRadius;
-        float searchRadius = Medic.SearchRadiusInCells * _world.GameGrid.CellSize;
-        float searchRadiusSquared = searchRadius * searchRadius;
-
-        foreach (Medic medic in medics)
-        {
-            SquadLeader? leader = medic.SquadLeaderId is Guid leaderId &&
-                _world.Units.FindById(leaderId) is SquadLeader candidateLeader &&
-                !candidateLeader.IsDying && !candidateLeader.IsEmbarked && candidateLeader.ArmyId == medic.ArmyId
-                    ? candidateLeader
-                    : null;
-            if (leader is not null)
-            {
-                _medicJobs.Remove(medic.UnitId);
-                Soldier? squadPatient = SelectMedicPatient(medic, soldiers, healingRadiusSquared,
-                    patient => patient.UnitId == leader.UnitId || patient.SquadLeaderId == leader.UnitId);
-                if (squadPatient is not null)
-                    await HealPatientAsync(medic, squadPatient);
-                continue;
-            }
-
-            bool holdPosition = _medicsHoldingPosition.Contains(medic.UnitId);
-            float acquisitionRadiusSquared = holdPosition ? healingRadiusSquared : searchRadiusSquared;
-            MedicJob? job = _medicJobs.GetValueOrDefault(medic.UnitId);
-            Soldier? patient = job is null ? null : soldiers.FirstOrDefault(candidate => candidate.UnitId == job.PatientId);
-            if (!IsValidMedicPatient(medic, patient, acquisitionRadiusSquared))
-            {
-                bool cancelAutomaticMove = job?.MoveIssued == true && medic.CurrentCommand is not null;
-                _medicJobs.Remove(medic.UnitId);
-                job = null;
-                patient = null;
-                if (cancelAutomaticMove)
-                {
-                    NetworkMessage stop = CreateStopCommand(NetworkCommands.CreateStopRequest(
-                        GetMedicCommandSender(medic), [medic.UnitId]));
-                    await PublishAsync(stop);
-                    continue;
-                }
-            }
-
-            if (job is null)
-            {
-                if (medic.CurrentCommand is not null)
-                    continue;
-                patient = SelectMedicPatient(medic, soldiers, acquisitionRadiusSquared, _ => true);
-                if (patient is null)
-                    continue;
-                job = new MedicJob(patient.UnitId);
-                _medicJobs[medic.UnitId] = job;
-            }
-
-            float distanceSquared = HorizontalDistanceSquared(medic.Position, patient!.Position);
-            if (distanceSquared <= healingRadiusSquared)
-            {
-                if (job.MoveIssued && medic.CurrentCommand is not null)
-                {
-                    NetworkMessage stop = CreateStopCommand(NetworkCommands.CreateStopRequest(
-                        GetMedicCommandSender(medic), [medic.UnitId]));
-                    await PublishAsync(stop);
-                }
-                job.MoveIssued = false;
-                await HealPatientAsync(medic, patient);
-                continue;
-            }
-
-            if (holdPosition)
-            {
-                _medicJobs.Remove(medic.UnitId);
-                continue;
-            }
-            if (medic.CurrentCommand is not null && !job.MoveIssued)
-            {
-                _medicJobs.Remove(medic.UnitId);
-                continue;
-            }
-            if (!job.MoveIssued || medic.CurrentCommand is null)
-            {
-                NetworkMessage? move = TryCreateGotoCommand(NetworkCommands.CreateGotoRequest(
-                    GetMedicCommandSender(medic), [medic.UnitId], patient.Position.X, patient.Position.Y, patient.Position.Z));
-                if (move is null)
-                {
-                    _medicJobs.Remove(medic.UnitId);
-                    continue;
-                }
-                await PublishAsync(move);
-                job.MoveIssued = true;
-            }
-        }
-    }
-
-    private static bool IsValidMedicPatient(Medic medic, Soldier? patient, float radiusSquared) =>
-        patient is not null && !patient.IsDying && !patient.IsEmbarked && patient.HitPoints > 0.0f &&
-        patient.HitPoints < patient.MaxHitPoints && patient.ArmyId == medic.ArmyId &&
-        HorizontalDistanceSquared(medic.Position, patient.Position) <= radiusSquared;
-
-    private static Soldier? SelectMedicPatient(
-        Medic medic, IEnumerable<Soldier> soldiers, float radiusSquared, Func<Soldier, bool> filter) =>
-        soldiers.Where(patient => filter(patient) && IsValidMedicPatient(medic, patient, radiusSquared))
-            .OrderBy(patient => patient.HitPoints / Math.Max(1.0f, patient.MaxHitPoints))
-            .ThenBy(patient => HorizontalDistanceSquared(medic.Position, patient.Position))
-            .ThenBy(patient => patient.UnitId)
-            .FirstOrDefault();
-
-    private Guid GetMedicCommandSender(Medic medic) => medic.ArmyId is Guid armyId &&
-        Globals.Game.Armies.Find(armyId) is Army army && army.OwnerPlayerIds.Count > 0
-            ? army.OwnerPlayerIds.OrderBy(id => id).First()
-            : _networkHandler.LocalPeerId;
-
-    private async Task HealPatientAsync(Medic medic, Soldier patient)
-    {
-        if (_nextPatientHealTimes.GetValueOrDefault(patient.UnitId) > _hostTime)
-            return;
-        float healed = patient.Heal(Medic.HealAmountPerPulse);
-        if (healed <= 0.0f)
-            return;
-        _nextPatientHealTimes[patient.UnitId] = _hostTime + Medic.HealPulseSeconds;
-        await PublishAsync(NetworkCommands.CreateUnitHitCommand(
-            _networkHandler.LocalPeerId, patient.UnitId, medic.UnitId, patient.Position, -healed, patient.HitPoints));
     }
 
     private void UpdateProduction(float elapsedSeconds)

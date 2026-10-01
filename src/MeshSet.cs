@@ -13,7 +13,7 @@ namespace RTS;
 /// </summary>
 public sealed class MeshSet
 {
-    public sealed record MeshSetPivot(string Name, string Path);
+    public sealed record MeshSetPivot(string Name, string Path, string? Pose = null);
 
     private sealed class Attachment(MeshSet meshSet)
     {
@@ -398,7 +398,7 @@ public sealed class MeshSet
             string path = string.IsNullOrEmpty(pathPrefix)
                 ? pivot.Name
                 : $"{pathPrefix}/{pivot.Name}";
-            MeshSetPivot description = new(pivot.Name, path);
+            MeshSetPivot description = new(pivot.Name, path, pivot.Pose);
             _pivots.Add(description);
             _cachedPivots.Add(new CachedPivot(description, current, pivot, [.. steps]));
         }

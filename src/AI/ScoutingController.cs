@@ -14,6 +14,7 @@ public sealed class ScoutingController(GameWorld world, Guid? commandPlayerId = 
     public void Stop(IEnumerable<Unit> units) { foreach (Unit unit in units) _scouts.Remove(unit.UnitId); }
     public void Update(GameTime gameTime)
     {
+        using var measurement = PerformanceMeasurements.Measure("AI.Scouting");
         foreach ((Guid id, State state) in _scouts.ToArray())
         {
             if (world.Units.FindById(id) is not MobileUnit unit || unit.IsDying || unit.IsEmbarked || unit.ArmyId is not Guid army) { _scouts.Remove(id); continue; }

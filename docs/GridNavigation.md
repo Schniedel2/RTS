@@ -55,3 +55,8 @@ Run headless regression checks with:
 ```text
 dotnet run --project tests/GridNavigationChecks/GridNavigationChecks.csproj
 ```
+## Fortsetzbare Planung (01.10.2026)
+
+Laufzeit-Pfadsuchen verwenden den gemeinsamen `PathfindingManager.Scheduler`: maximal 2.048 Arbeitsschritte pro Welt-Update, zusätzliche Zeitprüfung bei 2 ms, Round-Robin mit 16 Schritten. `Pathfinder.CreateSearch(...).Work()` hält A*/Dijkstra, Rekonstruktion und Endprüfung über mehrere Updates offen. Neue Aufrufer müssen eine Gültigkeitsprüfung sowie Ergebnis- und gegebenenfalls Abbruchcallback angeben; Weltzugriffe bleiben auf dem Spielthread. Synchrone Suchmethoden sind für Checks/Diagnose erhalten.
+
+Grid-Regeln, feste Belegungen und Terrainhöhen entwerten Suchcaches über eine Revision; Neustarts sind begrenzt. Mobile Bewegung wird bei Routenprüfung und Ausführung geprüft. Session-, Map- und Matchwechsel verwerfen alte Jobs. Der Host veröffentlicht Gruppenrouten vollständig und hält währenddessen die Request-FIFO ein. Siehe `AI/Fortsetzbare-Pfadplanung.md` und den Vorher-/Nachher-Bericht. Die optische Fahrzeugabnahme aus Architektur-Aufgabe 02 bleibt davon unabhängig offen.

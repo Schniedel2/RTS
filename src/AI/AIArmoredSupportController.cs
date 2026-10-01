@@ -38,6 +38,7 @@ public sealed class AIArmoredSupportController(
 
     public void Update(GameTime gameTime)
     {
+        using var measurement = PerformanceMeasurements.Measure("AI.ArmoredSupport");
         float elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
         _thinkElapsed += elapsed;
         if (State == AIArmoredSupportState.FactoryRequested)
