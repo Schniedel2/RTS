@@ -24,7 +24,7 @@ public sealed class AISquadRecoveryController(
 
     public bool Begin()
     {
-        SquadLeader? leader = world.Units.Units.OfType<SquadLeader>()
+        SquadLeader? leader = world.Units.GetArmyUnits(armyId).OfType<SquadLeader>()
             .Where(unit => unit.ArmyId == armyId && !unit.IsDying && !unit.IsEmbarked)
             .OrderByDescending(unit => world.Units.Units.OfType<Soldier>()
                 .Count(member => member.SquadLeaderId == unit.UnitId && !member.IsDying))
@@ -32,7 +32,7 @@ public sealed class AISquadRecoveryController(
         if (leader is null)
             return false;
 
-        Soldier[] members = world.Units.Units.OfType<Soldier>()
+        Soldier[] members = world.Units.GetArmyUnits(armyId).OfType<Soldier>()
             .Where(member => member.SquadLeaderId == leader.UnitId && member.ArmyId == armyId &&
                 !member.IsDying && !member.IsEmbarked)
             .ToArray();

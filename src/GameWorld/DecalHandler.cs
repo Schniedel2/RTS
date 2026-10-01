@@ -198,7 +198,7 @@ public sealed class DecalHandler
 
         Player? localPlayer = Globals.Game.Players.FirstOrDefault(
             player => player.Id == Globals.Game.Network.LocalPeerId);
-        bool revealAll = !Globals.FogOfWarEnabled || Globals.World.IsEditorActive || localPlayer is null;
+        bool revealAll = Globals.IsSpectator || !Globals.FogOfWarEnabled || Globals.World.IsEditorActive || localPlayer is null;
         bool IsVisible(ScorchDecal decal) => revealAll ||
             Globals.World.Visibility.IsTerrainCurrentlyVisible(
                 localPlayer!.ArmyId, Globals.World.GameGrid.ToCell(decal.Position));

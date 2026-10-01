@@ -55,7 +55,16 @@ public class PlayerHandler
     public static bool SingleActor(UnitAction a) => a.Type is UnitActionType.TrainUnit or UnitActionType.Research or UnitActionType.AssembleSquad or UnitActionType.DisbandSquad or UnitActionType.LeaveContainer;
     public static List<Unit> Recipients(IEnumerable<Unit> units, UnitAction a) => units.Where(u => u.Actions.Any(b => b.Type == a.Type && b.TargetObjectName == a.TargetObjectName && b.MarkerType == a.MarkerType)).ToList();
     public static List<Unit> ControllableUnits(IEnumerable<Unit> units) => units
+        .Where(unit => !Globals.IsSpectator)
         .Where(unit => Globals.Game.Armies.CanControl(Globals.Game.Network.LocalPeerId, unit.ArmyId)).ToList();
+
+    public void SetSpectator(bool enabled)
+    {
+        Globals.IsSpectator = enabled;
+        ActiveAction = null;
+        _formationPlacementActive = false;
+        _scouting.Stop(_map.Units.GetSnapshot());
+    }
 
     public bool SelectAction(UnitAction action, bool alternateAction)
     {
@@ -210,7 +219,7 @@ public class PlayerHandler
 
     public void Update(GameTime gameTime, Camera camera, Viewport viewport)
     {
-        _scouting.Update(gameTime);
+        if (!Globals.IsSpectator) _scouting.Update(gameTime);
         if (_selectedUnits.RemoveAll(unit =>
                 !unit.IsSelectable ||
                 !_map.Visibility.IsUnitVisibleToLocalPlayer(unit)) > 0)
@@ -537,7 +546,8 @@ public class PlayerHandler
         }
 
         private void RequestAction(UnitAction action, Vector3 targetPosition, Unit? targetUnit, float targetAngleY, List<Unit>? recipients = null)
-        {            
+        {
+            if (Globals.IsSpectator) return;
             recipients ??= Recipients(_selectedUnits, action);
             recipients = ControllableUnits(recipients);
             if (recipients.Count == 0)
@@ -684,7 +694,7 @@ public class PlayerHandler
 
         private void RequestBuildConstruction(Building constructionSite)
         {
-            if (_selectedUnits.Count == 0)
+            if (Globals.IsSpectator || _selectedUnits.Count == 0)
                 return;
 
             _ = Globals.Game.NetworkClient.RequestBuildConstructionAsync(
@@ -766,7 +776,7 @@ public class PlayerHandler
 
     private CurrentMode GetMode()
     {    
-        if (ActiveAction is null)
+        if (Globals.IsSpectator || ActiveAction is null)
             return CurrentMode.SelectUnits;
 
         if (IsMouseOnTerrain)

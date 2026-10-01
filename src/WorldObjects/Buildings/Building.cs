@@ -140,6 +140,24 @@ public class Building : Unit
     protected IReadOnlyList<UnitAction> WithSellAction(IEnumerable<UnitAction> actions)
     {
         List<UnitAction> result = [.. WithDestroyAction(actions)];
+        if (IsCompleted)
+        {
+            IReadOnlyList<UnitAction> researchActions = GameplayCatalog.CreateResearchActions(GameplayTypeId);
+            if (researchActions.Count > 0)
+            {
+                Army? army = ArmyId is Guid armyId ? Globals.Game.Armies.Find(armyId) : null;
+                var queuedResearch = Globals.World.Units.Units.OfType<Building>()
+                    .Where(building => building.ArmyId == ArmyId)
+                    .SelectMany(building => building.ProductionQueue.Orders)
+                    .Select(order => GameplayCatalog.Canonicalize(order.UnitTypeId)).ToHashSet();
+                result.AddRange(researchActions.Where(action =>
+                    ResearchProjects.TryGetGrantedPerk(action.TargetObjectName!, out PerkType perk) &&
+                    army?.Perks.Has(perk) != true &&
+                    !queuedResearch.Contains(GameplayCatalog.Canonicalize(action.TargetObjectName)) &&
+                    !result.Any(existing => existing.Type == UnitActionType.Research &&
+                        existing.TargetObjectName == action.TargetObjectName)));
+            }
+        }
         if (!IsCompleted && !result.Any(action => action.Type == UnitActionType.CancelConstruction))
             result.Add(new(UnitActionType.CancelConstruction, $"Cancel construction (+{CancelRefund})", 6, 1,
                 RequiresTarget: false));
@@ -184,8 +202,15 @@ public class Building : Unit
     public virtual bool TryGetProductionDuration(string unitTypeId, out float durationSeconds)
     {
         return GameplayCatalog.TryGetProductionDuration(
-            GameplayTypeId, PurchasableType.Unit, unitTypeId, out durationSeconds);
+            GameplayTypeId, PurchasableType.Unit, unitTypeId, out durationSeconds) ||
+            GameplayCatalog.TryGetProductionDuration(
+                GameplayTypeId, PurchasableType.Research, unitTypeId, out durationSeconds);
     }
+
+    /// <summary>Shared host/AI admission rule; special producers may add delivery constraints.</summary>
+    public virtual bool CanProduceUnit(GameWorld world, string typeId) => IsCompleted && !IsDying &&
+        GameplayCatalog.TryGetProductionDuration(GameplayTypeId, PurchasableType.Unit, typeId, out _) &&
+        ProductionQueue.Orders.Count < ProductionQueue.Capacity;
 
     public bool TryQueueProduction(
         Guid orderId,

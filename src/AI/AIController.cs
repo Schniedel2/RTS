@@ -114,7 +114,7 @@ public sealed class ArmyGoalController
             LastDecision = "Core infrastructure or base defense was lost; restarting the maintenance plan.";
         }
 
-        GDIBase? homeBase = FindOwnedBuilding<GDIBase>(world, actor.ArmyId, _baseId);
+        Building? homeBase = AIStrategicCatalog.FindBuilding(world, actor.ArmyId, AIStrategicBuildingNeed.Base, _baseId);
         if (homeBase is null)
         {
             BuildBase(actor, world, commands, setStatus);
@@ -137,14 +137,22 @@ public sealed class ArmyGoalController
             return;
         }
 
-        GDIBulldozer? availableBulldozer = FindBulldozer(world, actor.ArmyId);
+        MobileUnit? availableBulldozer = FindBuilder(world, actor.ArmyId);
         if (availableBulldozer is null)
         {
-            bool queued = homeBase.ProductionQueue.Orders.Any(order => string.Equals(
-                GameplayCatalog.Canonicalize(order.UnitTypeId), "gdi-bulldozer",
+            GameplayDefinition? builderType = AIStrategicCatalog.SelectUnit(world, actor.ArmyId,
+                new AIProductionNeed(AIUnitRole.Builder), requireProducer: true);
+            Building? builderProducer = builderType is null ? null : AIStrategicCatalog.FindAvailableProducer(world, actor.ArmyId, builderType);
+            if (builderType is null || builderProducer is null) { LastDecision = "No available builder offer."; return; }
+            bool queued = builderProducer.ProductionQueue.Orders.Any(order => string.Equals(
+                GameplayCatalog.Canonicalize(order.UnitTypeId), builderType.TypeId,
                 StringComparison.OrdinalIgnoreCase));
+            PurchaseQuote builderQuote = Globals.Game.Pricing.GetQuote(new(PurchasableType.Unit, builderType.TypeId,
+                actor.ArmyId, builderProducer.UnitId));
+            if (!queued && !builderQuote.CanAfford(Globals.Game.Armies.Find(actor.ArmyId)?.Resources ?? 0))
+            { LastDecision = $"Waiting for {builderQuote.FinalPrice} resources for a builder."; return; }
             if (!queued)
-                _ = commands.TrainUnitAsync(homeBase.UnitId, "gdi-bulldozer");
+                _ = commands.TrainUnitAsync(builderProducer.UnitId, builderType.TypeId);
             Goal = AIGoalState.FindingBulldozer;
             setStatus?.Invoke(AIPlayerStatus.Building);
             LastDecision = queued
@@ -153,7 +161,7 @@ public sealed class ArmyGoalController
             return;
         }
 
-        Building? reactor = FindOwnedBuilding<Reaktor>(world, actor.ArmyId, _reactorId);
+        Building? reactor = AIStrategicCatalog.FindBuilding(world, actor.ArmyId, AIStrategicBuildingNeed.Power, _reactorId);
         if (ActiveGoal is AIArmyGoal.BuildReactor or AIArmyGoal.EstablishEconomy && reactor is null)
         {
             BuildReactor(actor, world, commands, setStatus);
@@ -179,10 +187,10 @@ public sealed class ArmyGoalController
             return;
         }
 
-        Building? refinery = FindOwnedBuilding<TiberiumRefinery>(world, actor.ArmyId, _refineryId);
+        Building? refinery = AIStrategicCatalog.FindBuilding(world, actor.ArmyId, AIStrategicBuildingNeed.Economy, _refineryId);
         if (refinery is null)
         {
-            Vector3 origin = reactor?.Position ?? FindBulldozer(world, actor.ArmyId)?.Position ?? Vector3.Zero;
+            Vector3 origin = reactor?.Position ?? FindBuilder(world, actor.ArmyId)?.Position ?? Vector3.Zero;
             BuildRefinery(actor, world, commands, origin, setStatus);
             return;
         }
@@ -203,15 +211,21 @@ public sealed class ArmyGoalController
             return;
         }
 
-        Harvester? harvester = world.Units.Units.OfType<Harvester>()
+        Harvester? harvester = world.Units.GetArmyUnits(actor.ArmyId).OfType<Harvester>()
             .FirstOrDefault(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying);
         if (harvester is null)
         {
-            bool queued = refinery.ProductionQueue.Orders.Any(order => string.Equals(
-                GameplayCatalog.Canonicalize(order.UnitTypeId), "harvester",
-                StringComparison.OrdinalIgnoreCase));
+            GameplayDefinition? harvesterType = AIStrategicCatalog.SelectUnit(world, actor.ArmyId,
+                new AIProductionNeed(AIUnitRole.Harvester), requireProducer: true);
+            Building? producer = harvesterType is null ? null : AIStrategicCatalog.FindAvailableProducer(world, actor.ArmyId, harvesterType);
+            if (harvesterType is null || producer is null) { LastDecision = "No available harvest-unit offer."; return; }
+            bool queued = producer.ProductionQueue.Orders.Any(order => GameplayCatalog.HasAIRoles(order.UnitTypeId, AIUnitRole.Harvester));
+            PurchaseQuote harvestQuote = Globals.Game.Pricing.GetQuote(new(PurchasableType.Unit, harvesterType.TypeId,
+                actor.ArmyId, producer.UnitId));
+            if (!queued && !harvestQuote.CanAfford(Globals.Game.Armies.Find(actor.ArmyId)?.Resources ?? 0))
+            { LastDecision = $"Waiting for {harvestQuote.FinalPrice} resources for a harvest unit."; return; }
             if (!queued)
-                _ = commands.TrainUnitAsync(refinery.UnitId, "harvester");
+                _ = commands.TrainUnitAsync(producer.UnitId, harvesterType.TypeId);
             Goal = AIGoalState.WaitingForHarvester;
             setStatus?.Invoke(AIPlayerStatus.Building);
             LastDecision = queued
@@ -252,14 +266,14 @@ public sealed class ArmyGoalController
     private void BuildBaseDefense(Player actor, GameWorld world, PlayerCommandService commands,
         Building? reactor, Action<AIPlayerStatus>? setStatus)
     {
-        GDIBarracks? barracks = FindOwnedBuilding<GDIBarracks>(world, actor.ArmyId, _barracksId);
+        Building? barracks = AIStrategicCatalog.FindBuilding(world, actor.ArmyId, AIStrategicBuildingNeed.InfantryProduction, _barracksId);
         if (barracks is null)
         {
             if (WaitForBuildConfirmation(AIGoalState.BarracksBuildRequested,
                 "Waiting for the host to confirm the barracks site."))
                 return;
 
-            GDIBulldozer? bulldozer = FindBulldozer(world, actor.ArmyId);
+            MobileUnit? bulldozer = FindBuilder(world, actor.ArmyId);
             if (bulldozer is null)
             {
                 Goal = AIGoalState.FindingBulldozer;
@@ -267,7 +281,11 @@ public sealed class ArmyGoalController
                 return;
             }
 
-            const string buildingType = "GDI-Barracks";
+            GameplayDefinition? selected = AIStrategicCatalog.SelectBuilding(world, actor.ArmyId, AIStrategicBuildingNeed.InfantryProduction, requireAvailable: true);
+            if (selected is null) { LastDecision = "No feasible infantry producer offer."; return; }
+            string buildingType = selected.TypeId;
+            bulldozer = AIStrategicCatalog.FindBuilder(world, actor.ArmyId, buildingType);
+            if (bulldozer is null) return;
             PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
                 PurchasableType.Building, buildingType, actor.ArmyId));
             int price = quote.FinalPrice;
@@ -280,7 +298,8 @@ public sealed class ArmyGoalController
             }
 
             Goal = AIGoalState.FindingBarracksSite;
-            var preview = new GDIBarracks(Vector3.Zero, Guid.NewGuid(), price);
+            Building? preview = BuildingFactory.SpawnBuilding(buildingType, Vector3.Zero, 0, Guid.NewGuid(), actor.Id, price);
+            if (preview is null) return;
             PreparePreview(preview, actor);
             Vector3 origin = reactor?.Position ?? bulldozer.Position;
             if (!TryFindBuildingSite(world, preview, origin, 6, 18, out Vector3 position))
@@ -314,18 +333,21 @@ public sealed class ArmyGoalController
         var defenderNeed = new AIProductionNeed(
             AIUnitRole.Defender | AIUnitRole.AntiInfantry,
             AIMovementDomain.Infantry, AntiInfantry: 1.0f, Defense: 0.5f);
-        GameplayDefinition? defenderType = AIUnitSelector.SelectBest(
-            barracks.GameplayTypeId, defenderNeed);
+        GameplayDefinition? defenderType = AIStrategicCatalog.SelectUnit(world, actor.ArmyId,
+            defenderNeed, requireProducer: true);
         if (defenderType is null)
         {
             LastDecision = "Barracks has no catalog unit suitable for base defense.";
             return;
         }
-        int soldiers = world.Units.Units.Count(unit =>
+        Building? defenseProducer = AIStrategicCatalog.FindAvailableProducer(world, actor.ArmyId, defenderType);
+        if (defenseProducer is null) return;
+        int soldiers = world.Units.GetArmyUnits(actor.ArmyId).Count(unit =>
             unit.ArmyId == actor.ArmyId && !unit.IsDying &&
             GameplayCatalog.HasAIRoles(unit.GameplayTypeId,
                 AIUnitRole.Defender | AIUnitRole.AntiInfantry));
-        int queued = barracks.ProductionQueue.Orders.Count(order =>
+        int queued = world.Units.GetArmyUnits(actor.ArmyId).OfType<Building>().Where(b => b.ArmyId == actor.ArmyId && !b.IsDying)
+            .SelectMany(b => b.ProductionQueue.Orders).Count(order =>
             GameplayCatalog.HasAIRoles(order.UnitTypeId,
                 AIUnitRole.Defender | AIUnitRole.AntiInfantry));
         if (soldiers + queued >= 3)
@@ -346,17 +368,17 @@ public sealed class ArmyGoalController
         }
 
         PurchaseQuote soldierQuote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
-            PurchasableType.Unit, defenderType.TypeId, actor.ArmyId, barracks.UnitId));
+            PurchasableType.Unit, defenderType.TypeId, actor.ArmyId, defenseProducer.UnitId));
         int soldierPrice = soldierQuote.FinalPrice;
         Army? ownerArmy = Globals.Game.Armies.Find(actor.ArmyId);
-        if (ownerArmy is null || ownerArmy.Resources < soldierPrice)
+        if (!soldierQuote.IsAvailable || ownerArmy is null || ownerArmy.Resources < soldierPrice)
         {
             Goal = AIGoalState.TrainingSoldiers;
             LastDecision = $"Waiting for {soldierPrice} resources for the next soldier ({soldiers}/3 ready).";
             return;
         }
 
-        _ = commands.TrainUnitAsync(barracks.UnitId, defenderType.TypeId);
+        _ = commands.TrainUnitAsync(defenseProducer.UnitId, defenderType.TypeId);
         Goal = AIGoalState.TrainingSoldiers;
         setStatus?.Invoke(AIPlayerStatus.Building);
         LastDecision = $"Ordered a base defender ({soldiers}/3 ready, {queued + 1} queued).";
@@ -388,7 +410,7 @@ public sealed class ArmyGoalController
             "Waiting for the host to confirm the base site."))
             return;
 
-        GDIBulldozer? bulldozer = FindBulldozer(world, actor.ArmyId);
+        MobileUnit? bulldozer = FindBuilder(world, actor.ArmyId);
         if (bulldozer is null)
         {
             Goal = AIGoalState.FindingBulldozer;
@@ -396,7 +418,11 @@ public sealed class ArmyGoalController
             return;
         }
 
-        const string buildingType = "GDI-Base";
+        GameplayDefinition? selected = AIStrategicCatalog.SelectBuilding(world, actor.ArmyId, AIStrategicBuildingNeed.Base, requireAvailable: true);
+        if (selected is null) { LastDecision = "No feasible base offer."; return; }
+        string buildingType = selected.TypeId;
+        bulldozer = AIStrategicCatalog.FindBuilder(world, actor.ArmyId, buildingType);
+        if (bulldozer is null) return;
         PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
             PurchasableType.Building, buildingType, actor.ArmyId));
         Army? army = Globals.Game.Armies.Find(actor.ArmyId);
@@ -408,7 +434,8 @@ public sealed class ArmyGoalController
         }
 
         Goal = AIGoalState.FindingBaseSite;
-        var preview = new GDIBase(Vector3.Zero, Guid.NewGuid(), quote.FinalPrice);
+        Building? preview = BuildingFactory.SpawnBuilding(buildingType, Vector3.Zero, 0, Guid.NewGuid(), actor.Id, quote.FinalPrice);
+        if (preview is null) return;
         PreparePreview(preview, actor);
         if (!TryFindBuildingSite(world, preview, bulldozer.Position, 4, 14, out Vector3 position))
         {
@@ -428,7 +455,7 @@ public sealed class ArmyGoalController
             "Waiting for the host to confirm the reactor site."))
             return;
 
-        GDIBulldozer? bulldozer = FindBulldozer(world, actor.ArmyId);
+        MobileUnit? bulldozer = FindBuilder(world, actor.ArmyId);
         if (bulldozer is null)
         {
             Goal = AIGoalState.FindingBulldozer;
@@ -437,9 +464,14 @@ public sealed class ArmyGoalController
         }
 
         Goal = AIGoalState.FindingReactorSite;
-        int price = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
-            PurchasableType.Building, "Reaktor", actor.ArmyId)).FinalPrice;
-        var preview = new Reaktor(Vector3.Zero, Guid.NewGuid(), price);
+        GameplayDefinition? selected = AIStrategicCatalog.SelectBuilding(world, actor.ArmyId, AIStrategicBuildingNeed.Power, requireAvailable: true);
+        if (selected is null) { LastDecision = "No feasible power offer."; return; }
+        bulldozer = AIStrategicCatalog.FindBuilder(world, actor.ArmyId, selected.TypeId);
+        if (bulldozer is null) return;
+        PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new(PurchasableType.Building, selected.TypeId, actor.ArmyId));
+        if (!quote.IsAvailable || !quote.CanAfford(Globals.Game.Armies.Find(actor.ArmyId)?.Resources ?? 0)) return;
+        Building? preview = BuildingFactory.SpawnBuilding(selected.TypeId, Vector3.Zero, 0, Guid.NewGuid(), actor.Id, quote.FinalPrice);
+        if (preview is null) return;
         PreparePreview(preview, actor);
         if (!TryFindBuildingSite(world, preview, bulldozer.Position, 5, 15, out Vector3 position))
         {
@@ -447,7 +479,7 @@ public sealed class ArmyGoalController
             return;
         }
 
-        _reactorId = RequestBuilding(actor, commands, bulldozer, "Reaktor", position, setStatus);
+        _reactorId = RequestBuilding(actor, commands, bulldozer, selected.TypeId, position, setStatus);
         Goal = AIGoalState.ReactorBuildRequested;
         LastDecision = $"Requested reactor at ({position.X:0.0}, {position.Z:0.0}).";
     }
@@ -459,7 +491,7 @@ public sealed class ArmyGoalController
             "Waiting for the host to confirm the refinery site."))
             return;
 
-        GDIBulldozer? bulldozer = FindBulldozer(world, actor.ArmyId);
+        MobileUnit? bulldozer = FindBuilder(world, actor.ArmyId);
         if (bulldozer is null)
         {
             Goal = AIGoalState.FindingBulldozer;
@@ -467,7 +499,11 @@ public sealed class ArmyGoalController
             return;
         }
 
-        const string buildingType = "Tiberium-Refinery";
+        GameplayDefinition? selected = AIStrategicCatalog.SelectBuilding(world, actor.ArmyId, AIStrategicBuildingNeed.Economy, requireAvailable: true);
+        if (selected is null) { LastDecision = "No feasible economy offer."; return; }
+        string buildingType = selected.TypeId;
+        bulldozer = AIStrategicCatalog.FindBuilder(world, actor.ArmyId, buildingType);
+        if (bulldozer is null) return;
         int price = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
             PurchasableType.Building, buildingType, actor.ArmyId)).FinalPrice;
         Army? army = Globals.Game.Armies.Find(actor.ArmyId);
@@ -479,7 +515,8 @@ public sealed class ArmyGoalController
         }
 
         Goal = AIGoalState.FindingRefinerySite;
-        var preview = new TiberiumRefinery(Vector3.Zero, Guid.NewGuid(), purchasePrice: price);
+        Building? preview = BuildingFactory.SpawnBuilding(buildingType, Vector3.Zero, 0, Guid.NewGuid(), actor.Id, price);
+        if (preview is null) return;
         PreparePreview(preview, actor);
         if (!TryFindBuildingSite(world, preview, reactorPosition, 6, 18, out Vector3 position))
         {
@@ -500,7 +537,7 @@ public sealed class ArmyGoalController
         return true;
     }
 
-    private Guid RequestBuilding(Player actor, PlayerCommandService commands, GDIBulldozer bulldozer,
+    private Guid RequestBuilding(Player actor, PlayerCommandService commands, MobileUnit bulldozer,
         string buildingType, Vector3 position, Action<AIPlayerStatus>? setStatus)
     {
         Guid buildingId = Guid.NewGuid();
@@ -511,53 +548,38 @@ public sealed class ArmyGoalController
         return buildingId;
     }
 
-    private static TBuilding? FindOwnedBuilding<TBuilding>(GameWorld world, Guid armyId,
-        Guid? preferredId) where TBuilding : Building
-    {
-        if (preferredId is Guid id && world.Units.FindById(id) is TBuilding preferred && !preferred.IsDying)
-            return preferred;
-        return world.Units.Units.OfType<TBuilding>()
-            .FirstOrDefault(unit => unit.ArmyId == armyId && !unit.IsDying);
-    }
-
     private bool NeedsCoreMaintenance(GameWorld world, Guid armyId)
     {
-        bool HasCompleted<TBuilding>() where TBuilding : Building =>
-            world.Units.Units.OfType<TBuilding>().Any(building =>
-                building.ArmyId == armyId && building.IsCompleted && !building.IsDying);
-
-        if (!HasCompleted<GDIBase>())
+        if (AIStrategicCatalog.FindBuilding(world, armyId, AIStrategicBuildingNeed.Base)?.IsCompleted != true)
         {
             _baseId = null;
             return true;
         }
-        if (FindBulldozer(world, armyId) is null)
+        if (FindBuilder(world, armyId) is null)
             return true;
-        if (!HasCompleted<TiberiumRefinery>())
+        if (AIStrategicCatalog.FindBuilding(world, armyId, AIStrategicBuildingNeed.Economy)?.IsCompleted != true)
         {
             _refineryId = null;
             _harvestOrderIssued = false;
             return true;
         }
-        if (!HasCompleted<GDIBarracks>())
+        if (AIStrategicCatalog.FindBuilding(world, armyId, AIStrategicBuildingNeed.InfantryProduction)?.IsCompleted != true)
         {
             _barracksId = null;
             _rallyPointIssued = false;
             return true;
         }
-        if (!world.Units.Units.OfType<Harvester>().Any(unit =>
+        if (!world.Units.GetArmyUnits(armyId).OfType<Harvester>().Any(unit =>
                 unit.ArmyId == armyId && !unit.IsDying))
             return true;
 
-        int defenders = world.Units.Units.Count(unit => unit.ArmyId == armyId &&
+        int defenders = world.Units.GetArmyUnits(armyId).Count(unit => unit.ArmyId == armyId &&
             !unit.IsDying && GameplayCatalog.HasAIRoles(unit.GameplayTypeId,
                 AIUnitRole.Defender | AIUnitRole.AntiInfantry));
         return defenders < 3;
     }
 
-    internal static GDIBulldozer? FindBulldozer(GameWorld world, Guid armyId) =>
-        world.Units.Units.OfType<GDIBulldozer>()
-            .FirstOrDefault(unit => unit.ArmyId == armyId && !unit.IsDying);
+    internal static MobileUnit? FindBuilder(GameWorld world, Guid armyId) => AIStrategicCatalog.FindBuilder(world, armyId);
 
     private static void EnsureConstruction(
         GameWorld world,
@@ -565,7 +587,7 @@ public sealed class ArmyGoalController
         PlayerCommandService commands,
         Building constructionSite)
     {
-        GDIBulldozer? builder = FindBulldozer(world, actor.ArmyId);
+        MobileUnit? builder = AIStrategicCatalog.FindBuilder(world, actor.ArmyId, constructionSite.GameplayTypeId);
         if (builder is null || builder.IsBuilding ||
             builder.TargetBuildingId == constructionSite.UnitId)
             return;
@@ -773,7 +795,7 @@ public sealed class AIController
             if (scout is not null)
                 _scouting.Stop([scout]);
 
-            scout = world.Units.Units.OfType<MobileUnit>()
+            scout = world.Units.GetArmyUnits(ai.Player.ArmyId).OfType<MobileUnit>()
                 .Where(unit => unit.ArmyId == ai.Player.ArmyId && !unit.IsDying && !unit.IsEmbarked &&
                     GameplayCatalog.HasAIRoles(unit.GameplayTypeId, AIUnitRole.Scout))
                 .OrderBy(unit => unit.UnitId)
@@ -786,7 +808,7 @@ public sealed class AIController
             else
             {
                 _scouting.Start([scout]);
-                int defenders = world.Units.Units.Count(unit =>
+                int defenders = world.Units.GetArmyUnits(ai.Player.ArmyId).Count(unit =>
                     unit.UnitId != scout.UnitId && GameplayCatalog.HasAIRoles(unit.GameplayTypeId,
                         AIUnitRole.Defender) &&
                     unit.ArmyId == ai.Player.ArmyId && !unit.IsDying && !unit.IsEmbarked);
@@ -865,7 +887,7 @@ public sealed class AIController
 
     private string TryRequestReplacementScout(Player actor, GameWorld world, NetworkHandler network)
     {
-        Building[] producers = world.Units.Units.OfType<Building>()
+        Building[] producers = world.Units.GetArmyUnits(actor.ArmyId).OfType<Building>()
             .Where(building => building.ArmyId == actor.ArmyId && building.IsCompleted &&
                 !building.IsDying)
             .OrderBy(building => building.UnitId)

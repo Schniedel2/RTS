@@ -37,7 +37,7 @@ internal static class MedicSystemChecks
             Set(world, typeof(GameWorld), "<Units>k__BackingField", units);
             Set(world, typeof(GameWorld), "<GameGrid>k__BackingField", new GameGrid(40, 40, 1));
             Globals.World = world;
-            var list = (List<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(units)!;
+            var list = (IList<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(units)!;
             var armies = new ArmyHandler();
             Guid owner = Guid.NewGuid(), army = Guid.NewGuid(), enemy = Guid.NewGuid();
             armies.EnsureArmy(army, owner);

@@ -63,11 +63,8 @@ public sealed class AISquadPreparationController(
             return;
         _thinkElapsed %= ThinkIntervalSeconds;
 
-        GDIBarracks? barracks = world.Units.Units.OfType<GDIBarracks>()
-            .Where(building => building.ArmyId == armyId && building.IsCompleted && !building.IsDying)
-            .OrderBy(building => building.UnitId)
-            .FirstOrDefault();
-        if (barracks is null)
+        Building? barracks = AIStrategicCatalog.FindBuilding(world, armyId, AIStrategicBuildingNeed.InfantryProduction);
+        if (barracks is null || !barracks.IsCompleted)
         {
             State = AISquadPreparationState.WaitingForBarracks;
             LastDecision = "Waiting for a completed barracks before preparing the first squad.";
@@ -158,15 +155,18 @@ public sealed class AISquadPreparationController(
             world.Units.FindById(unit.SquadLeaderId.Value) is not SquadLeader previousLeader ||
             previousLeader.IsDying || previousLeader.ArmyId != armyId);
 
-    private void TryOrderRole(GDIBarracks barracks, AIProductionNeed need, string description)
+    private void TryOrderRole(Building barracks, AIProductionNeed need, string description)
     {
-        GameplayDefinition? selected = AIUnitSelector.SelectBest(
-            barracks.GameplayTypeId, need, CountOwnedCatalogUnits());
+        GameplayDefinition? selected = AIStrategicCatalog.SelectUnit(world, armyId, need,
+            requireProducer: true, currentCounts: CountOwnedCatalogUnits());
         if (selected is null)
         {
             LastDecision = $"Barracks has no catalog unit for the squad's {description}.";
             return;
         }
+        Building? producer = AIStrategicCatalog.FindAvailableProducer(world, armyId, selected);
+        if (producer is null) return;
+        barracks = producer;
         string unitTypeId = selected.TypeId;
         int queued = barracks.ProductionQueue.Orders.Count(order =>
             string.Equals(order.UnitTypeId, unitTypeId, StringComparison.OrdinalIgnoreCase));
@@ -196,7 +196,7 @@ public sealed class AISquadPreparationController(
     }
 
     private System.Collections.Generic.IReadOnlyDictionary<string, int> CountOwnedCatalogUnits() =>
-        world.Units.Units
+        world.Units.GetArmyUnits(armyId)
             .Where(unit => unit.ArmyId == armyId && !unit.IsDying &&
                 !string.IsNullOrWhiteSpace(unit.GameplayTypeId))
             .GroupBy(unit => unit.GameplayTypeId, StringComparer.OrdinalIgnoreCase)
@@ -206,7 +206,7 @@ public sealed class AISquadPreparationController(
         GameplayCatalog.Find(PurchasableType.Unit, unit.GameplayTypeId)?.AI is AIUnitMetadata ai &&
         (ai.Roles & roles) == roles;
 
-    private Vector3 FindFallbackRallyPoint(GDIBarracks barracks)
+    private Vector3 FindFallbackRallyPoint(Building barracks)
     {
         Vector3 forward = barracks.Transform.Forward;
         forward.Y = 0.0f;

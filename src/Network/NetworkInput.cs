@@ -244,7 +244,8 @@ public sealed class NetworkInput
                     new Vector3(assignment.X, assignment.Y, assignment.Z),
                     assignment.RotationDegrees,
                     assignment.BulldozerId,
-                    assignment.PlayerId);
+                    assignment.PlayerId,
+                    assignment.DriverUnitId);
                 bulldozer?.SetArmy(assignment.ArmyId);
                 if (assignment.PlayerId == Globals.Game.Network.LocalPeerId)
                     localStartPosition = bulldozer?.Position ??

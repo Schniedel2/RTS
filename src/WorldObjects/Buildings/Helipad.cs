@@ -15,6 +15,9 @@ public class Helipad : Building
         !IsReservedForDelivery && !world.Units.Units.OfType<Helicopter>().Any(h =>
             !h.IsDying && h.AssignedHelipadId == UnitId);
 
+    public override bool CanProduceUnit(GameWorld world, string typeId) =>
+        base.CanProduceUnit(world, typeId) && CanOrderHelicopter(world);
+
     public bool TryQueueIncludedHelicopter(Guid ownerPlayerId)
     {
         if (!IsCompleted || IncludedUnitGranted || IsReservedForDelivery || ownerPlayerId == Guid.Empty)

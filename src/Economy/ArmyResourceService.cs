@@ -15,7 +15,7 @@ public static class ArmyResourceService
 
         army.Resources -= amount;
         float remaining = amount;
-        foreach (Building storage in world.Units.Units.OfType<Building>()
+        foreach (Building storage in world.Units.GetArmyUnits(army.Id).OfType<Building>()
             .Where(building => building.ArmyId == army.Id && building.IsCompleted &&
                 !building.IsDying && building.ResourceCapacity > 0.0f && building.StoredResources > 0.0f)
             .OrderBy(building => building.UnitId))

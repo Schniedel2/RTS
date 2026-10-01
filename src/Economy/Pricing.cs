@@ -16,10 +16,17 @@ public static class EconomyCatalog
 {
     public static PurchaseDefinition GetDefinition(PurchasableType type, string objectTypeId)
     {
-        GameplayDefinition? definition = GameplayCatalog.Find(type, objectTypeId);
-        return definition is null
-            ? new PurchaseDefinition(0, [])
-            : new PurchaseDefinition(definition.BasePrice, definition.RequiredPerks);
+        if (TryGetDefinition(type, objectTypeId, out PurchaseDefinition definition)) return definition;
+        throw new ArgumentException($"Unknown {type} product '{objectTypeId}'.", nameof(objectTypeId));
+    }
+
+    public static bool TryGetDefinition(PurchasableType type, string objectTypeId, out PurchaseDefinition definition)
+    {
+        GameplayDefinition? product = GameplayCatalog.Find(type, objectTypeId);
+        bool sandbox = type == PurchasableType.Building && BuildingFactory.IsSandboxType(objectTypeId) ||
+            type == PurchasableType.Unit && UnitFactory.IsSandboxType(objectTypeId);
+        definition = product is not null ? new(product.BasePrice, product.RequiredPerks) : new(0, []);
+        return product is not null || sandbox;
     }
 
     public static int GetBasePrice(PurchasableType type, string objectTypeId)
@@ -32,9 +39,9 @@ public static class ResearchProjects
 
     public static bool TryGetGrantedPerk(string projectId, out PerkType perk)
     {
-        if (string.Equals(projectId, AirTechnologyId, StringComparison.OrdinalIgnoreCase))
+        if (GameplayCatalog.Find(PurchasableType.Research, projectId)?.GrantedPerk is PerkType granted)
         {
-            perk = PerkType.AirTechnology;
+            perk = granted;
             return true;
         }
         perk = default;
@@ -57,10 +64,11 @@ public sealed record PurchaseQuote(
     int BasePrice,
     int FinalPrice,
     IReadOnlyList<PriceModifier> Modifiers,
-    IReadOnlyList<PerkType> MissingPerks)
+    IReadOnlyList<PerkType> MissingPerks,
+    string? UnavailableReason = null)
 {
-    public bool CanAfford(int resources) => resources >= FinalPrice;
-    public bool IsAvailable => MissingPerks.Count == 0;
+    public bool CanAfford(int resources) => IsAvailable && resources >= FinalPrice;
+    public bool IsAvailable => UnavailableReason is null && MissingPerks.Count == 0;
 }
 
 /// <summary>Optional extension point for upgrades on a particular production building.</summary>
@@ -86,7 +94,8 @@ public sealed class PricingService
 
     public PurchaseQuote GetQuote(PurchaseRequest request)
     {
-        PurchaseDefinition definition = EconomyCatalog.GetDefinition(request.Type, request.ObjectTypeId);
+        if (!EconomyCatalog.TryGetDefinition(request.Type, request.ObjectTypeId, out PurchaseDefinition definition))
+            return new PurchaseQuote(0, 0, [], [], $"Unknown {request.Type} product '{request.ObjectTypeId}'.");
         int basePrice = definition.BasePrice;
         List<PriceModifier> modifiers = [];
         Army? army = request.ArmyId is Guid armyId ? _armies.Find(armyId) : null;

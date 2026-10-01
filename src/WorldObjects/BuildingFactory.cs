@@ -1,10 +1,32 @@
 using Microsoft.Xna.Framework;
 using System;
+using System.Collections.Generic;
 
 namespace RTS;
 
 public static class BuildingFactory
 {
+    private static readonly Dictionary<string, Func<Vector3, Guid, int, Building>> Creators = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["gdi-barracks"] = (position, id, price) => new GDIBarracks(position, id, price),
+        ["gdi-base"] = (position, id, price) => new GDIBase(position, id, price),
+        ["reaktor"] = (position, id, price) => new Reaktor(position, id, price),
+        ["turret-minigun"] = (position, id, price) => new Turret(position, id, "gatling-tower-1", price),
+        ["building-4x3x4"] = (position, id, price) => new GenericBuilding(position, id, "building-1"),
+        ["building-1"] = (position, id, price) => new GenericBuilding(position, id, "building-1"),
+        ["vehicle-factory"] = (position, id, price) => new VehicleFactory(position, id, "vehicle-factory-1", price),
+        ["communicationstower"] = (position, id, price) => new CommunicationsTower(position, id, price),
+        ["command-center"] = (position, id, price) => new CommandCenter(position, id, price),
+        ["antenna-1"] = (position, id, price) => new GenericBuilding(position, id, "antenna-1"),
+        ["helipad"] = (position, id, price) => new Helipad(position, id, purchasePrice: price),
+        ["silo"] = (position, id, price) => new Silo(position, id, "silo-1", price),
+        ["tiberium-refinery"] = (position, id, price) => new TiberiumRefinery(position, id, "tiberium-refinery-1", price),
+        ["tiberium-source"] = (position, id, price) => new TiberiumSource(position, id),
+    };
+    public static IReadOnlyCollection<string> RegisteredTypeIds => Creators.Keys;
+    public static bool CanCreate(string? typeId) => typeId is not null && Creators.ContainsKey(typeId.Trim());
+    public static bool IsSandboxType(string? typeId) => typeId?.Trim().ToLowerInvariant() is "building-1" or "building-4x3x4" or "antenna-1";
+
     public static Building? SpawnBuilding(
         string buildingTypeName,
         Vector3 position,
@@ -13,60 +35,13 @@ public static class BuildingFactory
         Guid creatorPlayerId,
         int? purchasePrice = null)
     {
+        if (!Creators.TryGetValue(buildingTypeName.Trim(), out var create)) return null;
         int price = Math.Max(0, purchasePrice ??
             EconomyCatalog.GetBasePrice(PurchasableType.Building, buildingTypeName));
-        Building? building = null;
-        switch (buildingTypeName.ToLower())
-        {
-            case "gdi-barracks":
-                building = new GDIBarracks(position, unitId, price);
-                break;
-            case "gdi-base":
-                building = new GDIBase(position, unitId, price);
-                break;
-            case "reaktor":
-                building = new Reaktor(position, unitId, price);
-                break;
-            case "turret-minigun":
-                building = new Turret(position, unitId, "gatling-tower-1", price);
-                break;
-            case "building-4x3x4":
-            case "building-1":
-                building = new GenericBuilding(position, unitId, "building-1");
-                break;            
-            case "vehicle-factory":
-                building = new VehicleFactory(position, unitId, "vehicle-factory-1", price);
-                break;
-            case "communicationstower":
-                building = new CommunicationsTower(position, unitId, price);
-                break;
-            case "command-center":
-                building = new CommandCenter(position, unitId, price);
-                break;
-            case "antenna-1":
-                building = new GenericBuilding(position, unitId, "antenna-1");
-                break;
-            case "helipad":
-                building = new Helipad(position, unitId, purchasePrice: price);
-                break;
-            case "silo":
-                building = new Silo(position, unitId, "silo-1", price);
-                break;
-            case "tiberium-refinery":
-                building = new TiberiumRefinery(position, unitId, "tiberium-refinery-1", price);
-                break;
-            case "tiberium-source":
-                building = new TiberiumSource(position, unitId);
-                break;
-            default:
-                return null;
-        }
-        if (building is null)
-            return null;
-            
+        Building building = create(position, unitId, price);
         building.SetCreatorPlayer(creatorPlayerId);
         building.SetArmy(creatorPlayerId == Guid.Empty ? null : creatorPlayerId);
         building.SetRotationYDegrees(RotateYDegrees);
-        return (Building)building;
+        return building;
     }
 }

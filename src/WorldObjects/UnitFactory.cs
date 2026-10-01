@@ -1,10 +1,33 @@
 using Microsoft.Xna.Framework;
 using System;
+using System.Collections.Generic;
 
 namespace RTS;
 
 public static class UnitFactory
 {
+    private static readonly Dictionary<string, Func<Vector3, Guid, MobileUnit>> Creators = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["soldier"] = (position, id) => new Soldier(position, id),
+        ["gunner"] = (position, id) => new Gunner(position, id),
+        ["rak-zero"] = (position, id) => new RakZero(position, id),
+        ["engineer"] = (position, id) => new Engineer(position, id),
+        ["medic"] = (position, id) => new Medic(position, id),
+        ["squad-leader"] = (position, id) => new SquadLeader(position, id),
+        ["car"] = (position, id) => new Car(position, id),
+        ["helicopter"] = (position, id) => new Helicopter(position, id),
+        ["heli"] = (position, id) => new Helicopter(position, id),
+        ["tank"] = (position, id) => new Tank(position, id),
+        ["jeep"] = (position, id) => new Jeep(position, id),
+        ["motorbike"] = (position, id) => new MotorBike(position, id),
+        ["editor"] = (position, id) => new TerrainEditorTool(position, id),
+        ["gdi-bulldozer"] = (position, id) => new GDIBulldozer(position, id),
+        ["harvester"] = (position, id) => new Harvester(position, id),
+    };
+    public static IReadOnlyCollection<string> RegisteredTypeIds => Creators.Keys;
+    public static bool CanCreate(string? typeId) => typeId is not null && Creators.ContainsKey(typeId.Trim());
+    public static bool IsSandboxType(string? typeId) => typeId?.Trim().ToLowerInvariant() is "car" or "editor";
+
     public static MobileUnit? SpawnUnit(
         string unitTypeName,
         Vector3 position,
@@ -12,55 +35,8 @@ public static class UnitFactory
         Guid unitId,
         Guid creatorPlayerId)
     {
-        MobileUnit? unit;            
-        switch (unitTypeName.ToLower())
-        {
-            case "soldier":
-                unit = new Soldier(position, unitId);
-                break;
-            case "gunner":
-                unit = new Gunner(position, unitId);
-                break;
-            case "rak-zero":
-                unit = new RakZero(position, unitId);
-                break;
-            case "engineer":
-                unit = new Engineer(position, unitId);
-                break;
-            case "medic":
-                unit = new Medic(position, unitId);
-                break;
-            case "squad-leader":
-                unit = new SquadLeader(position, unitId);
-                break;
-            case "car":
-                unit = new Car(position, unitId);
-                break;
-            case "helicopter":
-            case "heli":
-                unit = new Helicopter(position, unitId);
-                break;
-            case "tank":
-                unit = new Tank(position, unitId);
-                break;
-            case "jeep":
-                unit = new Jeep(position, unitId);
-                break;
-            case "motorbike":
-                unit = new MotorBike(position, unitId);
-                break;
-            case "editor":
-                unit = new TerrainEditorTool(position, unitId);
-                break;
-            case "gdi-bulldozer":
-                unit = new GDIBulldozer(position, unitId);
-                break;
-            case "harvester":
-                unit = new Harvester(position, unitId);
-                break;
-            default:            
-                return null;
-        }
+        if (!Creators.TryGetValue(unitTypeName.Trim(), out var create)) return null;
+        MobileUnit unit = create(position, unitId);
         unit.SetRotationYDegrees(RotateYDegrees);
         unit.SetCreatorPlayer(creatorPlayerId);
         unit.SetArmy(creatorPlayerId == Guid.Empty ? null : creatorPlayerId);

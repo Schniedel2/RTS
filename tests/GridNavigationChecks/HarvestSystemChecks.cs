@@ -45,7 +45,7 @@ internal static class HarvestSystemChecks
             Set(game, typeof(RTSGame), "<Armies>k__BackingField", armies);
             Set(game, typeof(RTSGame), "<Network>k__BackingField", network);
             Globals.World = world; Globals.Game = game;
-            var list = (List<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(units)!;
+            var list = (IList<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(units)!;
             var harvester = new Harvester(new Vector3(5.5f, 0, 5.5f), Guid.NewGuid());
             var silo = new TiberiumRefinery(new Vector3(25.5f, 0, 25.5f), Guid.NewGuid());
             silo.AdvanceConstruction(silo.TotalBuildingPointsNeeded);

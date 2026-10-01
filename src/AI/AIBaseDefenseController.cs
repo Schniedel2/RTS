@@ -61,7 +61,7 @@ public sealed class AIBaseDefenseController(
             return;
         _thinkElapsed %= ThinkIntervalSeconds;
 
-        Building[] buildings = world.Units.Units.OfType<Building>()
+        Building[] buildings = world.Units.GetArmyUnits(armyId).OfType<Building>()
             .Where(building => building.ArmyId == armyId && building.IsCompleted && !building.IsDying)
             .ToArray();
         if (buildings.Length == 0)
@@ -79,7 +79,7 @@ public sealed class AIBaseDefenseController(
             return;
         }
 
-        Unit[] defenders = world.Units.Units
+        Unit[] defenders = world.Units.GetArmyUnits(armyId)
             .Where(unit => unit.ArmyId == armyId && unit.UnitId != scoutId &&
                 !unit.IsDying && !unit.IsEmbarked && unit.AttackDamage > 0.0f &&
                 unit is MobileUnit && GameplayCatalog.HasAIRoles(
@@ -150,7 +150,8 @@ public sealed class AIBaseDefenseController(
         if (returning.Length == 0)
             return;
 
-        Building anchor = buildings.OfType<GDIBase>().FirstOrDefault() ?? buildings[0];
+        Building anchor = buildings.FirstOrDefault(b => GameplayCatalog.Find(PurchasableType.Building,
+            b.GameplayTypeId) is GameplayDefinition d && AIStrategicCatalog.Matches(d, AIStrategicBuildingNeed.Base)) ?? buildings[0];
         Vector3 fallback = anchor.RallyPoint ?? anchor.Position;
         await _commands.StopAsync(returning.Select(order => order.UnitId));
         foreach (DefenseReturnOrder order in returning)

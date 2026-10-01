@@ -141,7 +141,8 @@ public sealed record MatchStartAssignment(
     float Z,
     float RotationDegrees,
     Guid BulldozerId,
-    bool IsAI = false);
+    bool IsAI = false,
+    Guid? DriverUnitId = null);
 
 public sealed record PerkSourceSnapshot(Guid SourceId, PerkGrant[] Grants);
 public sealed record ArmySnapshot(Guid Id, Guid? TeamId, int Resources, Guid[] Owners,

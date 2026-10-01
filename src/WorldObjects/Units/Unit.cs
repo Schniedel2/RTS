@@ -338,7 +338,15 @@ public abstract class Unit : WorldObject
         CreatorPlayerId = creatorPlayerId;
     }
 
-    internal void SetArmy(Guid? armyId) => ArmyId = armyId;
+    internal event Action<Unit, Guid?, Guid?>? ArmyChanged;
+
+    internal void SetArmy(Guid? armyId)
+    {
+        if (ArmyId == armyId) return;
+        Guid? previous = ArmyId;
+        ArmyId = armyId;
+        ArmyChanged?.Invoke(this, previous, armyId);
+    }
 
     internal void Embark(Guid containerUnitId)
     {
@@ -1248,7 +1256,7 @@ public abstract class Unit : WorldObject
         foreach (OccupantAssignment occupant in Occupancy.Occupants)
         {
             if (occupant.Role != OccupantRole.Driver && occupant.Role != OccupantRole.Passenger) continue;
-            string seatName = occupant.Role == OccupantRole.Driver ? "pivot:seat_driver" : "pivot:seat_passenger";
+            string seatName = occupant.Role == OccupantRole.Driver ? "pivot:seat-driver" : "pivot:seat-passenger";
             MeshSet.MeshSetPivot? seat = _meshSet.Pivots.FirstOrDefault(pivot =>
                 pivot.Name.Equals(seatName, StringComparison.OrdinalIgnoreCase));
             if (seat is null || Globals.World.Units.FindById(occupant.UnitId) is not Soldier soldier ||

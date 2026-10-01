@@ -44,8 +44,8 @@ public sealed class WeatherHandler
     public WeatherHandler(int windMapWidth, int windMapHeight)
     {
         ResizeWindMap(windMapWidth, windMapHeight);
-        SetClock(6.0f);
-        SetWind(Random.Shared.NextSingle() * Vector3.One * 3.0f);
+        SetClock(13.0f);
+        SetWind(Random.Shared.NextSingle() * Vector3.One * 0.5f);
     }
 
     public void SetClock(float hours)

@@ -28,67 +28,50 @@ public static class AICrewPowerPlanner
         if (requiredAdditionalPower <= 0)
             return new(AIPowerSolutionKind.None);
 
-        Reaktor[] reactors = world.Units.Units.OfType<Reaktor>()
-            .Where(reactor => reactor.ArmyId == armyId && reactor.IsCompleted && !reactor.IsDying)
-            .OrderBy(reactor => reactor.UnitId)
-            .ToArray();
-        BuildingMetadata? reactorMetadata = GameplayCatalog.Find(
-            PurchasableType.Building, "reaktor")?.Building;
-        int bonus = reactorMetadata?.PowerProductionPerCrew ?? 0;
-        int capacity = reactorMetadata?.CrewCapacity ?? 0;
-        if (bonus <= 0 || capacity <= 0 || reactors.Length == 0)
-            return new(AIPowerSolutionKind.BuildPower);
+        Building[] producers = world.Units.GetArmyUnits(armyId).OfType<Building>()
+            .Where(b => b.ArmyId == armyId && b.IsCompleted && !b.IsDying &&
+                Metadata(b) is { PowerProductionPerCrew: > 0, CrewCapacity: > 0 })
+            .OrderByDescending(b => Metadata(b)!.PowerProductionPerCrew).ThenBy(b => b.UnitId).ToArray();
+        if (producers.Length == 0) return new(AIPowerSolutionKind.BuildPower);
 
-        if (world.Units.Units.OfType<MobileUnit>().Any(unit =>
-                unit.ArmyId == armyId && unit.PendingEnterContainerId is Guid targetId &&
-                reactors.Any(reactor => reactor.UnitId == targetId) &&
-                GameplayCatalog.HasAIRoles(unit.GameplayTypeId, AIUnitRole.Crew)))
+        foreach (MobileUnit crew in world.Units.GetArmyUnits(armyId).OfType<MobileUnit>().Where(u =>
+            u.ArmyId == armyId && !u.IsDying && GameplayCatalog.HasAIRoles(u.GameplayTypeId, AIUnitRole.Crew)))
         {
-            return new(AIPowerSolutionKind.WaitForCrew, PowerGain: bonus);
-        }
-
-        MobileUnit? availableCrew = world.Units.Units.OfType<MobileUnit>()
-            .Where(unit => unit.ArmyId == armyId && !unit.IsDying && !unit.IsEmbarked &&
-                unit.PendingEnterContainerId is null &&
-                GameplayCatalog.HasAIRoles(unit.GameplayTypeId, AIUnitRole.Crew))
-            .OrderBy(unit => unit.UnitId)
-            .FirstOrDefault();
-        if (availableCrew is not null)
-        {
-            Reaktor? target = reactors.FirstOrDefault(reactor =>
-                reactor.Occupancy is not null &&
-                reactor.Occupancy.Count(OccupantRole.Crew) < capacity &&
-                reactor.Occupancy.CanEnter(availableCrew, OccupantRole.Crew));
+            Building? pending = producers.FirstOrDefault(b => b.UnitId == crew.PendingEnterContainerId);
+            if (pending is not null)
+                return new(AIPowerSolutionKind.WaitForCrew, PowerGain: Metadata(pending)!.PowerProductionPerCrew);
+            if (crew.IsEmbarked || crew.PendingEnterContainerId is not null) continue;
+            Building? target = producers.FirstOrDefault(b => HasFreeSlot(b) &&
+                b.Occupancy?.CanEnter(crew, OccupantRole.Crew) == true);
             if (target is not null)
-                return new(AIPowerSolutionKind.AssignCrew, availableCrew.UnitId, target.UnitId,
-                    PowerGain: bonus);
+                return new(AIPowerSolutionKind.AssignCrew, crew.UnitId, target.UnitId,
+                    PowerGain: Metadata(target)!.PowerProductionPerCrew);
         }
 
-        bool hasFreeSlot = reactors.Any(reactor =>
-            (reactor.Occupancy?.Count(OccupantRole.Crew) ?? capacity) < capacity);
-        if (requiredAdditionalPower <= bonus && hasFreeSlot)
+        Building? freeTarget = producers.FirstOrDefault(b => HasFreeSlot(b) &&
+            Metadata(b)!.PowerProductionPerCrew >= requiredAdditionalPower);
+        if (freeTarget is null) return new(AIPowerSolutionKind.BuildPower);
+        int bonus = Metadata(freeTarget)!.PowerProductionPerCrew;
+        foreach (Building trainer in world.Units.GetArmyUnits(armyId).OfType<Building>().Where(b =>
+            b.ArmyId == armyId && b.IsCompleted && !b.IsDying).OrderBy(b => b.UnitId))
         {
-            GDIBarracks? barracks = world.Units.Units.OfType<GDIBarracks>()
-                .Where(building => building.ArmyId == armyId && building.IsCompleted && !building.IsDying)
-                .OrderBy(building => building.UnitId)
-                .FirstOrDefault();
-            if (barracks is not null)
-            {
-                GameplayDefinition? crewDefinition = AIUnitSelector.SelectBest(
-                    barracks.GameplayTypeId,
-                    new AIProductionNeed(AIUnitRole.Crew, AIMovementDomain.Infantry));
-                if (crewDefinition is null)
-                    return new(AIPowerSolutionKind.BuildPower);
-                bool queued = barracks.ProductionQueue.Orders.Any(order =>
-                    GameplayCatalog.HasAIRoles(order.UnitTypeId, AIUnitRole.Crew));
-                return queued
-                    ? new(AIPowerSolutionKind.WaitForCrew, ProducerBuildingId: barracks.UnitId,
-                        CrewTypeId: crewDefinition.TypeId, PowerGain: bonus)
-                    : new(AIPowerSolutionKind.TrainCrew, ProducerBuildingId: barracks.UnitId,
-                        CrewTypeId: crewDefinition.TypeId, PowerGain: bonus);
-            }
+            GameplayDefinition? offer = GameplayCatalog.GetProducedBy(trainer.GameplayTypeId)
+                .Where(d => d.Type == PurchasableType.Unit && d.AI?.Roles.HasFlag(AIUnitRole.Crew) == true &&
+                    (AIStrategicCatalog.HasQueuedProduct(trainer, d.TypeId) || trainer.CanProduceUnit(world, d.TypeId)) &&
+                    Globals.Game.Pricing.GetQuote(new(PurchasableType.Unit, d.TypeId, armyId, trainer.UnitId)).IsAvailable)
+                .OrderBy(d => Globals.Game.Pricing.GetQuote(new(PurchasableType.Unit, d.TypeId, armyId, trainer.UnitId)).FinalPrice)
+                .ThenBy(d => d.TypeId, StringComparer.Ordinal).FirstOrDefault();
+            if (offer is null) continue;
+            bool queued = trainer.ProductionQueue.Orders.Any(order =>
+                GameplayCatalog.HasAIRoles(order.UnitTypeId, AIUnitRole.Crew));
+            return new(queued ? AIPowerSolutionKind.WaitForCrew : AIPowerSolutionKind.TrainCrew,
+                ProducerBuildingId: trainer.UnitId, CrewTypeId: offer.TypeId, PowerGain: bonus);
         }
-
         return new(AIPowerSolutionKind.BuildPower);
     }
+
+    private static BuildingMetadata? Metadata(Building building) =>
+        GameplayCatalog.Find(PurchasableType.Building, building.GameplayTypeId)?.Building;
+    private static bool HasFreeSlot(Building building) => building.Occupancy is not null &&
+        building.Occupancy.Count(OccupantRole.Crew) < Metadata(building)!.CrewCapacity;
 }

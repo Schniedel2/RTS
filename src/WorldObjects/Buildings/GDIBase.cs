@@ -38,15 +38,11 @@ public class GDIBase : Building, IPerkProvider
         if (!IsOperational || Occupancy?.IsOperational == false)
             return Array.Empty<PerkGrant>();
 
-        List<PerkGrant> perks =
-        [
-            new PerkGrant(PerkType.Home,
-                PerkLifetime.WhileProviderOperational,
-                PerkScope.Global,
-                Position),
-            new PerkGrant(PerkType.BaseEstablished,
-                PerkLifetime.WhileProviderOperational)
-        ];
+        List<PerkGrant> perks = (GameplayCatalog.Find(PurchasableType.Building, GameplayTypeId)?.ProvidedPerks ?? [])
+            .Select(perk => perk == PerkType.Home
+                ? new PerkGrant(perk, PerkLifetime.WhileProviderOperational, PerkScope.Global, Position)
+                : new PerkGrant(perk, PerkLifetime.WhileProviderOperational))
+            .ToList();
         if (ArmyId is Guid armyId &&
             Globals.Game.Armies.Find(armyId)?.PowerStatus.HasEnoughPower == true)
         {
@@ -67,24 +63,10 @@ public class GDIBase : Building, IPerkProvider
                 .. GameplayCatalog.CreateProductionActions(GameplayTypeId),
                 new(UnitActionType.LeaveContainer, "Leave", 5, 1)
             ];
-            bool researched = ArmyId is Guid armyId &&
-                Globals.Game.Armies.Find(armyId)?.Perks.Has(PerkType.AirTechnology) == true;
-            bool queued = ProductionQueue.Orders.Any(order => string.Equals(
-                order.UnitTypeId, ResearchProjects.AirTechnologyId, StringComparison.OrdinalIgnoreCase));
-            if (!researched && !queued)
-                completedActions.AddRange(GameplayCatalog.CreateResearchActions(GameplayTypeId));
             actions = completedActions;
         }
         
         return WithSellAction(actions);
-    }
-
-    public override bool TryGetProductionDuration(string unitTypeId, out float durationSeconds)
-    {
-        return GameplayCatalog.TryGetProductionDuration(
-                   GameplayTypeId, PurchasableType.Unit, unitTypeId, out durationSeconds) ||
-               GameplayCatalog.TryGetProductionDuration(
-                   GameplayTypeId, PurchasableType.Research, unitTypeId, out durationSeconds);
     }
 
     public override void Update(GameTime gameTime)

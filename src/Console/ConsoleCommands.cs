@@ -32,6 +32,9 @@ public class ConsoleCommands
 
     private void RegisterCommands()
     {
+        _console.RegisterCommand("spectator", _ => SetSpectator(true));
+        _console.RegisterCommand("spectator-on", _ => SetSpectator(true));
+        _console.RegisterCommand("spectator-off", _ => SetSpectator(false));
         _console.RegisterCommand(
             "spawn",
             Spawn);
@@ -222,6 +225,14 @@ public class ConsoleCommands
         _console.RegisterAsyncCommand(
             "army-merge",
             MergeArmyAsync);
+    }
+
+    private void SetSpectator(bool enabled)
+    {
+        _localPlayer.SetSpectator(enabled);
+        _console.Print(enabled
+            ? "Spectator enabled: full vision, minimap and inspection; unit orders disabled."
+            : "Spectator disabled: normal army vision and controls restored.");
     }
 
     private void SetHealthBarMode(HealthBarDisplayMode mode)

@@ -70,7 +70,8 @@ public sealed record GameplayDefinition(
     int IconRow = 1,
     AIUnitMetadata? AI = null,
     BuildingMetadata? Building = null,
-    PerkType? GrantedPerk = null);
+    PerkType? GrantedPerk = null,
+    IReadOnlyList<PerkType>? ProvidedPerks = null);
 
 public static class GameplayCatalog
 {
@@ -78,9 +79,10 @@ public static class GameplayCatalog
     private static readonly IReadOnlyList<PerkType> HelipadRequired =
         [PerkType.BaseEstablished, PerkType.AirTechnology];
 
-    private static readonly GameplayDefinition[] Definitions =
+    private static readonly List<GameplayDefinition> Definitions =
     [
-        Building("gdi-base", "Base", 1500, [], new(2500, 2500, PowerConsumption: 40)),
+        Building("gdi-base", "Base", 1500, [], new(2500, 2500, PowerConsumption: 40),
+            providedPerks: [PerkType.BaseEstablished, PerkType.Home]),
         Building("gdi-barracks", "Barracks", 800, BaseRequired, new(2500, 2500)),
         Building("reaktor", "Reactor", 500, BaseRequired,
             new(500, 500, PowerProduction: 100, CrewCapacity: 4,
@@ -140,7 +142,55 @@ public static class GameplayCatalog
             GrantedPerk: PerkType.AirTechnology)
     ];
 
-    public static IReadOnlyList<GameplayDefinition> All => Definitions;
+    private static readonly IReadOnlyList<GameplayDefinition> PublicDefinitions = Definitions.AsReadOnly();
+    static GameplayCatalog() => Validate();
+    public static IReadOnlyList<GameplayDefinition> All => PublicDefinitions;
+
+    /// <summary>Fails early for incomplete product/producer registrations and invalid purchase data.</summary>
+    public static void Validate(IEnumerable<GameplayDefinition>? definitions = null)
+    {
+        GameplayDefinition[] products = (definitions ?? Definitions).ToArray();
+        var keys = new HashSet<(PurchasableType, string)>();
+        var ids = new HashSet<string>();
+        foreach (GameplayDefinition product in products)
+        {
+            string id = Canonicalize(product.TypeId);
+            if (!Enum.IsDefined(product.Type) || string.IsNullOrWhiteSpace(id) || id != product.TypeId ||
+                !keys.Add((product.Type, id)) || !ids.Add(id))
+                throw new InvalidOperationException($"Invalid or duplicate catalog product '{product.Type}:{product.TypeId}'.");
+            if (product.BasePrice < 0 || product.RequiredPerks.Any(perk => !Enum.IsDefined(perk)))
+                throw new InvalidOperationException($"Invalid purchase rules for '{id}'.");
+            if (product.Type == PurchasableType.Unit && !UnitFactory.CanCreate(id) ||
+                product.Type == PurchasableType.Building && !BuildingFactory.CanCreate(id))
+                throw new InvalidOperationException($"No factory registered for '{product.Type}:{id}'.");
+            if (product.Type == PurchasableType.Research &&
+                (product.GrantedPerk is not PerkType granted || !Enum.IsDefined(granted)))
+                throw new InvalidOperationException($"Research '{id}' must grant a valid perk.");
+            if (product.ProvidedPerks is { Count: > 0 } provided &&
+                (product.Type != PurchasableType.Building || provided.Any(perk => !Enum.IsDefined(perk)) ||
+                    provided.Distinct().Count() != provided.Count))
+                throw new InvalidOperationException($"Invalid building perk capabilities for '{id}'.");
+            var producers = new HashSet<string>();
+            foreach (ProducerDefinition producer in product.Producers)
+            {
+                string producerId = Canonicalize(producer.TypeId);
+                if (!producers.Add(producerId) ||
+                    !products.Any(candidate => candidate.Type != PurchasableType.Research && candidate.TypeId == producerId) ||
+                    !float.IsFinite(producer.ProductionSeconds) || producer.ProductionSeconds < 0 ||
+                    product.Type != PurchasableType.Building && producer.ProductionSeconds == 0 ||
+                    product.Type == PurchasableType.Research && !BuildingFactory.CanCreate(producerId))
+                    throw new InvalidOperationException($"Invalid producer '{producer.TypeId}' for '{id}'.");
+            }
+            if (product.Type == PurchasableType.Research && product.Producers.Count == 0)
+                throw new InvalidOperationException($"Research '{id}' requires a producer.");
+        }
+        foreach (string id in UnitFactory.RegisteredTypeIds.Where(id => !UnitFactory.IsSandboxType(id)))
+            if (!keys.Contains((PurchasableType.Unit, Canonicalize(id))))
+                throw new InvalidOperationException($"Unit factory '{id}' is missing from the catalog.");
+        foreach (string id in BuildingFactory.RegisteredTypeIds.Where(id => !BuildingFactory.IsSandboxType(id)))
+            if (!keys.Contains((PurchasableType.Building, Canonicalize(id))))
+                throw new InvalidOperationException($"Building factory '{id}' is missing from the catalog.");
+    }
 
     public static GameplayDefinition? Find(PurchasableType type, string? typeId)
     {
@@ -197,10 +247,11 @@ public static class GameplayCatalog
 
     private static GameplayDefinition Building(string id, string name, int price,
         IReadOnlyList<PerkType> perks, BuildingMetadata metadata,
-        IReadOnlyList<ProducerDefinition>? producers = null, AIUnitMetadata? ai = null) =>
+        IReadOnlyList<ProducerDefinition>? producers = null, AIUnitMetadata? ai = null,
+        IReadOnlyList<PerkType>? providedPerks = null) =>
         new(PurchasableType.Building, id, name, price, perks,
             producers ?? [Producer("gdi-bulldozer", 0)], AI: ai,
-            Building: metadata);
+            Building: metadata, ProvidedPerks: providedPerks);
 
     private static GameplayDefinition Unit(string id, string name, int price,
         IReadOnlyList<ProducerDefinition> producers, AIUnitMetadata ai) =>

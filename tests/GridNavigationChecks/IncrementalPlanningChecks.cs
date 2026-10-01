@@ -34,7 +34,7 @@ static class IncrementalPlanningChecks
             Set(world, typeof(GameWorld), "<Markers>k__BackingField", new MarkerHandler());
             var manager = new PathfindingManager(world);
             Set(world, typeof(GameWorld), "<PathfindingManager>k__BackingField", manager);
-            var list = (List<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(units)!;
+            var list = (IList<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(units)!;
             var game = Empty<RTSGame>();
             Set(game, typeof(RTSGame), "<World>k__BackingField", world);
             var armies = new ArmyHandler();

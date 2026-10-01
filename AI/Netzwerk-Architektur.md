@@ -1,5 +1,7 @@
 # Netzwerk-Architektur
 
+Die Kampfsimulation ist seit Architektur-Aufgabe 07 im hostseitigen `CombatSystem` abgegrenzt. Der Host behält Request-Prüfung, FIFO und Veröffentlichung; das System besitzt Zielsuche, Schussanforderungen, Raketenflug, Trefferauflösung und Schaden. Host und Clients übernehmen UnitHitCommands als absolute HP-Werte, ohne Schaden erneut zu berechnen. Sessionwechsel und akzeptierter game-start setzen aktive Raketen und ausstehende Einschläge zurück. Zuständigkeiten, unveränderte Trefferregeln und Late-Join-Grenzen stehen in [CombatSystem-Architektur.md](CombatSystem-Architektur.md).
+
 Die Host-Simulation bleibt autoritativ. Clients senden Requests; der Host prüft und verarbeitet sie auf dem Spiel-Thread und verteilt daraus erzeugte Commands in einer festen Reihenfolge. Hintergrund-Tasks dürfen nur TCP lesen oder schreiben und Nachrichten in die Inbox legen. Sie greifen nicht auf `GameWorld`, Units, Armies oder andere Gameplay-Daten zu.
 
 Jede Verbindung besitzt genau einen Writer mit einer begrenzten Sendewarteschlange. Dadurch bleiben Nachrichten pro Empfänger geordnet und ein langsamer Client blockiert weder den Host noch andere Clients. Zu große Frames, volle Queues und Schreib-Timeouts beenden nur die betroffene Verbindung und werden über den Netzwerkstatus gemeldet.

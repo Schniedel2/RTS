@@ -129,7 +129,7 @@ public sealed class AIThreatAssessment(Guid armyId)
         else _lossInfantry += amount * 0.5f;
     }
 
-    private bool IsEnemy(GameWorld world, Unit candidate) => world.Units.Units
+    private bool IsEnemy(GameWorld world, Unit candidate) => world.Units.GetArmyUnits(armyId)
         .FirstOrDefault(unit => unit.ArmyId == armyId)?.IsEnemy(candidate) == true;
 
     private static float Smooth(float previous, float next) =>

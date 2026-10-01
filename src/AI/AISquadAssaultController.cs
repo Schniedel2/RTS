@@ -181,7 +181,7 @@ public sealed class AISquadAssaultController(
                 $"(no progress: {_secondsWithoutProgress:0}/{_profile.AssaultStallTimeoutSeconds:0}s).";
     }
 
-    private SquadLeader? FindPreparedLeader() => world.Units.Units.OfType<SquadLeader>()
+    private SquadLeader? FindPreparedLeader() => world.Units.GetArmyUnits(armyId).OfType<SquadLeader>()
         .Where(leader => leader.ArmyId == armyId && !leader.IsDying && !leader.IsEmbarked)
         .OrderByDescending(leader => FindLivingMembers(leader).Count())
         .ThenBy(leader => leader.UnitId)
@@ -192,7 +192,7 @@ public sealed class AISquadAssaultController(
                 _profile.RequiredGunners + _profile.RequiredRakZero);
 
     private IEnumerable<Soldier> FindLivingMembers(SquadLeader leader) =>
-        world.Units.Units.OfType<Soldier>().Where(member =>
+        world.Units.GetArmyUnits(armyId).OfType<Soldier>().Where(member =>
             member.SquadLeaderId == leader.UnitId && member.ArmyId == armyId &&
             !member.IsDying && !member.IsEmbarked);
 
@@ -341,13 +341,15 @@ public sealed class AISquadAssaultController(
         await _commands.GotoAsync(unitIds, destination);
     }
 
-    private Building? FindHomeBuilding() => world.Units.Units.OfType<Building>()
+    private Building? FindHomeBuilding() => world.Units.GetArmyUnits(armyId).OfType<Building>()
         .Where(building => building.ArmyId == armyId && building.IsCompleted && !building.IsDying)
-        .OrderBy(building => building is GDIBarracks ? 0 : building is GDIBase ? 1 : 2)
+        .OrderBy(building => GameplayCatalog.Find(PurchasableType.Building, building.GameplayTypeId) is GameplayDefinition d
+            ? AIStrategicCatalog.Matches(d, AIStrategicBuildingNeed.InfantryProduction) ? 0 :
+                AIStrategicCatalog.Matches(d, AIStrategicBuildingNeed.Base) ? 1 : 2 : 2)
         .ThenBy(building => building.UnitId)
         .FirstOrDefault();
 
-    private MobileUnit[] FindAvailableTanks() => world.Units.Units.OfType<MobileUnit>()
+    private MobileUnit[] FindAvailableTanks() => world.Units.GetArmyUnits(armyId).OfType<MobileUnit>()
         .Where(vehicle => vehicle.ArmyId == armyId && !vehicle.IsDying && !vehicle.IsEmbarked &&
             vehicle.Occupancy?.IsOperational != false && IsArmoredEscort(vehicle))
         .OrderBy(vehicle => vehicle.UnitId)
@@ -356,7 +358,7 @@ public sealed class AISquadAssaultController(
     private MobileUnit[] FindMissionVehicles()
     {
         HashSet<Guid> ids = _escortTankIds.ToHashSet();
-        return world.Units.Units.OfType<MobileUnit>()
+        return world.Units.GetArmyUnits(armyId).OfType<MobileUnit>()
             .Where(vehicle => ids.Contains(vehicle.UnitId) && vehicle.ArmyId == armyId &&
                 !vehicle.IsDying && !vehicle.IsEmbarked && vehicle.Occupancy?.IsOperational != false &&
                 IsArmoredEscort(vehicle))
@@ -373,21 +375,23 @@ public sealed class AISquadAssaultController(
         GameplayCatalog.Find(PurchasableType.Unit, unit.GameplayTypeId)?.AI is AIUnitMetadata ai &&
         (ai.Roles & roles) == roles;
 
-    private bool IsEnemy(Unit candidate) => world.Units.Units
+    private bool IsEnemy(Unit candidate) => world.Units.GetArmyUnits(armyId)
         .FirstOrDefault(unit => unit.ArmyId == armyId)?.IsEnemy(candidate) == true;
 
     private float DistanceToHomeSquared(Vector3 position) => FindHomeBuilding() is Building home
         ? HorizontalDistanceSquared(home.Position, position)
         : 0.0f;
 
-    public static int GetTargetPriority(Building building) => building switch
+    public static int GetTargetPriority(Building building)
     {
-        Turret => 0,
-        GDIBarracks or VehicleFactory or Helipad => 1,
-        TiberiumRefinery => 2,
-        Reaktor => 3,
-        _ => 4
-    };
+        GameplayDefinition? definition = GameplayCatalog.Find(PurchasableType.Building, building.GameplayTypeId);
+        if (definition is null) return 4;
+        if (definition.AI is { Movement: AIMovementDomain.Static } ai && ai.Roles.HasFlag(AIUnitRole.Defender)) return 0;
+        if (GameplayCatalog.GetProducedBy(definition.TypeId).Any(p => p.AI?.Roles.HasFlag(AIUnitRole.Attacker) == true)) return 1;
+        if (AIStrategicCatalog.Matches(definition, AIStrategicBuildingNeed.Economy)) return 2;
+        if (AIStrategicCatalog.Matches(definition, AIStrategicBuildingNeed.Power)) return 3;
+        return 4;
+    }
 
     private static bool AllWithin(IEnumerable<Unit> units, Vector3 center, float radius) =>
         units.All(unit => HorizontalDistanceSquared(unit.Position, center) <= radius * radius);

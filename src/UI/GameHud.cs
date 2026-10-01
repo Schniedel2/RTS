@@ -33,7 +33,7 @@ public sealed class GameHud
         Layout = HudLayout.Calculate(viewport,
             editorMode ? HudLayoutMode.Editor : HudLayoutMode.Game);
         _showMinimap = Layout.ShowMinimap &&
-            (editorMode || localArmy?.Perks.Has(PerkType.Minimap) == true);
+            (Globals.IsSpectator || editorMode || localArmy?.Perks.Has(PerkType.Minimap) == true);
 
         bool minimapConsumed = _showMinimap &&
             _minimap.Update(camera, Layout.Minimap, inputEnabled);
@@ -76,10 +76,10 @@ public sealed class GameHud
         _previousKeyboardState = keyboard;
 
         _minimapRefreshElapsed += (float)gameTime.ElapsedGameTime.TotalSeconds;
-        if (_showMinimap && localArmy is not null && _minimapRefreshElapsed >= 0.2f)
+        if (_showMinimap && (Globals.IsSpectator || localArmy is not null) && _minimapRefreshElapsed >= 0.2f)
         {
             _minimapRefreshElapsed %= 0.2f;
-            _minimap.Refresh(localArmy.Id);
+            _minimap.Refresh(localArmy?.Id ?? Guid.Empty);
         }
         return minimapConsumed || actionPanelConsumed || homeConsumed;
     }

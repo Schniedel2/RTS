@@ -85,6 +85,8 @@ public static class Globals
     public static bool HideUnexploredWorld = true;
     /// <summary>Local rendering/debug switch. Disabling it does not alter stored exploration state.</summary>
     public static bool FogOfWarEnabled = true;
+    // Local presentation/input mode; never changes Army ownership or replicated vision.
+    public static bool IsSpectator { get; internal set; }
     /// <summary>Visual fog edge radius in GameGrid cells. Gameplay visibility remains discrete.</summary>
     public static float FogOfWarEdgeSoftness = 1.25f;
 }

@@ -345,7 +345,15 @@ public class Soldier : MobileUnit
             _seatPoseName = selected;
         }
         // Separate, frozen pose: walking/fire overlays remain untouched for exit.
-        _meshSet.Draw(effect, seatWorld, _seatPosePlayer.EvaluatePose());
+        _meshSet.Draw(effect, GetSeatedWorldMatrix(seatWorld), _seatPosePlayer.EvaluatePose());
+    }
+
+    /// <summary>The carrier's model scale positions the seat, but must not scale the occupant again.</summary>
+    public static Matrix GetSeatedWorldMatrix(Matrix seatWorld)
+    {
+        if (!seatWorld.Decompose(out _, out Quaternion rotation, out Vector3 position))
+            return Matrix.CreateTranslation(seatWorld.Translation);
+        return Matrix.CreateFromQuaternion(rotation) * Matrix.CreateTranslation(position);
     }
 
     public override void Draw(Effect effect)

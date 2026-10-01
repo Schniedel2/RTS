@@ -398,7 +398,7 @@ public sealed class ParticleSystem
     {
         Player? localPlayer = Globals.Game.Players.FirstOrDefault(
             player => player.Id == Globals.Game.Network.LocalPeerId);
-        bool revealAll = !Globals.FogOfWarEnabled || Globals.World.IsEditorActive || localPlayer is null;
+        bool revealAll = Globals.IsSpectator || !Globals.FogOfWarEnabled || Globals.World.IsEditorActive || localPlayer is null;
         bool IsVisible(WorldObject particle) => revealAll ||
             Globals.World.Visibility.IsTerrainCurrentlyVisible(
                 localPlayer!.ArmyId, Globals.World.GameGrid.ToCell(particle.Position));

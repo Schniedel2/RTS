@@ -42,7 +42,7 @@ public sealed class Army
     public void Update(GameTime gameTime)
     {
         // Implement any periodic updates for the army here.
-        PowerStatus = ArmyPowerStatus.Calculate(Globals.World.Units.Units, Id);        
+        PowerStatus = ArmyPowerStatus.Calculate(Globals.World.Units.GetArmyUnits(Id), Id);
     }
 }
 

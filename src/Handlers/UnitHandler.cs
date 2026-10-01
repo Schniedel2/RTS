@@ -2,23 +2,157 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 
 namespace RTS;
 
 public class UnitHandler
 {
-    private readonly List<Unit> _units = new List<Unit>();
+    private static readonly IReadOnlyList<Unit> EmptyUnits = Array.AsReadOnly(Array.Empty<Unit>());
+    private readonly UnitCollection _units;
     private readonly object _unitsSync = new();
     private readonly Dictionary<Guid, Guid> _perkSourceArmies = [];
+    private readonly Dictionary<Guid, Unit> _byId = [];
+    private readonly Dictionary<Guid, HashSet<Unit>> _byArmy = [];
+    private readonly Dictionary<Guid, IReadOnlyList<Unit>> _armySnapshots = [];
+    private readonly HashSet<Unit> _registered = [];
+    private IReadOnlyList<Unit>? _snapshot;
+    private long _membershipRevision;
 
-    public IReadOnlyList<Unit> Units
+    /// <summary>Stable, read-only membership snapshot. Unit objects retain their live state.</summary>
+    public IReadOnlyList<Unit> Units => GetSnapshot();
+    public long MembershipRevision { get { lock (_unitsSync) return _membershipRevision; } }
+    public int Count { get { lock (_unitsSync) return _units.Count; } }
+
+    public UnitHandler() => _units = new UnitCollection(this);
+
+    public IReadOnlyList<Unit> GetSnapshot()
     {
-        get { lock (_unitsSync) return _units.ToArray(); }
+        lock (_unitsSync)
+            return _snapshot ??= Array.AsReadOnly(_units.ToArray());
     }
 
-    public UnitHandler()
+    /// <summary>Includes embarked units and dying wrecks, in the same order as the world snapshot.</summary>
+    public IReadOnlyList<Unit> GetArmyUnits(Guid armyId)
     {
+        lock (_unitsSync)
+        {
+            if (_armySnapshots.TryGetValue(armyId, out var cached)) return cached;
+            if (!_byArmy.TryGetValue(armyId, out var members)) return EmptyUnits;
+            IReadOnlyList<Unit> result = Array.AsReadOnly(_units.Where(members.Contains).ToArray());
+            _armySnapshots.Add(armyId, result);
+            return result;
+        }
+    }
+
+    private void ValidateRegistration(Unit unit, Unit? replacing = null)
+    {
+        ArgumentNullException.ThrowIfNull(unit);
+        if (_registered.Contains(unit) && unit != replacing ||
+            unit.UnitId != Guid.Empty && _byId.TryGetValue(unit.UnitId, out Unit? existing) && existing != replacing)
+            throw new InvalidOperationException($"Unit '{unit.UnitId}' is already registered.");
+    }
+
+    private void Attach(Unit unit)
+    {
+        _registered.Add(unit);
+        if (unit.UnitId != Guid.Empty) _byId.Add(unit.UnitId, unit);
+        AddArmyMember(unit, unit.ArmyId);
+        unit.ArmyChanged += OnArmyChanged;
+        InvalidateMembership(unit.ArmyId);
+    }
+
+    private void Detach(Unit unit)
+    {
+        unit.ArmyChanged -= OnArmyChanged;
+        _registered.Remove(unit);
+        if (unit.UnitId != Guid.Empty) _byId.Remove(unit.UnitId);
+        RemoveArmyMember(unit, unit.ArmyId);
+        InvalidateMembership(unit.ArmyId);
+    }
+
+    private void AddArmyMember(Unit unit, Guid? armyId)
+    {
+        if (armyId is not Guid id) return;
+        if (!_byArmy.TryGetValue(id, out var members)) _byArmy.Add(id, members = []);
+        members.Add(unit);
+    }
+
+    private void RemoveArmyMember(Unit unit, Guid? armyId)
+    {
+        if (armyId is Guid id && _byArmy.TryGetValue(id, out var members))
+        {
+            members.Remove(unit);
+            if (members.Count == 0) _byArmy.Remove(id);
+        }
+    }
+
+    private void OnArmyChanged(Unit unit, Guid? previousArmy, Guid? currentArmy)
+    {
+        lock (_unitsSync)
+        {
+            if (!_registered.Contains(unit)) return;
+            RemoveArmyMember(unit, previousArmy);
+            AddArmyMember(unit, currentArmy);
+            if (previousArmy is Guid oldId) _armySnapshots.Remove(oldId);
+            if (currentArmy is Guid newId) _armySnapshots.Remove(newId);
+            _membershipRevision++;
+        }
+    }
+
+    private void InvalidateMembership(Guid? armyId = null, bool clearAll = false)
+    {
+        _snapshot = null;
+        if (clearAll) _armySnapshots.Clear();
+        else if (armyId is Guid id) _armySnapshots.Remove(id);
+        _membershipRevision++;
+    }
+
+    // All insertion/removal paths (including atomic snapshot replacement) maintain indices here.
+    // The collection stays private; callers receive immutable copies, never a live collection.
+    private sealed class UnitCollection(UnitHandler owner) : Collection<Unit>
+    {
+        protected override void InsertItem(int index, Unit item)
+        {
+            lock (owner._unitsSync)
+            {
+                owner.ValidateRegistration(item);
+                base.InsertItem(index, item);
+                owner.Attach(item);
+            }
+        }
+        protected override void SetItem(int index, Unit item)
+        {
+            lock (owner._unitsSync)
+            {
+                Unit previous = this[index];
+                if (previous == item) return;
+                owner.ValidateRegistration(item, previous);
+                owner.Detach(previous);
+                base.SetItem(index, item);
+                owner.Attach(item);
+            }
+        }
+        protected override void RemoveItem(int index)
+        {
+            lock (owner._unitsSync)
+            {
+                Unit previous = this[index];
+                base.RemoveItem(index);
+                owner.Detach(previous);
+            }
+        }
+        protected override void ClearItems()
+        {
+            lock (owner._unitsSync)
+            {
+                foreach (Unit unit in this) unit.ArmyChanged -= owner.OnArmyChanged;
+                base.ClearItems();
+                owner._registered.Clear(); owner._byId.Clear(); owner._byArmy.Clear();
+                owner.InvalidateMembership(clearAll: true);
+            }
+        }
     }
 
     public Unit? SpawnUnit(
@@ -29,11 +163,10 @@ public class UnitHandler
         Guid creatorPlayerId,
         Guid? driverUnitId = null)
     {
+        if (FindById(unitId) is not null) return null;
         Unit? unit = UnitFactory.SpawnUnit(unitTypeName, position, RotateYDegrees, unitId, creatorPlayerId);
-        if (unit == null)
-            unit = SpawnBuilding(unitTypeName, position, RotateYDegrees, unitId, creatorPlayerId);
-        if (unit == null)
-            return null;
+        if (unit is null)
+            return SpawnBuilding(unitTypeName, position, RotateYDegrees, unitId, creatorPlayerId);
 
         if (unit is Building building && !building.EvaluatePlacement(Globals.World, position, RotateYDegrees).IsAllowed)
             return null;
@@ -69,6 +202,7 @@ public class UnitHandler
         Guid sourceBuildingId,
         Guid? driverUnitId = null)
     {
+        if (FindById(unitId) is not null) return null;
         MobileUnit? unit = UnitFactory.SpawnUnit(
             unitTypeName,
             spawnPosition,
@@ -105,6 +239,7 @@ public class UnitHandler
         Guid creatorPlayerId,
         int? purchasePrice = null)
     {
+        if (FindById(unitId) is not null) return null;
         Building? unit = BuildingFactory.SpawnBuilding(buildingTypeName, position, RotateYDegrees,
             unitId, creatorPlayerId, purchasePrice);
         if (unit is null)
@@ -124,7 +259,9 @@ public class UnitHandler
 
     public Unit? FindById(Guid unitId)
     {
-        return Units.FirstOrDefault(unit => unit.UnitId == unitId);
+        lock (_unitsSync)
+            return unitId == Guid.Empty ? _units.FirstOrDefault(unit => unit.UnitId == Guid.Empty) :
+                _byId.GetValueOrDefault(unitId);
     }
 
     public void RemoveMapObjects<T>() where T : Unit
@@ -140,7 +277,7 @@ public class UnitHandler
 
     public MobileUnit? FindMobileUnitById(Guid unitId)
     {
-        return Units.FirstOrDefault(unit => unit.UnitId == unitId) as MobileUnit;
+        return FindById(unitId) as MobileUnit;
     }
 
     public void Update(GameTime gameTime)
@@ -344,6 +481,7 @@ public class UnitHandler
 
     private void AddInitialDriver(Unit container, Guid creatorPlayerId, Guid driverUnitId)
     {
+        if (FindById(driverUnitId) is not null) return;
         Soldier driver = new(container.Position, driverUnitId);
         // Crew must be identical on every peer; the normal Soldier constructor
         // currently chooses a random weapon locally.

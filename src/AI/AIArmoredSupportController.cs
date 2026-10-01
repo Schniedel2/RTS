@@ -47,11 +47,8 @@ public sealed class AIArmoredSupportController(
             return;
         _thinkElapsed %= ThinkIntervalSeconds;
 
-        VehicleFactory? factory = _factoryId is Guid factoryId
-            ? world.Units.FindById(factoryId) as VehicleFactory
-            : null;
-        factory ??= world.Units.Units.OfType<VehicleFactory>()
-            .FirstOrDefault(building => building.ArmyId == actor.ArmyId && !building.IsDying);
+        Building? factory = AIStrategicCatalog.FindBuilding(world, actor.ArmyId,
+            AIStrategicBuildingNeed.ArmoredProduction, _factoryId);
         if (factory is null)
         {
             BuildFactory();
@@ -68,8 +65,9 @@ public sealed class AIArmoredSupportController(
 
         float vehicleBias = profile.Type == AIStrategyProfileType.AntiArmor ? 0.45f : 0.15f;
         float infantryBias = profile.Type == AIStrategyProfileType.FastRecon ? 0.35f : 0.1f;
-        GameplayDefinition? selected = AIUnitSelector.SelectBest(factory.GameplayTypeId,
-            _threat.CreateGroundCombatNeed(infantryBias, vehicleBias), CountOwnedCatalogUnits());
+        GameplayDefinition? selected = AIStrategicCatalog.SelectUnit(world, actor.ArmyId,
+            _threat.CreateGroundCombatNeed(infantryBias, vehicleBias), requireProducer: true,
+            currentCounts: CountOwnedCatalogUnits());
         if (selected is null)
         {
             State = AIArmoredSupportState.WaitingForResources;
@@ -77,9 +75,12 @@ public sealed class AIArmoredSupportController(
             return;
         }
 
-        int vehicles = world.Units.Units.Count(unit => unit.ArmyId == actor.ArmyId &&
+        Building? producer = AIStrategicCatalog.FindAvailableProducer(world, actor.ArmyId, selected);
+        if (producer is null) return;
+        int vehicles = world.Units.GetArmyUnits(actor.ArmyId).Count(unit => unit.ArmyId == actor.ArmyId &&
             !unit.IsDying && IsArmoredSupport(unit));
-        int queued = factory.ProductionQueue.Orders.Count(order =>
+        int queued = world.Units.GetArmyUnits(actor.ArmyId).OfType<Building>().Where(b => b.ArmyId == actor.ArmyId && !b.IsDying)
+            .SelectMany(b => b.ProductionQueue.Orders).Count(order =>
             GameplayCatalog.Find(PurchasableType.Unit, order.UnitTypeId)?.AI is AIUnitMetadata ai &&
             IsArmoredSupport(ai));
         if (vehicles + queued >= profile.RequiredTanks)
@@ -94,7 +95,7 @@ public sealed class AIArmoredSupportController(
         }
 
         PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
-            PurchasableType.Unit, selected.TypeId, actor.ArmyId, factory.UnitId));
+            PurchasableType.Unit, selected.TypeId, actor.ArmyId, producer.UnitId));
         Army? army = Globals.Game.Armies.Find(actor.ArmyId);
         if (!quote.IsAvailable || army is null || army.Resources < quote.FinalPrice + ResourceReserve)
         {
@@ -104,13 +105,13 @@ public sealed class AIArmoredSupportController(
             return;
         }
 
-        _ = _commands.TrainUnitAsync(factory.UnitId, selected.TypeId);
+        _ = _commands.TrainUnitAsync(producer.UnitId, selected.TypeId);
         State = AIArmoredSupportState.TrainingTanks;
         LastDecision = $"Ordered {selected.DisplayName} {vehicles + queued + 1}/{profile.RequiredTanks}.";
     }
 
     private System.Collections.Generic.IReadOnlyDictionary<string, int> CountOwnedCatalogUnits() =>
-        world.Units.Units
+        world.Units.GetArmyUnits(actor.ArmyId)
             .Where(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying &&
                 !string.IsNullOrWhiteSpace(unit.GameplayTypeId))
             .GroupBy(unit => unit.GameplayTypeId, StringComparer.OrdinalIgnoreCase)
@@ -132,7 +133,14 @@ public sealed class AIArmoredSupportController(
             return;
         }
 
-        const string typeId = "vehicle-factory";
+        GameplayDefinition? definition = AIStrategicCatalog.SelectBuilding(world, actor.ArmyId,
+            AIStrategicBuildingNeed.ArmoredProduction, requireAvailable: true);
+        if (definition is null)
+        {
+            LastDecision = "No available armored-production offer.";
+            return;
+        }
+        string typeId = definition.TypeId;
         PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
             PurchasableType.Building, typeId, actor.ArmyId));
         Army? army = Globals.Game.Armies.Find(actor.ArmyId);
@@ -143,7 +151,7 @@ public sealed class AIArmoredSupportController(
             return;
         }
 
-        GDIBulldozer? bulldozer = ArmyGoalController.FindBulldozer(world, actor.ArmyId);
+        MobileUnit? bulldozer = AIStrategicCatalog.FindBuilder(world, actor.ArmyId, typeId);
         if (bulldozer is null)
         {
             State = AIArmoredSupportState.FindingFactorySite;
@@ -151,10 +159,10 @@ public sealed class AIArmoredSupportController(
             return;
         }
 
-        var preview = new VehicleFactory(Vector3.Zero, Guid.NewGuid(), "vehicle-factory-1", quote.FinalPrice);
+        Building? preview = BuildingFactory.SpawnBuilding(typeId, Vector3.Zero, 0, Guid.NewGuid(), actor.Id, quote.FinalPrice);
+        if (preview is null) return;
         ArmyGoalController.PreparePreview(preview, actor);
-        Building? home = world.Units.Units.OfType<GDIBase>()
-            .FirstOrDefault(building => building.ArmyId == actor.ArmyId && !building.IsDying);
+        Building? home = AIStrategicCatalog.FindBuilding(world, actor.ArmyId, AIStrategicBuildingNeed.Base);
         Vector3 origin = home?.Position ?? bulldozer.Position;
         if (!ArmyGoalController.TryFindBuildingSite(world, preview, origin, 8, 22, out Vector3 position))
         {

@@ -5,5 +5,9 @@ ai-create AI2 2
 ai-create AI3 3
 ai-create AI4 4
 
+enable fogofwar
+disable gamegrid
+
+spectator-on
 game-start
 set-game-speed-2x

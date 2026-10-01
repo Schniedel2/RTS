@@ -13,11 +13,15 @@ void Check(bool condition, string message)
     if (!condition) throw new Exception(message);
     checks++;
 }
-void Field(object target, Type owner, string name, object value) =>
-    owner.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(target, value);
+void Field(object target, Type owner, string name, object value)
+    {
+        if (target is Unit && name == "<ArmyId>k__BackingField")
+            typeof(Unit).GetMethod("SetArmy", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(target, [value]);
+        else owner.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(target, value);
+    }
 T Empty<T>() => (T)RuntimeHelpers.GetUninitializedObject(typeof(T));
-List<Unit> UnitList(UnitHandler handler) =>
-    (List<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(handler)!;
+IList<Unit> UnitList(UnitHandler handler) =>
+    (IList<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(handler)!;
 MobileUnit Unit(GroundMovementProfile? profile = null, int width = 1, int length = 1)
 {
     MobileUnit unit = Empty<MobileUnit>();
@@ -1149,6 +1153,14 @@ Check(matchAssignments.Single(item => item.PlayerId == secondPlayerId).IsAI,
 Check(matchAssignments.Select(item => item.PlayerId).ToHashSet().SetEquals([ownerId, secondPlayerId]) &&
       matchAssignments.Select(item => item.BulldozerId).Distinct().Count() == 2,
     "Every human and AI player receives one distinct new match-start bulldozer");
+Check(matchAssignments.All(item => item.DriverUnitId is Guid driverId && driverId != Guid.Empty) &&
+      matchAssignments.Select(item => item.DriverUnitId).Distinct().Count() == matchAssignments.Length &&
+      !matchAssignments.Any(item => matchAssignments.Any(other => other.BulldozerId == item.DriverUnitId)),
+    "Every human and AI match-start bulldozer receives a distinct host-assigned driver ID");
+var matchWire = JsonSerializer.Deserialize<NetworkMessage>(JsonSerializer.Serialize(startCommand, NetworkJson.Options), NetworkJson.Options)!;
+Check(matchWire.MatchStartAssignments!.Select(item => item.DriverUnitId).SequenceEqual(matchAssignments.Select(item => item.DriverUnitId)),
+    "Match-start driver IDs survive the actual JSON wire contract");
+
 typeof(RTSGame).GetMethod("PrepareAIPlayersForMatch", BindingFlags.Instance | BindingFlags.NonPublic)!
     .Invoke(game, new object[] { matchAssignments });
 Check(game.Players.Any(player => player.Id == secondPlayerId) &&
@@ -1610,10 +1622,15 @@ foreach (string relative in new[] { "vehicles/heli-1.bbmodel", "buildings/helipa
 }
 var actualHeli = new Helicopter(new(10, 0, 10), Guid.NewGuid());
 var bikeMeshSet = new MeshSet(Globals.MeshHandler.Meshes["motorbike-1"]);
-var driverSeat = bikeMeshSet.Pivots.Single(p => p.Name == "pivot:seat_driver");
+var driverSeat = bikeMeshSet.Pivots.Single(p => p.Name == "pivot:seat-driver");
 Check(driverSeat.Pose == "motorbike-driver", "Seat metadata references an animation without the pose prefix");
-Check(bikeMeshSet.TryGetPivotWorldTransform("pivot:seat_driver", Matrix.CreateTranslation(10, 0, 10), out var seatTransform), "Annotated seat remains accessible by its ordinary pivot name");
+Check(bikeMeshSet.TryGetPivotWorldTransform("pivot:seat-driver", Matrix.CreateTranslation(10, 0, 10), out var seatTransform), "Annotated seat remains accessible by its ordinary pivot name");
 Check(float.IsFinite(seatTransform.Translation.X), "Annotated seat yields a valid world transform");
+Matrix scaledSeat = Matrix.CreateScale(0.25f) * Matrix.CreateRotationY(0.7f) * Matrix.CreateTranslation(12, 3, 8);
+Matrix riderWorld = Soldier.GetSeatedWorldMatrix(scaledSeat);
+Check(riderWorld.Translation == scaledSeat.Translation, "Seated rider keeps the carrier's world seat position");
+Check(Vector3.Distance(Vector3.TransformNormal(Vector3.Forward, riderWorld), Vector3.TransformNormal(Vector3.Forward, Matrix.CreateRotationY(0.7f))) < 0.0001f,
+    "Seated rider keeps seat orientation without inheriting the carrier's model scale");
 Check(Globals.MeshHandler.Meshes["Soldier-2"].Animations.ContainsKey(driverSeat.Pose!), "Authored soldier contains the driver's seat pose");
 var actualBike = new MotorBike(new(10, 0, 10), Guid.NewGuid());
 Check(!actualBike.CanFireWeapon, "Basic motorcycle cannot fire weapons");
@@ -1638,7 +1655,8 @@ Field(belowAircraft, typeof(Unit), "<Height>k__BackingField", 1f);
 belowAircraft.SetPosition(new(heli.Position.X, 0, heli.Position.Z));
 UnitList(units).Insert(0, belowAircraft);
 host = new NetworkHost(transport, input, world);
-Unit? ImpactTarget(Guid attacker, Vector3 point) => (Unit?)typeof(NetworkHost).GetMethod("FindImpactTarget", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, new object[] { attacker, point });
+var impactCombat = new CombatSystem(world, transport.LocalPeerId, _ => Task.CompletedTask, (_, _) => { });
+Unit? ImpactTarget(Guid attacker, Vector3 point) => impactCombat.FindImpactTarget(attacker, point);
 Check(ImpactTarget(Guid.NewGuid(), heli.Position + Vector3.Up * (heli.Height * 0.5f)) == heli, "Aerial hit selects helicopter rather than unit below");
 Check(ImpactTarget(heli.UnitId, belowAircraft.Position) == belowAircraft, "Helicopter ground attack cannot hit itself");
 Check(ImpactTarget(belowAircraft.UnitId, belowAircraft.Position) is null, "Ground impact cannot hit an aircraft above it");
@@ -3142,6 +3160,12 @@ PerformanceMeasurements.Enabled = false;
 checks += IncrementalPlanningChecks.Run();
 checks += HarvestSystemChecks.Run();
 checks += MedicSystemChecks.Run();
+checks += CombatSystemChecks.Run();
+checks += CatalogChecks.Run();
+checks += AIStrategicCatalogChecks.Run();
+checks += UnitQueryChecks.Run();
+if (args.Contains("--unit-query-report"))
+    System.IO.File.WriteAllText(System.IO.Path.Combine("AI", "Unit-Abfragen-Messung.md"), UnitQueryChecks.MeasurementReport);
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");
 if (args.Length == 2 && args[0] == "--performance-baseline")
 {

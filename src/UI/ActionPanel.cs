@@ -20,6 +20,7 @@ public sealed class ActionPanel
     private readonly HashSet<UnitAction> _disabledActions = [];
     private readonly Dictionary<UnitAction, int> _actionCosts = [];
     private readonly Dictionary<UnitAction, IReadOnlyList<PerkType>> _missingPerks = [];
+    private readonly Dictionary<UnitAction, string> _unavailableReasons = [];
     private MouseState _previousMouseState;
     private UnitAction? _activeAction;
     private UnitAction? _hoverAction;
@@ -42,6 +43,7 @@ public sealed class ActionPanel
         _disabledActions.Clear();
         _actionCosts.Clear();
         _missingPerks.Clear();
+        _unavailableReasons.Clear();
         selectedUnits = PlayerHandler.ControllableUnits(selectedUnits);
         if (selectedUnits.Count == 0)
         {
@@ -68,6 +70,8 @@ public sealed class ActionPanel
             _actionCosts[action] = cost;
             if (quote is not null)
                 _missingPerks[action] = quote.MissingPerks;
+            if (quote?.UnavailableReason is string reason)
+                _unavailableReasons[action] = reason;
             if (quote is { IsAvailable: false } ||
                 cost > 0 && selectedUnits.FirstOrDefault()?.ArmyId is Guid armyId &&
                 (Globals.Game.Armies.Find(armyId)?.Resources ?? 0) < cost)
@@ -112,6 +116,8 @@ public sealed class ActionPanel
                     _tooltipText += $" ({cost} resources)";
                 if (_missingPerks.GetValueOrDefault(_hoverAction) is { Count: > 0 } missing)
                     _tooltipText += $" - Requires: {string.Join(", ", missing.Select(GetPerkDisplayName))}";
+                if (_unavailableReasons.TryGetValue(_hoverAction, out string? unavailable))
+                    _tooltipText += $" - {unavailable}";
                 if (_hoverAction.Type == UnitActionType.TilePreview)
                     _tooltipText = $"{_hoverAction!.Name} ({Globals.LocalPlayer._currentTerrainTile})";
             }

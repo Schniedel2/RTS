@@ -191,7 +191,7 @@ public sealed class VisibilitySystem
 
     public bool IsUnitVisible(Guid viewerArmyId, Unit unit, bool forMinimap = false)
     {
-        if (!Globals.FogOfWarEnabled)
+        if (Globals.IsSpectator || !Globals.FogOfWarEnabled)
             return true;
         if (unit.ArmyId is not Guid targetArmyId)
             return !Globals.HideUnexploredWorld || _world.IsEditorActive ||
@@ -216,7 +216,7 @@ public sealed class VisibilitySystem
         bool forMinimap,
         IReadOnlyList<Guid> alliedArmyIds)
     {
-        if (!Globals.FogOfWarEnabled)
+        if (Globals.IsSpectator || !Globals.FogOfWarEnabled)
             return VisibilityState.Visible;
         CellVisibility visibility = GetVisibility(viewerArmyId, cell, alliedArmyIds);
         if (visibility.HasFlag(CellVisibility.Visible)) return VisibilityState.Visible;
@@ -240,7 +240,7 @@ public sealed class VisibilitySystem
 
     public bool IsTerrainExploredToLocalPlayer(Point cell)
     {
-        if (!Globals.FogOfWarEnabled || !Globals.HideUnexploredWorld || _world.IsEditorActive)
+        if (Globals.IsSpectator || !Globals.FogOfWarEnabled || !Globals.HideUnexploredWorld || _world.IsEditorActive)
             return true;
         Player? local = Globals.Game.Players.FirstOrDefault(player => player.Id == Globals.Game.Network.LocalPeerId);
         return local is null || GetDisplayedTerrainVisibility(local.ArmyId, cell, false) != VisibilityState.Unexplored;
@@ -252,7 +252,7 @@ public sealed class VisibilitySystem
     /// </summary>
     public bool IsTerrainCurrentlyVisible(Guid viewerArmyId, Point cell)
     {
-        if (!Globals.FogOfWarEnabled || _world.IsEditorActive)
+        if (Globals.IsSpectator || !Globals.FogOfWarEnabled || _world.IsEditorActive)
             return true;
         return GetDisplayedTerrainVisibility(viewerArmyId, cell, false) == VisibilityState.Visible;
     }

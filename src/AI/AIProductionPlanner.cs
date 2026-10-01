@@ -64,52 +64,41 @@ public static class AIProductionPlanner
 
         foreach (PerkType perk in definition.RequiredPerks.Where(perk => !state.Perks.Contains(perk)))
         {
-            GameplayDefinition? research = GameplayCatalog.All.FirstOrDefault(candidate =>
-                candidate.Type == PurchasableType.Research && candidate.GrantedPerk == perk);
-            if (research is null)
-                return state.Fail($"No research grants required perk {perk} for {definition.TypeId}.");
-            if (!Resolve(research, state, dependencyOnly: true, new HashSet<string>(chain)))
-                return false;
+            GameplayDefinition[] providers = GameplayCatalog.All.Where(candidate =>
+                candidate.Type == PurchasableType.Research && candidate.GrantedPerk == perk ||
+                candidate.Type == PurchasableType.Building && candidate.ProvidedPerks?.Contains(perk) == true)
+                .OrderBy(candidate => candidate.BasePrice).ThenBy(candidate => candidate.TypeId, StringComparer.Ordinal).ToArray();
+            if (!TryResolveChoice(providers, state, chain, dependencyOnly: true))
+                return state.Fail($"No feasible provider grants required perk {perk} for {definition.TypeId}.");
             state.Perks.Add(perk);
         }
 
-        ProducerDefinition? producer = definition.Producers.FirstOrDefault(candidate =>
-            state.Owned.Contains(candidate.TypeId));
-        producer ??= definition.Producers.FirstOrDefault();
-        if (producer is null)
-            return state.Fail($"No producer is registered for {definition.TypeId}.");
-
-        if (!state.Owned.Contains(producer.TypeId))
+        ProducerDefinition? producer = null;
+        foreach (ProducerDefinition option in definition.Producers.OrderByDescending(candidate => state.Owned.Contains(candidate.TypeId))
+            .ThenBy(candidate => candidate.ProductionSeconds).ThenBy(candidate => candidate.TypeId, StringComparer.Ordinal))
         {
-            GameplayDefinition? producerDefinition = FindProductDefinition(producer.TypeId);
-            if (producerDefinition is null)
-                return state.Fail($"Producer {producer.TypeId} for {definition.TypeId} is unknown.");
-            if (!Resolve(producerDefinition, state, dependencyOnly: true,
-                    new HashSet<string>(chain)))
-                return false;
+            if (state.Owned.Contains(option.TypeId)) { producer = option; break; }
+            GameplayDefinition? producerDefinition = FindProductDefinition(option.TypeId);
+            if (producerDefinition is not null && TryResolveChoice([producerDefinition], state, chain, dependencyOnly: true))
+            { producer = option; break; }
         }
+        if (producer is null) return state.Fail($"No feasible producer is registered for {definition.TypeId}.");
 
         if (definition.Type == PurchasableType.Building &&
             definition.Building is BuildingMetadata building &&
             building.PowerConsumption > 0 &&
+            definition.ProvidedPerks?.Contains(PerkType.BaseEstablished) != true &&
             state.PowerBalance < building.PowerConsumption + state.PowerHeadroom)
         {
-            GameplayDefinition? powerPlant = GameplayCatalog.All
-                .Where(candidate => candidate.Type == PurchasableType.Building &&
-                    candidate.Building?.PowerProduction > 0)
-                .OrderByDescending(candidate => candidate.Building!.PowerProduction)
-                .ThenBy(candidate => candidate.BasePrice)
-                .FirstOrDefault();
-            if (powerPlant is null || string.Equals(powerPlant.TypeId, definition.TypeId,
-                    StringComparison.OrdinalIgnoreCase))
-                return state.Fail($"No power producer can supply {definition.TypeId}.");
+            GameplayDefinition[] plants = GameplayCatalog.All
+                .Where(candidate => candidate.Type == PurchasableType.Building && candidate.Building is BuildingMetadata stats &&
+                    stats.PowerProduction > stats.PowerConsumption && candidate.TypeId != definition.TypeId)
+                .OrderByDescending(candidate => candidate.Building!.PowerProduction - candidate.Building.PowerConsumption)
+                .ThenBy(candidate => candidate.BasePrice).ThenBy(candidate => candidate.TypeId, StringComparer.Ordinal).ToArray();
             int guard = 0;
             while (state.PowerBalance < building.PowerConsumption + state.PowerHeadroom && guard++ < 8)
-            {
-                if (!Resolve(powerPlant, state, dependencyOnly: false,
-                        new HashSet<string>(chain)))
-                    return false;
-            }
+                if (!TryResolveChoice(plants, state, chain, dependencyOnly: false))
+                    return state.Fail($"No feasible power producer can supply {definition.TypeId}.");
             if (state.PowerBalance < building.PowerConsumption + state.PowerHeadroom)
                 return state.Fail($"Power dependency for {definition.TypeId} could not be satisfied.");
         }
@@ -129,12 +118,31 @@ public static class AIProductionPlanner
         {
             state.PowerBalance += stats.PowerProduction - stats.PowerConsumption;
             state.Owned.Add(definition.TypeId);
+            foreach (PerkType provided in definition.ProvidedPerks ?? []) state.Perks.Add(provided);
         }
         else if (definition.GrantedPerk is PerkType granted)
         {
             state.Perks.Add(granted);
         }
         return true;
+    }
+
+    private static bool TryResolveChoice(IEnumerable<GameplayDefinition> choices, PlanningState state,
+        HashSet<string> chain, bool dependencyOnly)
+    {
+        foreach (GameplayDefinition choice in choices)
+        {
+            var branch = new PlanningState(state.Owned, state.Perks, state.PowerBalance, state.PowerHeadroom);
+            branch.Steps.AddRange(state.Steps); branch.Planned.UnionWith(state.Planned);
+            if (!Resolve(choice, branch, dependencyOnly, new HashSet<string>(chain))) continue;
+            state.Owned.Clear(); state.Owned.UnionWith(branch.Owned);
+            state.Perks.Clear(); state.Perks.UnionWith(branch.Perks);
+            state.Steps.Clear(); state.Steps.AddRange(branch.Steps);
+            state.Planned.Clear(); state.Planned.UnionWith(branch.Planned);
+            state.PowerBalance = branch.PowerBalance;
+            return true;
+        }
+        return false;
     }
 
     private static GameplayDefinition? FindProductDefinition(string typeId) =>

@@ -26,7 +26,7 @@ static class PerformanceBaseline
         var units = new UnitHandler();
         Set(world, typeof(GameWorld), "<Units>k__BackingField", units);
         Set(world, typeof(GameWorld), "<PathfindingManager>k__BackingField", new PathfindingManager(world));
-        var list = (List<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(units)!;
+        var list = (IList<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(units)!;
         var game = Empty<RTSGame>();
         var armies = new ArmyHandler();
         Set(game, typeof(RTSGame), "<Armies>k__BackingField", armies);

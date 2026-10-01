@@ -1,5 +1,7 @@
 # Gemeinsamer Gameplay-Katalog und KI-Metadaten
 
+Seit Architektur-Aufgabe 08 werden Katalog und Factory-Registrierungen beim ersten Katalogzugriff auf Konsistenz geprüft. Forschungs-Grants, Zeiten und Angebote stammen aus dem Katalog; gemeinsame Building-Regeln unterstützen mehrere Forschungsproduzenten. Unbekannte Produkte sind nicht verfügbare Quotes mit erklärendem Fehlergrund; kostenlose Sandbox-Typen sind ausdrücklich aufgelistet. Erweiterung und Prüfgrenzen stehen in [Katalog-Registrierung.md](Katalog-Registrierung.md).
+
 ## Ziel
 
 Spieleroberfläche, Host und KI sollen dieselben statischen Spieldaten verwenden. Eine neue Einheit soll nicht an mehreren Stellen mit Preis, Bauzeit und Produktionsgebäude eingetragen werden müssen. Der gemeinsame Einstiegspunkt ist `GameplayCatalog` in `src/Gameplay/GameplayCatalog.cs`.
@@ -86,7 +88,7 @@ Fahrzeug- und Kampfinfanterieproduktion erhalten ihre Gewichte aus diesem Bedroh
 
 ## Erster Abhängigkeitsplan: Luftverteidigung
 
-`AIDefensePlanner` übersetzt einen ausreichend hohen Luftbedrohungswert in konkrete Bauschritte. Er sucht im Katalog unter den Produkten des Bulldozers eine stationäre Unit mit `Defender + AntiAir`. Derzeit findet er dadurch den Gatling-Turret.
+`AIDefensePlanner` übersetzt einen ausreichend hohen Luftbedrohungswert in konkrete Bauschritte. Er sucht über `AIStrategicCatalog` ein erreichbares Gebäudeangebot mit `Defender + AntiAir` und stationärer Bewegungsdomäne. Derzeit findet er dadurch den Gatling-Turret.
 
 Der Planer:
 
@@ -94,7 +96,7 @@ Der Planer:
 2. prüft vorhandene und bereits im Bau befindliche Anlagen,
 3. prüft Grundpreis, Perks und Ressourcenreserve,
 4. berücksichtigt den Stromverbrauch des gewählten Gebäudes,
-5. baut bei fehlender Leistungsreserve zuerst einen Reaktor,
+5. plant bei fehlender Leistungsreserve Stromcrew oder ein erreichbares Kraftwerk,
 6. sucht anschließend einen gültigen Bauplatz nahe der Basis,
 7. sendet den Bauauftrag über den normalen `PlayerCommandService` an den Host.
 
@@ -132,9 +134,9 @@ Die Reaktor-Definition enthält nun auch vier Crew-Plätze und `PowerProductionP
 
 `AICrewPowerPlanner` entscheidet bei zusätzlichem Strombedarf in dieser Reihenfolge:
 
-1. Einen vorhandenen freien Engineer in einen Reaktor mit freiem Crew-Platz schicken.
-2. Bei höchstens 30 fehlenden Stromeinheiten einen Engineer in einer vorhandenen Kaserne ausbilden.
-3. Bei größerem Defizit, fehlender Kaserne oder vollen Reaktoren einen weiteren Reaktor bauen.
+1. Vorhandene freie Crew in einen passenden Stromproduzenten mit freiem Laufzeitplatz schicken.
+2. Deckt dessen Katalogbonus das Defizit, Crew über ein verfügbares Produktionsangebot ausbilden.
+3. Ansonsten ein erreichbares Kraftwerk planen. Für die heutigen Reaktoren entspricht ein Crew-Mitglied weiterhin 30 Strom.
 
 Ein bereits laufender Eintritt oder Ausbildungsauftrag wird abgewartet. Das Betreten läuft über `PlayerCommandService.EnterUnitAsync` und damit über dieselbe Hostvalidierung wie bei einem menschlichen Spieler. Der Helipad-Infrastrukturplan und die adaptive Luftverteidigung verwenden beide diese Entscheidung.
 
@@ -143,6 +145,10 @@ Ein bereits laufender Eintritt oder Ausbildungsauftrag wird abgewartet. Das Betr
 1. Fahrzeug- und Infanterieproduktion schrittweise auf den gemeinsamen Executor umstellen.
 2. Die getrennten Executor-Instanzen später durch eine priorisierte Planwarteschlange pro KI-Armee koordinieren.
 3. Weitere statische Unit-Werte und allgemeine Aktionen schrittweise übernehmen.
-4. Die bisherigen Factory-Switches nur noch für das Erzeugen der konkreten C#-Instanz verwenden oder später durch registrierte Erzeuger ersetzen.
+4. Neue Produkte über die bereits validierten Factory-Erzeuger registrieren.
 
 Die Host-Autorität bleibt unverändert: Der Katalog hilft bei Auswahl und Darstellung, aber der Host validiert und bezahlt jeden Auftrag weiterhin über die normalen Netzwerkbefehle.
+
+## Strategische Auswahl ohne konkrete Gebäudetypen
+
+Architektur-Aufgabe 09 ist umgesetzt: Bedürfnisse, mehrere Produzenten, Gebäude-Perkanbieter und Crew-Boni werden aus dem Katalog gewählt. Details, Erweiterungsregeln und geprüfte Grenzen in [Strategische-Katalogplanung.md](Strategische-Katalogplanung.md). Laufzeitverhalten wie Ernten, Squadführung oder Landen bleibt explizit implementiert.

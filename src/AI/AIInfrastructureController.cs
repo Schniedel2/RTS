@@ -8,14 +8,14 @@ namespace RTS;
 public enum AIInfrastructureState
 {
     MonitoringStorage,
-    BuildingSilo,
+    BuildingStorage,
     AssigningPowerCrew,
     TrainingPowerCrew,
     BuildingPower,
     BuildingVision,
-    ResearchingAirTechnology,
-    BuildingHelipad,
-    WaitingForHelicopter,
+    ResearchingPrerequisite,
+    BuildingAirProducer,
+    WaitingForAirSupport,
     AirSupportReady
 }
 
@@ -27,15 +27,15 @@ public sealed class AIInfrastructureController(
 {
     public const float StorageFreeFractionThreshold = 0.15f;
     public const int OperationalPowerHeadroom = 10;
-    public const int HelipadPowerHeadroom = 15;
     private const float ThinkIntervalSeconds = 1.0f;
     private readonly AIProductionPlanExecutor _executor = new(world, actor, network);
     private float _thinkElapsed;
+    private bool _airPlan;
 
     public AIInfrastructureState State { get; private set; } = AIInfrastructureState.MonitoringStorage;
     public bool IsAirSupportReady => State == AIInfrastructureState.AirSupportReady;
     public bool RequiresImmediatePower =>
-        ArmyPowerStatus.Calculate(world.Units.Units, actor.ArmyId).Balance <
+        ArmyPowerStatus.Calculate(world.Units.GetArmyUnits(actor.ArmyId), actor.ArmyId).Balance <
             OperationalPowerHeadroom;
     public string LastDecision { get; private set; } = "Monitoring storage and air-technology requirements.";
 
@@ -44,6 +44,11 @@ public sealed class AIInfrastructureController(
         using var measurement = PerformanceMeasurements.Measure("AI.Infrastructure");
         float elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
         _thinkElapsed += elapsed;
+        if (_airPlan && HasAirSupport())
+        {
+            _executor.Reset();
+            _airPlan = false;
+        }
         _executor.Update(gameTime);
         if (_executor.IsBusy)
         {
@@ -56,7 +61,7 @@ public sealed class AIInfrastructureController(
             return;
         _thinkElapsed %= ThinkIntervalSeconds;
 
-        ArmyPowerStatus power = ArmyPowerStatus.Calculate(world.Units.Units, actor.ArmyId);
+        ArmyPowerStatus power = ArmyPowerStatus.Calculate(world.Units.GetArmyUnits(actor.ArmyId), actor.ArmyId);
         int immediatePowerNeed = Math.Max(0, OperationalPowerHeadroom - power.Balance);
         if (immediatePowerNeed > 0)
         {
@@ -65,7 +70,7 @@ public sealed class AIInfrastructureController(
             if (HandleCrewPowerSolution(solution, gameTime))
                 return;
 
-            GameplayDefinition? powerBuilding = FindPreferredPowerBuilding();
+            GameplayDefinition? powerBuilding = AIStrategicCatalog.SelectBuilding(world, actor.ArmyId, AIStrategicBuildingNeed.Power);
             if (powerBuilding is null)
             {
                 State = AIInfrastructureState.BuildingPower;
@@ -79,12 +84,14 @@ public sealed class AIInfrastructureController(
 
         if (NeedsAdditionalStorage())
         {
-            State = AIInfrastructureState.BuildingSilo;
-            StartCatalogPlan(PurchasableType.Building, "silo", gameTime);
+            State = AIInfrastructureState.BuildingStorage;
+            GameplayDefinition? storageBuilding = AIStrategicCatalog.SelectBuilding(world, actor.ArmyId, AIStrategicBuildingNeed.Storage);
+            if (storageBuilding is not null) StartCatalogPlan(PurchasableType.Building, storageBuilding.TypeId, gameTime);
+            else LastDecision = "No feasible storage offer is available.";
             return;
         }
 
-        GameplayDefinition? visionBuilding = FindPreferredVisionBuilding();
+        GameplayDefinition? visionBuilding = AIStrategicCatalog.SelectBuilding(world, actor.ArmyId, AIStrategicBuildingNeed.Vision);
         if (visionBuilding is not null && !HasOwnedVisionBuilding(visionBuilding.TypeId))
         {
             State = AIInfrastructureState.BuildingVision;
@@ -92,52 +99,27 @@ public sealed class AIInfrastructureController(
             return;
         }
 
-        Helipad? helipad = world.Units.Units.OfType<Helipad>()
-            .FirstOrDefault(building => building.ArmyId == actor.ArmyId && !building.IsDying);
-        int helipadConsumption = helipad is null
-            ? GameplayCatalog.Find(PurchasableType.Building, "helipad")?.Building?.PowerConsumption ?? 0
-            : 0;
-        int additionalPower = Math.Max(0,
-            helipadConsumption + HelipadPowerHeadroom - power.Balance);
-        if (additionalPower > 0)
+        GameplayDefinition? airUnit = AIStrategicCatalog.SelectUnit(world, actor.ArmyId,
+            new AIProductionNeed(AIUnitRole.Attacker, AIMovementDomain.Air, AntiVehicle: 1, Mobility: .5f));
+        if (HasAirSupport())
         {
-            AIPowerSolution solution = AICrewPowerPlanner.Evaluate(
-                world, actor.ArmyId, additionalPower);
-            if (HandleCrewPowerSolution(solution, gameTime))
-                return;
-            State = AIInfrastructureState.BuildingPower;
-            StartCatalogPlan(PurchasableType.Building, "reaktor", gameTime);
+            State = AIInfrastructureState.AirSupportReady;
+            LastDecision = "First catalog air-combat unit is ready.";
             return;
         }
-
-        Army? army = Globals.Game.Armies.Find(actor.ArmyId);
-        if (helipad is null)
+        if (airUnit is null)
         {
-            State = army?.Perks.Has(PerkType.AirTechnology) == true
-                ? AIInfrastructureState.BuildingHelipad
-                : AIInfrastructureState.ResearchingAirTechnology;
-            StartCatalogPlan(PurchasableType.Building, "helipad", gameTime);
+            State = AIInfrastructureState.WaitingForAirSupport;
+            LastDecision = "No feasible catalog air-support offer is available.";
             return;
         }
-        if (!helipad.IsCompleted)
-        {
-            State = AIInfrastructureState.BuildingHelipad;
-            LastDecision = $"Constructing helipad ({helipad.ConstructionPercentage * 100.0f:0}%).";
-            return;
-        }
-
-        Helicopter? helicopter = world.Units.Units.OfType<Helicopter>()
-            .FirstOrDefault(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying);
-        if (helicopter is null)
-        {
-            State = AIInfrastructureState.WaitingForHelicopter;
-            LastDecision = "Helipad complete; waiting for its included helicopter delivery.";
-            return;
-        }
-
-        State = AIInfrastructureState.AirSupportReady;
-        LastDecision = "Air Technology, powered helipad and first helicopter are ready.";
+        State = AIInfrastructureState.WaitingForAirSupport;
+        StartCatalogPlan(PurchasableType.Unit, airUnit.TypeId, gameTime);
     }
+
+    private bool HasAirSupport() => world.Units.GetArmyUnits(actor.ArmyId).Any(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying &&
+        GameplayCatalog.Find(PurchasableType.Unit, unit.GameplayTypeId)?.AI is AIUnitMetadata ai &&
+        ai.Movement == AIMovementDomain.Air && ai.Roles.HasFlag(AIUnitRole.Attacker));
 
     private bool HandleCrewPowerSolution(AIPowerSolution solution, GameTime gameTime)
     {
@@ -155,13 +137,13 @@ public sealed class AIInfrastructureController(
                 return true;
             case AIPowerSolutionKind.WaitForCrew:
                 State = AIInfrastructureState.AssigningPowerCrew;
-                LastDecision = "Waiting for power crew to enter the reactor.";
+                LastDecision = "Waiting for power crew to enter a power producer.";
                 return true;
             case AIPowerSolutionKind.TrainCrew:
                 State = AIInfrastructureState.TrainingPowerCrew;
                 if (string.IsNullOrWhiteSpace(solution.CrewTypeId))
                     return true;
-                LastDecision = $"Training {solution.CrewTypeId} for +{solution.PowerGain} reactor power.";
+                LastDecision = $"Training {solution.CrewTypeId} for +{solution.PowerGain} crew power.";
                 StartCatalogPlan(PurchasableType.Unit, solution.CrewTypeId, gameTime);
                 return true;
             default:
@@ -171,7 +153,7 @@ public sealed class AIInfrastructureController(
 
     private bool NeedsAdditionalStorage()
     {
-        Building[] storage = world.Units.Units.OfType<Building>()
+        Building[] storage = world.Units.GetArmyUnits(actor.ArmyId).OfType<Building>()
             .Where(building => building.ArmyId == actor.ArmyId && building.IsCompleted &&
                 !building.IsDying && building.ResourceCapacity > 0.0f)
             .ToArray();
@@ -179,32 +161,14 @@ public sealed class AIInfrastructureController(
             return false;
         float capacity = storage.Sum(building => building.ResourceCapacity);
         float free = storage.Sum(building => building.AvailableResourceCapacity);
-        bool siloUnderConstruction = world.Units.Units.OfType<Silo>()
-            .Any(silo => silo.ArmyId == actor.ArmyId && !silo.IsDying && !silo.IsCompleted);
-        return !siloUnderConstruction && free <= Math.Max(
+        bool storageUnderConstruction = world.Units.GetArmyUnits(actor.ArmyId).OfType<Building>()
+            .Any(building => building.ArmyId == actor.ArmyId && !building.IsDying && !building.IsCompleted && building.ResourceCapacity > 0);
+        return !storageUnderConstruction && free <= Math.Max(
             Harvester.DefaultCargoCapacity, capacity * StorageFreeFractionThreshold);
     }
 
-    private static GameplayDefinition? FindPreferredVisionBuilding() =>
-        GameplayCatalog.All
-            .Where(definition => definition.Type == PurchasableType.Building &&
-                definition.Building?.VisionRange > 0 &&
-                definition.Producers.Any(producer => string.Equals(
-                    producer.TypeId, "gdi-bulldozer", StringComparison.OrdinalIgnoreCase)))
-            .OrderByDescending(definition => definition.Building!.VisionRange)
-            .ThenBy(definition => definition.BasePrice)
-            .FirstOrDefault();
-
-    private static GameplayDefinition? FindPreferredPowerBuilding() =>
-        GameplayCatalog.All
-            .Where(definition => definition.Type == PurchasableType.Building &&
-                definition.Building?.PowerProduction > 0)
-            .OrderByDescending(definition => definition.Building!.PowerProduction)
-            .ThenBy(definition => definition.BasePrice)
-            .FirstOrDefault();
-
     private bool HasOwnedVisionBuilding(string typeId) =>
-        world.Units.Units.Any(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying &&
+        world.Units.GetArmyUnits(actor.ArmyId).Any(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying &&
             string.Equals(unit.GameplayTypeId, typeId, StringComparison.OrdinalIgnoreCase));
 
     private void StartCatalogPlan(PurchasableType type, string typeId, GameTime gameTime)
@@ -216,20 +180,26 @@ public sealed class AIInfrastructureController(
             LastDecision = $"Cannot plan {typeId}: catalog or army state is unavailable.";
             return;
         }
-        string[] ownedTypes = world.Units.Units
-            .Where(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying &&
-                (unit is not Building building || building.IsCompleted))
-            .Select(unit => unit.GameplayTypeId)
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        int powerBalance = ArmyPowerStatus.Calculate(world.Units.Units, actor.ArmyId).Balance;
-        AIProductionPlan plan = AIProductionPlanner.CreatePlan(
-            target, ownedTypes, army.Perks.ActivePerks, powerBalance, HelipadPowerHeadroom);
+        _airPlan = target.Type == PurchasableType.Unit && target.AI?.Movement == AIMovementDomain.Air &&
+            target.AI.Roles.HasFlag(AIUnitRole.Attacker);
+        AIProductionPlan plan = AIStrategicCatalog.Plan(world, actor.ArmyId, target);
         if (!plan.IsValid || plan.NextStep is null)
         {
             LastDecision = plan.Failure ?? $"No executable production plan for {typeId}.";
             return;
+        }
+        if (plan.NextStep.Kind == AIProductionPlanStepKind.BuildBuilding &&
+            GameplayCatalog.Find(PurchasableType.Building, plan.NextStep.TypeId)?.Building is
+                { PowerProduction: > 0 })
+        {
+            int consumption = plan.Steps.Where(step => step.Kind == AIProductionPlanStepKind.BuildBuilding)
+                .Select(step => GameplayCatalog.Find(PurchasableType.Building, step.TypeId)?.Building)
+                .Where(stats => stats is not null && stats.PowerProduction <= stats.PowerConsumption)
+                .Sum(stats => stats!.PowerConsumption);
+            int needed = Math.Max(0, consumption + OperationalPowerHeadroom -
+                ArmyPowerStatus.Calculate(world.Units.GetArmyUnits(actor.ArmyId), actor.ArmyId).Balance);
+            if (HandleCrewPowerSolution(AICrewPowerPlanner.Evaluate(world, actor.ArmyId, needed), gameTime))
+                return;
         }
         StartPlan(plan, gameTime);
     }
@@ -246,15 +216,18 @@ public sealed class AIInfrastructureController(
         AIProductionPlanStep? step = _executor.CurrentStep;
         State = step?.Kind switch
         {
-            AIProductionPlanStepKind.Research => AIInfrastructureState.ResearchingAirTechnology,
+            AIProductionPlanStepKind.Research => AIInfrastructureState.ResearchingPrerequisite,
             AIProductionPlanStepKind.AssignCrew => AIInfrastructureState.AssigningPowerCrew,
+            AIProductionPlanStepKind.TrainUnit when
+                GameplayCatalog.Find(PurchasableType.Unit, step.TypeId)?.AI?.Movement == AIMovementDomain.Air =>
+                    AIInfrastructureState.WaitingForAirSupport,
             AIProductionPlanStepKind.TrainUnit => AIInfrastructureState.TrainingPowerCrew,
             AIProductionPlanStepKind.BuildBuilding when
-                string.Equals(step.TypeId, "silo", StringComparison.OrdinalIgnoreCase) =>
-                    AIInfrastructureState.BuildingSilo,
+                GameplayCatalog.Find(PurchasableType.Building, step.TypeId)?.Building?.ResourceCapacity > 0 =>
+                    AIInfrastructureState.BuildingStorage,
             AIProductionPlanStepKind.BuildBuilding when
-                string.Equals(step.TypeId, "helipad", StringComparison.OrdinalIgnoreCase) =>
-                    AIInfrastructureState.BuildingHelipad,
+                GameplayCatalog.GetProducedBy(step.TypeId).Any(product => product.AI?.Movement == AIMovementDomain.Air) =>
+                    AIInfrastructureState.BuildingAirProducer,
             AIProductionPlanStepKind.BuildBuilding when
                 GameplayCatalog.Find(PurchasableType.Building, step.TypeId)?
                     .Building?.VisionRange > 0 =>

@@ -75,6 +75,15 @@ Die Modellangaben beziehen sich auf Codex-Aufgaben. `gpt-6-sol` eignet sich für
 
 ## Phase 3: Aufklärung, Täuschung und Sabotage
 
+- [ ] **Aufklärungsgedächtnis und weiche Rückkehr des Fog of War einführen**
+  - Vereinbarte Spielidee vom 01.10.2026; noch nicht implementiert.
+  - Zuletzt gesehene gegnerische Gebäude im erkundeten Bereich dauerhaft als abgedunkelte Erinnerung in Weltansicht und Minimap darstellen.
+  - Änderungen, Neubauten, Verkauf und Zerstörung außerhalb aktueller Sicht dürfen diese Erinnerung nicht aktualisieren. Erneute Aufklärung korrigiert sie.
+  - Mobile Gegner verschwinden nach Sichtverlust; der Nebel kehrt innerhalb weniger Sekunden weich zurück. Der Übergang darf keine neuen Informationen aus verdeckten Bereichen verraten.
+  - Spätere Aufklärungs-Perks oder zeitlich begrenzte Überwachung können längere echte Sicht gewähren. 120 Sekunden vollständige Nachsicht sind ausdrücklich kein Standard.
+  - Fertig, wenn gespeichertes Wissen von aktueller Sicht getrennt ist, erneutes Scouting Änderungen aufdeckt und ein neuer Matchstart die Erinnerungen zurücksetzt. Army-/Ally-Regeln, Netzwerk/Late Join und KI-Nutzung mitprüfen.
+  - Entwurf und offene Entscheidungen: [Fog-of-War-und-Minimap-Architektur.md](Fog-of-War-und-Minimap-Architektur.md#geplant-aufklärungsgedächtnis-und-weiche-nebelrückkehr).
+
 - [ ] **Spion- beziehungsweise Saboteur-Unit einführen**
   - **Empfohlenes Modell:** `gpt-6-astra` mit `high` Reasoning.
   - Kann ausgewählte gegnerische Gebäude betreten oder aus kurzer Distanz hacken.

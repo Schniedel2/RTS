@@ -523,7 +523,7 @@ public class RTSGame
         Globals._terrainEffect.Parameters["FogEdgeSoftness"]?.SetValue(
             Math.Max(0.0f, Globals.FogOfWarEdgeSoftness));
         Globals._terrainEffect.Parameters["FogOfWarEnabled"]?.SetValue(
-            Globals.FogOfWarEnabled && !World.IsEditorActive ? 1.0f : 0.0f);
+            Globals.FogOfWarEnabled && !Globals.IsSpectator && !World.IsEditorActive ? 1.0f : 0.0f);
         Globals._terrainEffect.Parameters["HideUnexploredTerrain"]?.SetValue(
             Globals.HideUnexploredWorld && !World.IsEditorActive ? 1.0f : 0.0f);
         World.DrawTerrain(

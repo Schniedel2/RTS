@@ -115,9 +115,9 @@ public sealed class AIProductionPlanExecutor(
 
     private void ExecuteBuild(AIProductionPlanStep step)
     {
-        MobileUnit? builder = world.Units.Units.OfType<MobileUnit>()
-            .Where(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying && !unit.IsEmbarked &&
-                unit.BuildRate > 0.0f && string.Equals(unit.GameplayTypeId,
+        MobileUnit? builder = world.Units.GetArmyUnits(actor.ArmyId).OfType<MobileUnit>()
+            .Where(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying && !unit.IsEmbarked && !unit.IsLeavingBuilding &&
+                unit.Occupancy?.IsOperational != false && unit.BuildRate > 0.0f && string.Equals(unit.GameplayTypeId,
                     step.ProducerTypeId, StringComparison.OrdinalIgnoreCase))
             .OrderBy(unit => unit.UnitId)
             .FirstOrDefault();
@@ -142,8 +142,7 @@ public sealed class AIProductionPlanExecutor(
             return;
         }
         ArmyGoalController.PreparePreview(preview, actor);
-        Building? home = world.Units.Units.OfType<GDIBase>()
-            .FirstOrDefault(building => building.ArmyId == actor.ArmyId && !building.IsDying);
+        Building? home = AIStrategicCatalog.FindBuilding(world, actor.ArmyId, AIStrategicBuildingNeed.Base);
         if (!ArmyGoalController.TryFindBuildingSite(
                 world, preview, home?.Position ?? builder.Position, 4, 24, out Vector3 position))
         {
@@ -160,11 +159,25 @@ public sealed class AIProductionPlanExecutor(
 
     private void ExecuteTraining(AIProductionPlanStep step)
     {
-        Building? producer = FindProducer(step.ProducerTypeId);
+        Building? producer = FindProducer(step);
         if (producer is null)
         {
             State = AIPlanExecutionState.WaitingForProducer;
             LastDecision = $"Waiting for producer {step.ProducerTypeId} to train {step.TypeId}.";
+            return;
+        }
+        if (producer.ProductionQueue.Orders.Any(order => GameplayCatalog.Canonicalize(order.UnitTypeId) == step.TypeId))
+        {
+            _unitCountBeforeRequest = CountUnits(step.TypeId);
+            _requestSent = true;
+            State = AIPlanExecutionState.InProgress;
+            LastDecision = $"Waiting for already queued {step.TypeId}.";
+            return;
+        }
+        if (!producer.CanProduceUnit(world, step.TypeId))
+        {
+            State = AIPlanExecutionState.WaitingForProducer;
+            LastDecision = $"Waiting for {producer.GameplayTypeId} to accept {step.TypeId}.";
             return;
         }
         PurchaseQuote quote = Quote(PurchasableType.Unit, step.TypeId, producer.UnitId);
@@ -184,9 +197,9 @@ public sealed class AIProductionPlanExecutor(
             world.Units.FindById(siteId) is not Building { IsCompleted: false } site)
             return;
 
-        MobileUnit? builder = world.Units.Units.OfType<MobileUnit>()
-            .Where(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying && !unit.IsEmbarked &&
-                unit.BuildRate > 0.0f && string.Equals(unit.GameplayTypeId,
+        MobileUnit? builder = world.Units.GetArmyUnits(actor.ArmyId).OfType<MobileUnit>()
+            .Where(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying && !unit.IsEmbarked && !unit.IsLeavingBuilding &&
+                unit.Occupancy?.IsOperational != false && unit.BuildRate > 0.0f && string.Equals(unit.GameplayTypeId,
                     step.ProducerTypeId, StringComparison.OrdinalIgnoreCase))
             .OrderBy(unit => unit.UnitId)
             .FirstOrDefault();
@@ -201,7 +214,7 @@ public sealed class AIProductionPlanExecutor(
 
     private void ExecuteResearch(AIProductionPlanStep step)
     {
-        Building? producer = FindProducer(step.ProducerTypeId);
+        Building? producer = FindProducer(step);
         if (producer is null)
         {
             State = AIPlanExecutionState.WaitingForProducer;
@@ -237,7 +250,7 @@ public sealed class AIProductionPlanExecutor(
         AIProductionPlanStepKind.BuildBuilding =>
             _requestedBuildingId is Guid id && world.Units.FindById(id) is Building,
         AIProductionPlanStepKind.TrainUnit or AIProductionPlanStepKind.Research =>
-            FindProducer(step.ProducerTypeId)?.ProductionQueue.Orders.Any(order =>
+            FindProducer(step)?.ProductionQueue.Orders.Any(order =>
                 string.Equals(order.UnitTypeId, step.TypeId, StringComparison.OrdinalIgnoreCase)) == true,
         AIProductionPlanStepKind.AssignCrew =>
             step.UnitId is Guid crewId && world.Units.FindById(crewId) is MobileUnit crew &&
@@ -261,13 +274,15 @@ public sealed class AIProductionPlanExecutor(
         _ => false
     };
 
-    private Building? FindProducer(string typeId) => world.Units.Units.OfType<Building>()
-        .Where(building => building.ArmyId == actor.ArmyId && building.IsCompleted && !building.IsDying &&
-            string.Equals(building.GameplayTypeId, typeId, StringComparison.OrdinalIgnoreCase))
-        .OrderBy(building => building.UnitId)
-        .FirstOrDefault();
+    private Building? FindProducer(AIProductionPlanStep step)
+    {
+        PurchasableType type = step.Kind == AIProductionPlanStepKind.Research ? PurchasableType.Research : PurchasableType.Unit;
+        GameplayDefinition? product = GameplayCatalog.Find(type, step.TypeId);
+        if (product is null) return null;
+        return AIStrategicCatalog.FindAvailableProducer(world, actor.ArmyId, product);
+    }
 
-    private int CountUnits(string typeId) => world.Units.Units.Count(unit =>
+    private int CountUnits(string typeId) => world.Units.GetArmyUnits(actor.ArmyId).Count(unit =>
         unit.ArmyId == actor.ArmyId && !unit.IsDying &&
         string.Equals(unit.GameplayTypeId, typeId, StringComparison.OrdinalIgnoreCase));
 

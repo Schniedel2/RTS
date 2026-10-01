@@ -78,8 +78,7 @@ public sealed class AIDefensePlanner(
             AIMovementDomain.Static,
             AntiAir: threats.Current.AntiAirNeed,
             Defense: 0.5f);
-        GameplayDefinition? defense = AIUnitSelector.SelectBest(
-            "gdi-bulldozer", need, CountOwnedBuildings(), PurchasableType.Building);
+        GameplayDefinition? defense = AIStrategicCatalog.SelectDefense(world, actor.ArmyId, need);
         if (defense?.Building is not BuildingMetadata defenseStats)
         {
             State = AIDefensePlanState.Idle;
@@ -88,7 +87,7 @@ public sealed class AIDefensePlanner(
         }
 
         int desired = DesiredDefenseCount(threats.Current.AntiAirNeed);
-        int existing = world.Units.Units.Count(unit => unit.ArmyId == actor.ArmyId &&
+        int existing = world.Units.GetArmyUnits(actor.ArmyId).Count(unit => unit.ArmyId == actor.ArmyId &&
             !unit.IsDying && string.Equals(unit.GameplayTypeId, defense.TypeId,
                 StringComparison.OrdinalIgnoreCase));
         if (existing >= desired)
@@ -106,14 +105,7 @@ public sealed class AIDefensePlanner(
             return;
         }
 
-        string[] ownedTypes = world.Units.Units
-            .Where(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying &&
-                (unit is not Building building || building.IsCompleted))
-            .Select(unit => unit.GameplayTypeId)
-            .Where(typeId => !string.IsNullOrWhiteSpace(typeId))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        ArmyPowerStatus power = ArmyPowerStatus.Calculate(world.Units.Units, actor.ArmyId);
+        ArmyPowerStatus power = ArmyPowerStatus.Calculate(world.Units.GetArmyUnits(actor.ArmyId), actor.ArmyId);
         int additionalPower = Math.Max(0,
             defenseStats.PowerConsumption + PowerHeadroom - power.Balance);
         AIPowerSolution crewSolution = AICrewPowerPlanner.Evaluate(
@@ -121,8 +113,7 @@ public sealed class AIDefensePlanner(
         if (HandleCrewPowerSolution(crewSolution, ownerArmy))
             return;
 
-        AIProductionPlan plan = AIProductionPlanner.CreatePlan(
-            defense, ownedTypes, ownerArmy.Perks.ActivePerks, power.Balance, PowerHeadroom);
+        AIProductionPlan plan = AIStrategicCatalog.Plan(world, actor.ArmyId, defense);
         if (!plan.IsValid || plan.NextStep is null)
         {
             State = AIDefensePlanState.Idle;
@@ -195,7 +186,7 @@ public sealed class AIDefensePlanner(
     }
 
     private System.Collections.Generic.IReadOnlyDictionary<string, int> CountOwnedBuildings() =>
-        world.Units.Units
+        world.Units.GetArmyUnits(actor.ArmyId)
             .Where(unit => unit is Building && unit.ArmyId == actor.ArmyId && !unit.IsDying &&
                 !string.IsNullOrWhiteSpace(unit.GameplayTypeId))
             .GroupBy(unit => unit.GameplayTypeId, StringComparer.OrdinalIgnoreCase)
