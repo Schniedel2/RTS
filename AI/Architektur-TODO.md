@@ -85,31 +85,47 @@ Offizielle Orientierung: [OpenAI-Modellleitfaden](https://developers.openai.com/
 
 ### 07 – Kampfsimulation vom Netzwerk-Host trennen
 
-- [ ] Offen. Priorität: mittel. Modell: **GPT-6 Astra, xhigh**. Nach 05 und 06.
+- [x] Erledigt am 01.10.2026. Priorität: mittel. Modell: **GPT-6 Astra, xhigh**. Nach 05 und 06.
 - Projektilsimulation, Trefferauflösung und Schaden in ein hostseitiges Kampfsystem überführen; vorhandenes DamageSystem und Flugprofile weiterverwenden.
 - Autoritative Ergebnisse von rein visuellen Effekten trennen. Keine doppelte Schadensanwendung auf Host oder Client.
 - Fertig wenn Direkt-/Flächenschaden, Bodenziele/Luftziele, tote Ziele, Angriffsstopp und Replikation getestet sind. Bestehendes Balancing erhalten.
+- Ergebnis: CombatSystem besitzt Raketenflug, Einschläge, automatische Verteidigungsziele, Schussanforderungen und Trefferauflösung. Direkt-/Flächenschaden teilen einen Ablauf mit DamageCalculator, SquadBenefits und einmaligem OnHit. Welt, Veröffentlichung und Verlustmeldung sind explizite Abhängigkeiten. NetworkHost behält Request-Prüfung, FIFO, Munitionserlaubnis und Transport. Clients übernehmen absolute HP und stellen bestätigte Projektile/Einschläge dar. Sessionwechsel und akzeptierter game-start setzen aktive Projektile und ausstehende Einschläge zurück; abgewiesener Start bewahrt sie.
+- Validierung: Build ohne Warnungen/Fehler; 772 Checks bestanden. 36 neue System-/Hostchecks für Direkt-/Flächenschaden, bestehende Rüstungs-/Radiusregeln, tatsächliche Raketenflugbahn, Boden-/Luftkollision, tote Ziele, Stop/Cooldown, idempotente HP-/Projektil-Replikation und Session-/Matchreset. Echter Wire-/NetworkInput-Weg auf Host und separater Clientwelt. Details in `CombatSystem-Architektur.md` und Netzwerk-Architektur ergänzt.
+- Grenzen: Bestehende horizontale Explosionsreichweite und sofortiger Schaden visueller ballistischer Geschosse bleiben erhalten. Late Join erhält weiterhin keine bereits laufenden Raketenflugzustände, aber spätere Einschläge/HP-Werte. Keine grafische Abnahme; Reflection-Fixtures und globale Zugriffe in verwendeten Unit-Methoden bleiben Aufgabe 11. Offene Fahrzeugabnahme von 02 bleibt offen. Nächster umsetzbarer Punkt ist 08.
 
 ### 08 – Doppelte Katalogregeln und Produktregistrierung bereinigen
 
-- [ ] Offen. Priorität: hoch für weitere Inhalte. Modell: **GPT-6 Sol, high**. Nach 01; regulär nach 07.
+- [x] Erledigt am 01.10.2026. Priorität: hoch für weitere Inhalte. Modell: **GPT-6 Sol, high**. Nach 01; regulär nach 07.
 - GrantedPerk aus GameplayCatalog verwenden statt zusätzlicher Air-Technology-Sonderzuordnung. Preise, Zeiten, Voraussetzungen und Produktdaten auf weitere Doppelpflege prüfen.
 - Katalog und Factories durch validierte Registrierung verbinden oder ihre Konsistenz prüfen. Unbekannte kaufbare Typen dürfen nicht stillschweigend zu kostenlosen Angeboten werden; Editor-/GenericBuilding-Ausnahmen explizit behandeln.
 - Fertig wenn eine zusätzliche Test-Forschung ohne neuen Research-Switch funktioniert, unbekannte Produkte verständlich scheitern und alle vorhandenen Produkte erzeugbar sind.
+- Ergebnis: GrantedPerk wird ausschließlich aus GameplayCatalog gelesen. Gemeinsame Building-Regeln liefern Forschungsdauer und filtern Forschungsaktionen nach abgeschlossenen Perks und armeeweiten Warteschlangen; Host-Forschung ist nicht mehr auf GDIBase begrenzt. Factories verwenden explizite Konstruktorregistrierungen; Katalogvalidierung prüft beide Richtungen, Produzenten, Preise, Zeiten und Forschungs-Grants frühzeitig. Unbekannte Quotes sind nicht verfügbar und zeigen einen Fehlergrund im ActionPanel; strikte Preisabfragen erklären den unbekannten Typ. Kostenlose Editor-/GenericBuilding-Ausnahmen und bestehende Aliase sind ausdrücklich registriert.
+- Validierung: Build ohne Warnungen/Fehler; 834 Checks bestanden, 62 neue Checks für ungültige Registrierung/Metadaten, unbekannte Produkte, Ausnahmen, tatsächliche Konstruktion sämtlicher Katalogtypen und zentrale Building-Preise. Zusätzliche Test-Forschung mit zwei Produzenten läuft ohne neuen Switch durch Angebote, Host-Kauf, Produktionsabschluss und Wire-/NetworkInput-Grant; doppelte/pending/abgeschlossene Forschung wird blockiert. Die zusätzliche Forschung bleibt ausschließlich im Test.
+- Dokumentation und Grenzen: `Katalog-Registrierung.md`, Gameplay-Katalog-und-KI-Metadaten ergänzt. Factory-Checks nutzen einfache Mesh-Fixtures, keine grafische Content-Abnahme. Reflection-Fixtures bleiben Aufgabe 11; konkrete strategische KI-Typen Aufgabe 09. Fahrzeugabnahme 02 bleibt offen. Nächster umsetzbarer Punkt ist 09.
 
 ### 09 – KI-Ziele von konkreten Einheitentypen lösen
 
-- [ ] Offen. Priorität: hoch vor Fraktionen. Modell: **GPT-6 Astra, high**. Nach 08.
+- [x] Erledigt am 01.10.2026. Priorität: hoch vor Fraktionen. Modell: **GPT-6 Astra, high**. Nach 08.
 - Strom, Speicher, Bauarbeiter und Luftunterstützung anhand von Katalogfähigkeiten/Angeboten auswählen. Konkrete Helipad-/Helicopter-/Silo-/GDI-Abfragen im strategischen Plan durch passende Abfragen ersetzen.
 - Bestehende Spezialverhalten dürfen Klassen behalten; keine automatische Erfindung neuen Verhaltens allein aus Metadaten erwarten. Mehrere Produzenten und Voraussetzungen berücksichtigen.
 - Fertig wenn alternative Test-Produkte und ein zweiter Produzent ohne neue Typ-Sonderfälle in der KI ausgewählt werden. Mensch und KI verwenden dieselben Angebots-/Verfügbarkeitsregeln.
 
+- Ergebnis: AIStrategicCatalog wählt Basis, Strom, Speicher, Wirtschaft, Sichtweite, Bauarbeiter und Luftunterstützung über Fähigkeiten und erreichbare Angebote. Basis-/Wiederaufbau, Fahrzeug-/Squad-Produktion und strategische Gebäudeprioritäten verwenden keine GDI-/Silo-/Helipad-Typabfragen mehr. ProvidedPerks beschreibt Gebäude-Voraussetzungsanbieter; GDIBase liest seine unbedingten Grants daraus. Der Planer versucht alternative Produzenten und Perk-/Stromanbieter in isolierten Zweigen. Host und KI teilen Building.CanProduceUnit samt Helipad-Reservierung; Preise/Perks bleiben im PricingService. Bereits bestellte bzw. kostenlos gelieferte Lufteinheiten lösen keinen weiteren Kauf aus.
+- Validierung: Build ohne Warnungen/Fehler; 866 Checks bestanden. 32 neue Checks mit alternativen Produkten, zweitem Produzenten, echter Host-Annahme und Preis-/Zeitprüfung, vollen Queues, unerreichbarer erster Alternative, Perk- und Stromabhängigkeiten, Crew, fremden/embarkten Units und Warteschlangen-/Luftzielabschluss.
+- Dokumentation und Grenzen: `Strategische-Katalogplanung.md`, Katalogleitfaden aktualisiert. Spezialverhalten bleibt ausdrücklich in Laufzeitklassen; Metadaten erzeugen keine Flug-/Ernte-/Perk-Implementierung. Keine neue grafische Schlachtabnahme, keine Fraktionsverwaltung oder gemeinsame KI-Planwarteschlange. Reflection-Fixtures bleiben Aufgabe 11; optische Fahrzeugabnahme 02 bleibt offen. Nächster umsetzbarer Punkt ist 10.
+
+- Nachkorrektur: Der erste Spieltest zeigte stillstehende KI-Armeen. `game-start` hatte Start-Bulldozer ohne Fahrer erzeugt; die neue Betriebsbereitschaftsprüfung lehnte sie deshalb ab. MatchStartAssignment enthält jetzt eine vom Host erzeugte DriverUnitId, die NetworkInput beim Spawn verwendet. Fünf zusätzliche Regressionchecks prüfen eindeutige IDs/JSON, echten Bulldozer samt Fahrer, Katalogauswahl und den tatsächlichen ersten KI-Bau-Request. Build ohne Warnungen/Fehler; jetzt 871 Checks bestanden. Keine grafische Schlachtabnahme behauptet.
+
 ### 10 – Unit-Abfragen und Snapshot-Lebensdauer vereinheitlichen
 
-- [ ] Offen. Priorität: mittel. Modell: **GPT-6 Sol, high**. Nach 03.
+- [x] Erledigt am 01.10.2026. Priorität: mittel. Modell: **GPT-6 Sol, high**. Nach 03.
 - UnitHandler.Units erzeugt pro Zugriff eine Array-Kopie. Aufrufer inventarisieren; stabile Snapshots pro Auswertung/Phase und gezielte ID-/Army-Abfragen bereitstellen.
 - Spawn, Tod, Entfernen und Army-Wechsel müssen Indizes konsistent aktualisieren. Sichere Iteration erhalten; keine veränderbare Liste nach außen geben. Räumlichen Index nur bei nachgewiesenem Bedarf ergänzen.
 - Fertig wenn Verhaltenstests Indexkonsistenz prüfen und Messungen weniger Kopien/Allokationen im gleichen Szenario belegen.
+
+- Ergebnis: UnitHandler liefert gecachte schreibgeschützte Welt-/Army-Snapshots und gezielte ID-Abfragen. Gemeinsame private Registrierung pflegt Aufnahme, Entfernung, Army-Wechsel und Reset; alte Snapshots bleiben sicher iterierbar. Eigene-Army-Abfragen von KI, Strom und Ressourcen sowie Kampf-/Netzwerkphasen nutzen die passenden Zugänge. Gebäude-Fallback registriert nur einmal; doppelte Spawn-IDs werden vor Grid-Änderungen abgewiesen.
+- Validierung: Build ohne Warnungen/Fehler; 905 Checks bestanden, 34 zusätzliche Konsistenz-/Lebenszyklus-/Spawnchecks. Vergleich mit denselben 512 Units und 200 Auswertungen: bisher 15.139.200 Bytes, jetzt 0 Bytes im aufgewärmten stationären Messfenster, identische Ergebnisse. Details in `Unit-Abfragen-und-Snapshots.md` und `Unit-Abfragen-Messung.md`.
+- Grenzen: Snapshots frieren Mitgliedschaft, keine Unit-Zustände ein; Spielthread-Regel bleibt bestehen. Änderungen verursachen weiterhin Snapshot-/Indexkosten; keine vollständige Schlacht-/FPS-Messung und kein räumlicher Index. Reflection-Fixtures bleiben Punkt 11, optische Fahrzeugabnahme 02 offen. Nächster umsetzbarer Punkt ist 11.
 
 ### 11 – Grafikfreien Testaufbau und explizite Systemabhängigkeiten ermöglichen
 
