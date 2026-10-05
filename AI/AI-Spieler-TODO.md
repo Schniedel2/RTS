@@ -26,35 +26,38 @@ Die Modellangaben beziehen sich auf Codex-Aufgaben. `gpt-6-luna` eignet sich fü
   - **Ergebnis (05.10.2026):** Die erste abgeschlossene Basisvorbereitung aktiviert die taktischen Controller bis zum nächsten Match-Neustart. Erneuter Kernaufbau beendet deren Updates nicht mehr: Bedrohungsbewertung, vorhandene Scouts, Basisverteidigung, laufende Squad-Missionen/Rückzüge und aktive Erholung bleiben erhalten. Neue optionale Ausbildung, Scout-Nachkauf und Ausbau warten während des Kernwiederaufbaus; bestätigte Host-Aufträge laufen weiter. Status zeigt Wiederaufbau und taktische Entscheidung gemeinsam. Strommangel wird weiterhin durch den Infrastruktur-Controller behandelt. Ablauf und Grenzen: [KI-Wiederaufbau-und-Taktik.md](KI-Wiederaufbau-und-Taktik.md).
   - **Prüfung:** Build ohne Warnungen/Fehler; alle 1.096 Checks bestanden, davon 39 neue in `tests/GridNavigationChecks/AIReconstructionChecks.cs`. Reaktor-/Raffinerie-/Kasernenverlust, Verteidigungsrequests samt echter Host-Anwendung und Rückkehr, laufender Bau, Ressourcenpriorität, Squad-Angriff/Rückzug/Erholung, Wiederaufnahme, Match-Neustart, Idle und Host-Grenze geprüft. Grafikfreie Szenarien; keine neue optische Schlachtabnahme behauptet.
 
-- [ ] **Festgefahrene und unerreichbare AI-Aufträge erkennen**
+- [x] **Festgefahrene und unerreichbare AI-Aufträge erkennen**
   - **Empfohlenes Modell:** `gpt-6-astra` mit `high` Reasoning.
   - Jeder länger laufende Bau-, Produktions-, Bewegungs- und Angriffsauftrag erhält Fortschrittskontrolle und einen definierten Abbruch- oder Neuplanungsweg.
   - Ablehnungen des Hosts werden von bloßem Warten unterschieden.
   - Fertig, wenn ein absichtlich blockierter Auftrag die KI nicht dauerhaft anhält.
+  - **Ergebnis (05.10.2026):** Hostlokale Rückmeldungen unterscheiden ausstehende, bestätigte, abgelehnte und verworfene Requests; identische ausstehende KI-Käufe werden zusammengefasst. Eine Army-weite Fortschrittskontrolle sichert auch den bisherigen Economy-Aufbau ab. Bau, Produktion/Forschung, Bewegung/Einstieg, Ernte und Squad-Phasen besitzen Neuplanungs-/Abbruchwege und zeitlich begrenzte Sperren. Bezahlte Queues und echter langsamer Fortschritt bleiben erhalten. Details und Grenzen: [KI-Auftragsfortschritt-und-Wiederherstellung.md](KI-Auftragsfortschritt-und-Wiederherstellung.md).
+  - **Prüfung:** Build ohne Warnungen/Fehler; alle 1.174 Checks bestanden, davon 51 neue in `tests/GridNavigationChecks/AIOrderProgressChecks.cs`. Echte Host-Anwendung/Ablehnung, blockierte Aufträge, verzögerte Planung ohne doppelte Käufe, Wiederaufnahme und Sessionwechsel geprüft. Grafikfreie Regressionen; der spätere mehrminütige Soak-Test bleibt offen.
 
 ## Phase 2: Gemeinsame Planung und Ressourcen
 
-- [ ] **Zentrale AI-Auftragswarteschlange einführen**
+- [x] **Zentrale AI-Auftragswarteschlange einführen**
   - **Empfohlenes Modell:** `gpt-6-astra` mit `xhigh` Reasoning.
   - Eine Instanz koordiniert Wirtschaft, Strom, Infrastruktur, Verteidigung, Einheitenproduktion und Forschung pro Army.
   - Aufträge besitzen Priorität, Status, reservierte Ressourcen und benötigte Produzenten beziehungsweise Arbeiter.
   - Dringende Aufträge dürfen weniger wichtige Pläne pausieren oder verdrängen.
   - Fertig, wenn nicht mehr mehrere Controller unabhängig um denselben Bulldozer oder dieselben Ressourcen konkurrieren.
 
-- [ ] **Globale Ressourcenplanung verwenden**
+- [x] **Globale Ressourcenplanung verwenden**
   - **Empfohlenes Modell:** `gpt-6-astra` mit `high` Reasoning.
   - Nur eine Stelle entscheidet über die gemeinsame Ressourcenreserve.
   - Bereits geplante Ausgaben und laufende Produktionsaufträge werden berücksichtigt.
   - Prioritätsreihenfolge zunächst: Existenzsicherung, Strom, Harvester/Wirtschaft, Verteidigung, Produktion, Forschung, Ausbau.
   - Fertig, wenn parallele Controller keine sich gegenseitig blockierenden Kaufversuche mehr erzeugen.
+  - **Ergebnis (05.10.2026):** Ein `AIResourcePlanner` pro Army entscheidet zentral über die Reserve (800 für reguläre Produktion/Forschung/Ausbau; dringende Existenzsicherung, Strom, Wirtschaft und Verteidigung dürfen sie verwenden). Controller melden auch noch unbezahlbare Wünsche. Priorisierte Ersparnisse, ausstehende Host-Käufe, aktuelle Preise/Rabatte und bereits bezahlte Produktions-FIFOs werden gemeinsam berücksichtigt, ohne Doppelabbuchung. Wiederaufbau sperrt alte optionale Wünsche; eine vorhandene Ersatzbaustelle verdrängt ihren unbezahlten Neubauvorschlag. Budgetdiagnose im KI-Status. Details: [KI-Ressourcenplanung.md](KI-Ressourcenplanung.md).
 
-- [ ] **Produzenten und Arbeiter reservieren**
+- [x] **Produzenten und Arbeiter reservieren**
   - **Empfohlenes Modell:** `gpt-6-sol` mit `high` Reasoning.
   - Bulldozer, Kaserne, Factory, Helipad und andere Produzenten können für einen AI-Auftrag reserviert werden.
   - Verteidigung darf Reservierungen nur bei ausreichend hoher Dringlichkeit aufheben.
   - Fertig, wenn ein Bulldozer nicht abwechselnd mehrere Baustellen anfährt.
 
-- [ ] **Einheitliches Auftragsergebnis einführen**
+- [x] **Einheitliches Auftragsergebnis einführen**
   - **Empfohlenes Modell:** `gpt-6-astra` mit `high` Reasoning.
   - AI-Aufträge unterscheiden mindestens `Requested`, `Accepted`, `Rejected`, `InProgress`, `Completed` und `Failed`.
   - Ablehnungsgründe wie Ressourcen, Bauplatz, Produzent, Perk und ungültiges Ziel werden gespeichert.
@@ -63,18 +66,21 @@ Die Modellangaben beziehen sich auf Codex-Aufgaben. `gpt-6-luna` eignet sich fü
 
 ## Phase 3: Scouting und Kartenwissen
 
-- [ ] **Scouting-Sektoren und Zielreservierungen einführen**
+- [x] **Scouting-Sektoren und Zielreservierungen einführen**
   - **Empfohlenes Modell:** `gpt-6-sol` mit `high` Reasoning.
   - Die Karte wird in Sektoren oder Frontier-Bereiche aufgeteilt.
   - Mehrere Scouts erhalten unterschiedliche reservierte Ziele.
   - Bereits erkundete oder reservierte Bereiche werden niedriger bewertet.
   - Fertig, wenn mehrere Scouts sichtbar in verschiedene Richtungen aufbrechen.
+  - **Ergebnis (05.10.2026):** Gemeinsame lokale Army-Zielvergabe in 16×16-GameGrid-Sektoren. Unbekannte Zellen und Richtungsverteilung bestimmen die Auswahl; reservierte Sektoren werden gemieden. Controller teilen ihre Reservierungen; Stop, Tod/Entfernen, Einsteigen, Army-Wechsel, Dispose, Ablauf und Session-/Zeitreset geben Ziele frei. Goto bleibt im normalen Netzwerkweg. Details und Grenzen: [KI-Scouting-Sektoren.md](KI-Scouting-Sektoren.md).
 
-- [ ] **Erreichbarkeit von Scouting-Zielen prüfen**
+- [x] **Erreichbarkeit von Scouting-Zielen prüfen**
   - **Empfohlenes Modell:** `gpt-6-sol` mit `medium` Reasoning.
   - Die Auswahl berücksichtigt Bewegungsprofil und zusammenhängende erreichbare Gebiete.
   - Fehlgeschlagene Ziele erhalten eine zeitlich begrenzte Sperre.
   - Fertig, wenn Scouts nicht wiederholt freie, aber unerreichbare Zellen auswählen.
+  - **Ergebnis (05.10.2026):** Vor Goto wird die Verbindung mit dem normalen inkrementellen Pathfinder geprüft, einschließlich Bewegungsprofil, Footprint und Diagonalsperren. Fehlgeschlagene Sektoren werden pro Scout 30 Sekunden gemieden. Ablehnung und ausbleibende Bewegung führen zur Neuplanung. Stop, Entfernung, Sessionwechsel und verschobene Startposition verwerfen laufende Prüfungen. Helis verwenden weiterhin Flugnavigation. Details: [KI-Scouting-Erreichbarkeit.md](KI-Scouting-Erreichbarkeit.md).
+  - **Prüfung:** Build ohne Warnungen/Fehler; alle 1.299 Checks bestanden, darunter acht neue grafikfreie Regressionen für verzögerte Befehlsausgabe, unerreichbare Ziele, Sektorsperren, Bewegungsprofil-Barrieren, Ablauf/Wiederaufnahme und Stop während der Suche.
 
 - [ ] **Scouting-Suche ohne große Kandidatenlisten ausführen**
   - **Empfohlenes Modell:** `gpt-6-astra` mit `high` Reasoning.

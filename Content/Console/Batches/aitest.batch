@@ -3,7 +3,6 @@ map-load test
 ai-create AI1 1
 ai-create AI2 2
 ai-create AI3 3
-ai-create AI4 4
 
 enable fogofwar
 disable gamegrid

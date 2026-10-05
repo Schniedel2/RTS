@@ -149,7 +149,7 @@ public sealed class ArmyGoalController
                 StringComparison.OrdinalIgnoreCase));
             PurchaseQuote builderQuote = Globals.Game.Pricing.GetQuote(new(PurchasableType.Unit, builderType.TypeId,
                 actor.ArmyId, builderProducer.UnitId));
-            if (!queued && !builderQuote.CanAfford(Globals.Game.Armies.Find(actor.ArmyId)?.Resources ?? 0))
+            if (!queued && !AIResourcePlanner.CanPropose(world, actor.ArmyId, builderQuote, AIOrderPriority.Survival))
             { LastDecision = $"Waiting for {builderQuote.FinalPrice} resources for a builder."; return; }
             if (!queued)
                 _ = commands.TrainUnitAsync(builderProducer.UnitId, builderType.TypeId);
@@ -222,7 +222,7 @@ public sealed class ArmyGoalController
             bool queued = producer.ProductionQueue.Orders.Any(order => GameplayCatalog.HasAIRoles(order.UnitTypeId, AIUnitRole.Harvester));
             PurchaseQuote harvestQuote = Globals.Game.Pricing.GetQuote(new(PurchasableType.Unit, harvesterType.TypeId,
                 actor.ArmyId, producer.UnitId));
-            if (!queued && !harvestQuote.CanAfford(Globals.Game.Armies.Find(actor.ArmyId)?.Resources ?? 0))
+            if (!queued && !AIResourcePlanner.CanPropose(world, actor.ArmyId, harvestQuote, AIOrderPriority.Economy))
             { LastDecision = $"Waiting for {harvestQuote.FinalPrice} resources for a harvest unit."; return; }
             if (!queued)
                 _ = commands.TrainUnitAsync(producer.UnitId, harvesterType.TypeId);
@@ -238,6 +238,8 @@ public sealed class ArmyGoalController
         {
             KeyValuePair<Point, TiberiumCell>? target = world.Tiberium.Cells
                 .Where(pair => pair.Value.Amount > 0.01f)
+                .Where(pair => !world.AIOrderMonitors.TryGetValue(actor.ArmyId, out var monitor) ||
+                    !monitor.AvoidHarvestTarget(harvester.UnitId, world.GameGrid.ToWorldPosition(pair.Key, 0)))
                 .OrderBy(pair => Vector3.DistanceSquared(
                     harvester.Position,
                     world.GameGrid.ToWorldPosition(pair.Key, harvester.Position.Y)))
@@ -289,8 +291,7 @@ public sealed class ArmyGoalController
             PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
                 PurchasableType.Building, buildingType, actor.ArmyId));
             int price = quote.FinalPrice;
-            Army? army = Globals.Game.Armies.Find(actor.ArmyId);
-            if (army is null || army.Resources < price)
+            if (!AIResourcePlanner.CanPropose(world, actor.ArmyId, quote, AIOrderPriority.Survival))
             {
                 Goal = AIGoalState.FindingBarracksSite;
                 LastDecision = $"Waiting for {price} resources before building the barracks.";
@@ -370,8 +371,7 @@ public sealed class ArmyGoalController
         PurchaseQuote soldierQuote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
             PurchasableType.Unit, defenderType.TypeId, actor.ArmyId, defenseProducer.UnitId));
         int soldierPrice = soldierQuote.FinalPrice;
-        Army? ownerArmy = Globals.Game.Armies.Find(actor.ArmyId);
-        if (!soldierQuote.IsAvailable || ownerArmy is null || ownerArmy.Resources < soldierPrice)
+        if (!AIResourcePlanner.CanPropose(world, actor.ArmyId, soldierQuote, AIOrderPriority.Survival))
         {
             Goal = AIGoalState.TrainingSoldiers;
             LastDecision = $"Waiting for {soldierPrice} resources for the next soldier ({soldiers}/3 ready).";
@@ -425,8 +425,7 @@ public sealed class ArmyGoalController
         if (bulldozer is null) return;
         PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
             PurchasableType.Building, buildingType, actor.ArmyId));
-        Army? army = Globals.Game.Armies.Find(actor.ArmyId);
-        if (!quote.IsAvailable || army is null || !quote.CanAfford(army.Resources))
+        if (!AIResourcePlanner.CanPropose(world, actor.ArmyId, quote, AIOrderPriority.Survival))
         {
             Goal = AIGoalState.FindingBaseSite;
             LastDecision = $"Waiting for {quote.FinalPrice} resources before building the base.";
@@ -469,7 +468,7 @@ public sealed class ArmyGoalController
         bulldozer = AIStrategicCatalog.FindBuilder(world, actor.ArmyId, selected.TypeId);
         if (bulldozer is null) return;
         PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new(PurchasableType.Building, selected.TypeId, actor.ArmyId));
-        if (!quote.IsAvailable || !quote.CanAfford(Globals.Game.Armies.Find(actor.ArmyId)?.Resources ?? 0)) return;
+        if (!AIResourcePlanner.CanPropose(world, actor.ArmyId, quote, AIOrderPriority.Power)) return;
         Building? preview = BuildingFactory.SpawnBuilding(selected.TypeId, Vector3.Zero, 0, Guid.NewGuid(), actor.Id, quote.FinalPrice);
         if (preview is null) return;
         PreparePreview(preview, actor);
@@ -504,10 +503,10 @@ public sealed class ArmyGoalController
         string buildingType = selected.TypeId;
         bulldozer = AIStrategicCatalog.FindBuilder(world, actor.ArmyId, buildingType);
         if (bulldozer is null) return;
-        int price = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
-            PurchasableType.Building, buildingType, actor.ArmyId)).FinalPrice;
-        Army? army = Globals.Game.Armies.Find(actor.ArmyId);
-        if (army is null || army.Resources < price)
+        PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+            PurchasableType.Building, buildingType, actor.ArmyId));
+        int price = quote.FinalPrice;
+        if (!AIResourcePlanner.CanPropose(world, actor.ArmyId, quote, AIOrderPriority.Survival))
         {
             Goal = AIGoalState.FindingRefinerySite;
             LastDecision = $"Waiting for {price} resources before building the refinery.";
@@ -545,7 +544,7 @@ public sealed class ArmyGoalController
             [bulldozer.UnitId], buildingId);
         _requestElapsed = 0.0f;
         setStatus?.Invoke(AIPlayerStatus.Building);
-        return buildingId;
+        return commands.LastRequest?.Request.UnitId ?? buildingId;
     }
 
     private bool NeedsCoreMaintenance(GameWorld world, Guid armyId)
@@ -570,7 +569,7 @@ public sealed class ArmyGoalController
             return true;
         }
         if (!world.Units.GetArmyUnits(armyId).OfType<Harvester>().Any(unit =>
-                unit.ArmyId == armyId && !unit.IsDying))
+                unit.ArmyId == armyId && !unit.IsDying && unit.HarvestPhase != HarvestPhase.Idle))
             return true;
 
         int defenders = world.Units.GetArmyUnits(armyId).Count(unit => unit.ArmyId == armyId &&
@@ -616,7 +615,8 @@ public sealed class ArmyGoalController
         Point center = world.GameGrid.ToCell(searchOrigin);
         foreach (Point cell in CandidateCells(center, minimumRadius, maximumRadius))
         {
-            if (!world.GameGrid.Contains(cell))
+            if (!world.GameGrid.Contains(cell) ||
+                preview.ArmyId is Guid armyId && world.AIOrderMonitors.TryGetValue(armyId, out var monitor) && monitor.AvoidSite(cell))
                 continue;
             Vector3 candidate = world.GameGrid.ToWorldPosition(cell, 0.0f);
             candidate.Y = world.Terrain.GetSurfaceHeight(candidate.X, candidate.Z);
@@ -696,6 +696,8 @@ public sealed class AIController
     }
 
     private readonly ArmyGoalController _goals = new();
+    private AIOrderProgressMonitor? _orderMonitor;
+    private AIOrderQueue? _orderQueue;
     private bool _tacticsActivated;
     private ScoutingController? _scouting;
     private AIBaseDefenseController? _baseDefense;
@@ -715,7 +717,17 @@ public sealed class AIController
     public AIGoalState Goal => _goals.Goal == AIGoalState.BaseDefenseReady
         ? AIGoalState.Scouting
         : _goals.Goal;
-    public string LastDecision => _scoutingDecision ?? _goals.LastDecision;
+    public string LastDecision
+    {
+        get
+        {
+            string decision = _scoutingDecision ?? _goals.LastDecision;
+            if (_orderMonitor?.LastDecision is string recovery) decision += $" | {recovery}";
+            if (_orderQueue is not null) decision += $" | {_orderQueue.Diagnostic}";
+            return decision;
+        }
+    }
+    public AIOrderQueue? OrderQueue => _orderQueue;
     public AIStrategyProfile? StrategyProfile => _strategyProfile;
     public AIThreatSnapshot Threats => _threatAssessment?.Current ?? AIThreatSnapshot.Baseline;
 
@@ -735,7 +747,12 @@ public sealed class AIController
 
     public void BeginMatch(int matchSeed, Guid armyId)
     {
+        _orderQueue?.Dispose();
+        _orderQueue = null;
+        _orderMonitor?.Dispose();
+        _orderMonitor = null;
         _tacticsActivated = false;
+        _scouting?.Dispose();
         _scouting = null;
         _baseDefense = null;
         _squadPreparation = null;
@@ -758,8 +775,16 @@ public sealed class AIController
         if (ai.Status == AIPlayerStatus.Idle || !network.IsHost)
             return;
 
-        _goals.Update(gameTime, ai.Player, world, network, ai.SetStatus);
+        if (!world.AIOrderQueues.TryGetValue(ai.Player.ArmyId, out var registeredQueue) || registeredQueue != _orderQueue)
+            _orderQueue = new AIOrderQueue(world, ai.Player, network);
+        _orderQueue.Update((float)gameTime.ElapsedGameTime.TotalSeconds);
+        using IDisposable orders = _orderQueue.Collect();
+        _orderMonitor ??= new AIOrderProgressMonitor(world, ai.Player, network);
+        _orderMonitor.Update(gameTime);
+        _orderQueue.Run(AIOrderPriority.Survival, () =>
+            _goals.Update(gameTime, ai.Player, world, network, ai.SetStatus));
         bool coreReady = _goals.Goal == AIGoalState.BaseDefenseReady;
+        _orderQueue.Budget.MinimumPurchasePriority = coreReady ? AIOrderPriority.Expansion : AIOrderPriority.Survival;
         // Initial setup unlocks tactics once per match. Maintenance must never
         // suspend existing defenders, scouts or a squad's combat/retreat state.
         _tacticsActivated |= coreReady;
@@ -786,7 +811,7 @@ public sealed class AIController
         bool infrastructureUpdated = false;
         if (coreReady && _infrastructure.RequiresImmediatePower)
         {
-            _infrastructure.Update(gameTime);
+            _orderQueue.Run(AIOrderPriority.Power, () => _infrastructure.Update(gameTime));
             infrastructureUpdated = true;
         }
 
@@ -830,14 +855,15 @@ public sealed class AIController
         // Keep discretionary production/expansion from taking the maintenance
         // plan's resources or builder. Confirmed host jobs continue normally.
         if (coreReady)
-            _armoredSupport.Update(gameTime);
+            _orderQueue.Run(AIOrderPriority.Production, () => _armoredSupport.Update(gameTime));
         // Completed production infrastructure is enough to begin expansion.
         // Combat losses and a pending vehicle order must not suspend air research.
         if (coreReady && _armoredSupport.HasOperationalFactory)
         {
-            _defensePlanner.Update(gameTime);
+            _orderQueue.Run(AIOrderPriority.Defense, () => _defensePlanner.Update(gameTime),
+                urgent: _threatAssessment.Current.AntiAirNeed >= AIDefensePlanner.AirThreatThreshold);
             if ((!_defensePlanner.IsBusy || _infrastructure.HasActivePlan) && !infrastructureUpdated)
-                _infrastructure.Update(gameTime);
+                _orderQueue.Run(AIOrderPriority.Expansion, () => _infrastructure.Update(gameTime));
         }
         if (_squadCyclePhase == SquadCyclePhase.Combat &&
             _squadAssault.State == AISquadAssaultState.MissionComplete)
@@ -850,7 +876,7 @@ public sealed class AIController
             SquadCyclePhase.Reinforcing or SquadCyclePhase.Reassembling)
         {
             if (coreReady && !_squadPreparation.IsReady)
-                _squadPreparation.Update(gameTime, _scoutId);
+                _orderQueue.Run(AIOrderPriority.Production, () => _squadPreparation.Update(gameTime, _scoutId));
             if (_squadPreparation.IsReady)
             {
                 if (_squadCyclePhase == SquadCyclePhase.Reinforcing && _squadRecovery.Begin())
@@ -867,8 +893,8 @@ public sealed class AIController
         }
         else if (_squadCyclePhase == SquadCyclePhase.Recovering)
         {
-            _squadRecovery.Update();
-            if (_squadRecovery.IsRecovered)
+            _squadRecovery.Update(gameTime);
+            if (_squadRecovery.IsFinished)
             {
                 _squadPreparation.BeginReinforcement();
                 _squadCyclePhase = SquadCyclePhase.Reassembling;
@@ -931,8 +957,7 @@ public sealed class AIController
 
         PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
             PurchasableType.Unit, replacement.TypeId, actor.ArmyId, producer.UnitId));
-        Army? army = Globals.Game.Armies.Find(actor.ArmyId);
-        if (!quote.IsAvailable || army is null || army.Resources < quote.FinalPrice)
+        if (!AIResourcePlanner.CanPropose(world, actor.ArmyId, quote))
             return $"Scouting paused; waiting for {quote.FinalPrice} resources for a replacement " +
                 $"{replacement.DisplayName}.";
         if (_scoutReplacementElapsed < ScoutReplacementRetrySeconds)

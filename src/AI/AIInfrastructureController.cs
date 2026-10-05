@@ -1,6 +1,7 @@
 using Microsoft.Xna.Framework;
 using RTS.Network;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace RTS;
@@ -32,6 +33,11 @@ public sealed class AIInfrastructureController(
     private readonly AIProductionPlanExecutor _executor = new(world, actor, network);
     private float _thinkElapsed;
     private bool _airPlan;
+    private float _retryPlanIn;
+    private float _time;
+    private string? _planTarget;
+    private readonly Dictionary<string, float> _failedPlans = [];
+    private bool PlanCoolingDown(string target) => _failedPlans.GetValueOrDefault(target) > _time;
 
     public AIInfrastructureState State { get; private set; } = AIInfrastructureState.MonitoringStorage;
     public bool IsAirSupportReady => State == AIInfrastructureState.AirSupportReady;
@@ -46,6 +52,14 @@ public sealed class AIInfrastructureController(
         using var measurement = PerformanceMeasurements.Measure("AI.Infrastructure");
         float elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
         _thinkElapsed += elapsed;
+        _time += elapsed;
+        foreach (string key in _failedPlans.Keys.Where(key => _failedPlans[key] <= _time).ToArray())
+            _failedPlans.Remove(key);
+        _retryPlanIn = Math.Max(0, _retryPlanIn - elapsed);
+        // A paused air/research plan must not prevent the power repair that lets it continue.
+        if (_executor.IsBusy && RequiresImmediatePower &&
+            _executor.CurrentStep?.Kind is AIProductionPlanStepKind.TrainUnit or AIProductionPlanStepKind.Research)
+        { _executor.Reset(); _airPlan = false; _retryPlanIn = 0; }
         if (_airPlan && HasAirSupport())
         {
             _executor.Reset();
@@ -57,8 +71,17 @@ public sealed class AIInfrastructureController(
             ReflectExecutorState();
             return;
         }
-        if (_executor.State is AIPlanExecutionState.Completed or AIPlanExecutionState.Failed)
+        if (_executor.State == AIPlanExecutionState.Failed)
+        {
+            LastDecision = _executor.LastDecision;
+            if (_planTarget is string failed) _failedPlans[failed] = _time + AIOrderProgressMonitor.FailureCooldownSeconds;
             _executor.Reset();
+            _retryPlanIn = 5;
+            return;
+        }
+        if (_executor.State == AIPlanExecutionState.Completed)
+            _executor.Reset();
+        if (_retryPlanIn > 0 && !RequiresImmediatePower) return;
         if (_thinkElapsed < ThinkIntervalSeconds)
             return;
         _thinkElapsed %= ThinkIntervalSeconds;
@@ -88,13 +111,13 @@ public sealed class AIInfrastructureController(
         {
             State = AIInfrastructureState.BuildingStorage;
             GameplayDefinition? storageBuilding = AIStrategicCatalog.SelectBuilding(world, actor.ArmyId, AIStrategicBuildingNeed.Storage);
-            if (storageBuilding is not null) StartCatalogPlan(PurchasableType.Building, storageBuilding.TypeId, gameTime);
+            if (storageBuilding is not null && !PlanCoolingDown(storageBuilding.TypeId))
+            { StartCatalogPlan(PurchasableType.Building, storageBuilding.TypeId, gameTime); return; }
             else LastDecision = "No feasible storage offer is available.";
-            return;
         }
 
         GameplayDefinition? visionBuilding = AIStrategicCatalog.SelectBuilding(world, actor.ArmyId, AIStrategicBuildingNeed.Vision);
-        if (visionBuilding is not null && !HasOwnedVisionBuilding(visionBuilding.TypeId))
+        if (visionBuilding is not null && !HasOwnedVisionBuilding(visionBuilding.TypeId) && !PlanCoolingDown(visionBuilding.TypeId))
         {
             State = AIInfrastructureState.BuildingVision;
             StartCatalogPlan(PurchasableType.Building, visionBuilding.TypeId, gameTime);
@@ -131,17 +154,22 @@ public sealed class AIInfrastructureController(
             case AIPowerSolutionKind.BuildPower:
                 return false;
             case AIPowerSolutionKind.AssignCrew:
+                if (PlanCoolingDown($"crew:{solution.CrewUnitId}:{solution.TargetBuildingId}")) return false;
                 State = AIInfrastructureState.AssigningPowerCrew;
                 LastDecision = $"Assigning existing crew for +{solution.PowerGain} power.";
                 if (solution.CrewUnitId is Guid crewId && solution.TargetBuildingId is Guid targetId)
+                {
+                    _planTarget = $"crew:{crewId}:{targetId}";
                     StartPlan(new AIProductionPlan(
                         [AIProductionPlanStep.AssignCrew(crewId, targetId)]), gameTime);
+                }
                 return true;
             case AIPowerSolutionKind.WaitForCrew:
                 State = AIInfrastructureState.AssigningPowerCrew;
                 LastDecision = "Waiting for power crew to enter a power producer.";
                 return true;
             case AIPowerSolutionKind.TrainCrew:
+                if (solution.CrewTypeId is string crewType && PlanCoolingDown(crewType)) return false;
                 State = AIInfrastructureState.TrainingPowerCrew;
                 if (string.IsNullOrWhiteSpace(solution.CrewTypeId))
                     return true;
@@ -175,6 +203,9 @@ public sealed class AIInfrastructureController(
 
     private void StartCatalogPlan(PurchasableType type, string typeId, GameTime gameTime)
     {
+        if (PlanCoolingDown(typeId))
+        { LastDecision = $"Temporarily skipping failed plan {typeId}; other AI work continues."; return; }
+        _planTarget = typeId;
         GameplayDefinition? target = GameplayCatalog.Find(type, typeId);
         Army? army = Globals.Game.Armies.Find(actor.ArmyId);
         if (target is null || army is null)

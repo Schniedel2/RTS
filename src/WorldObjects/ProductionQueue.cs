@@ -50,6 +50,8 @@ public sealed class ProductionOrder
 public sealed class ProductionQueue
 {
     private readonly List<ProductionOrder> _orders = [];
+    private readonly Queue<Guid> _completed = new();
+    public bool WasCompleted(Guid orderId) => _completed.Contains(orderId);
 
     public int Capacity { get; set; } = 10;
     public IReadOnlyList<ProductionOrder> Orders => _orders;
@@ -92,6 +94,8 @@ public sealed class ProductionQueue
             return false;
 
         _orders.RemoveAt(0);
+        _completed.Enqueue(activeOrder.OrderId);
+        while (_completed.Count > 128) _completed.Dequeue();
         completedOrder = activeOrder;
         return true;
     }

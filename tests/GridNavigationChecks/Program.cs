@@ -164,7 +164,9 @@ Check(emptyRouteUnit.TryReceiveGotoCommand(
           new GotoCommand(new Vector2(4.5f, 4.5f)), route: []) &&
       emptyRouteUnit.CurrentCommand is null,
     "An empty authoritative route completes immediately instead of leaving a unit permanently moving");
-var reinforcementController = Empty<AISquadPreparationController>();
+using var reinforcementNetwork = new NetworkHandler("Squad lifecycle checks");
+var reinforcementController = new AISquadPreparationController(
+    new GameWorld(8, 8, 1, graphicsEnabled: false), Guid.NewGuid(), Guid.NewGuid(), reinforcementNetwork);
 Field(reinforcementController, typeof(AISquadPreparationController),
     "<State>k__BackingField", AISquadPreparationState.Ready);
 reinforcementController.BeginReinforcement();
@@ -2404,7 +2406,9 @@ Check(crewPlanStep is
         OccupantRole: RTS.OccupantRole.Crew
     } && crewPlanStep.UnitId == plannedCrewId && crewPlanStep.TargetUnitId == plannedReactorId,
     "Production plans can express a concrete crew assignment");
-var planExecutor = Empty<AIProductionPlanExecutor>();
+using var planExecutorNetwork = new NetworkHandler("Plan lifecycle checks");
+var planExecutor = new AIProductionPlanExecutor(new GameWorld(8, 8, 1, graphicsEnabled: false),
+    new Player(Guid.NewGuid(), "Plan actor"), planExecutorNetwork);
 var executorPlan = new AIProductionPlan([new AIProductionPlanStep(
     AIProductionPlanStepKind.TrainUnit, "tank", "vehicle-factory")]);
 Check(planExecutor.Start(executorPlan) && planExecutor.IsBusy &&

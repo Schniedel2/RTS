@@ -28,6 +28,7 @@ public sealed class NetworkHost
     private sealed class GotoPlan(NetworkMessage request)
     {
         public NetworkMessage Request { get; } = request;
+        public NetworkMessage ReceiptRequest = request;
         public NetworkMessage? Result;
         public Dictionary<Guid, long> Versions = [];
         public long GridRevision;
@@ -225,8 +226,12 @@ public sealed class NetworkHost
         long generation = _networkHandler.SessionGeneration;
         if (generation == _sessionGeneration) return;
         _sessionGeneration = generation;
-        _requestQueue.Clear();
-        if (_pendingGoto is GotoPlan abandoned) ReleasePlanningIntent(abandoned);
+        AbandonQueuedLocalRequests("Host session changed.");
+        if (_pendingGoto is GotoPlan abandoned)
+        {
+            _networkHandler.AbandonLocalRequest(abandoned.ReceiptRequest, "Host session changed.");
+            ReleasePlanningIntent(abandoned);
+        }
         _pendingGoto = null;
         _pendingGotoReady = false;
         _planningVersions.Clear();
@@ -246,12 +251,24 @@ public sealed class NetworkHost
         foreach (Unit unit in _world.Units.Units) unit.NextNetworkUpdateTime = 0;
     }
 
+    private void AbandonQueuedLocalRequests(string reason)
+    {
+        while (_requestQueue.TryDequeue(out NetworkMessage? request))
+            _networkHandler.AbandonLocalRequest(request, reason);
+    }
+
     private void HandleMessage(NetworkMessage message)
     {
-        if (!ComplexCommandPayloads.TryValidate(message, out _)) return;
+        if (!AdmitRequest(message))
+            _networkHandler.ResolveLocalRequest(message, false, "Host admission rejected the request (invalid payload, target or full inbox).");
+    }
+
+    private bool AdmitRequest(NetworkMessage message)
+    {
+        if (!ComplexCommandPayloads.TryValidate(message, out _)) return false;
         EnsureSessionGeneration();
         if (!_networkHandler.IsHost)
-            return;
+            return false;
 
         if (message.Type != NetworkMessageType.SpawnRequest &&
             message.Type != NetworkMessageType.GotoRequest &&
@@ -286,44 +303,45 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.MergeArmiesRequest &&
             message.Type != NetworkMessageType.TextRequest &&
             message.Type != NetworkMessageType.RequestPlayerUpdate)
-            return;
+            return false;
         if (message.Type == NetworkMessageType.SpawnRequest && message.UnitTypeId is null)
-            return;
+            return false;
         if (message.Type is NetworkMessageType.GotoRequest or NetworkMessageType.MoveAwayRequest &&
-            (!float.IsFinite(message.X) || !float.IsFinite(message.Z))) return;
+            (!float.IsFinite(message.X) || !float.IsFinite(message.Z))) return false;
         if (message.Type == NetworkMessageType.GotoRequest &&
-            !_world.GameGrid.Contains(_world.GameGrid.ToCell(new Vector3(message.X, 0, message.Z)))) return;
+            !_world.GameGrid.Contains(_world.GameGrid.ToCell(new Vector3(message.X, 0, message.Z)))) return false;
 
         if (message.Type == NetworkMessageType.TextRequest && string.IsNullOrWhiteSpace(message.Text))
-            return;
+            return false;
 
         if (message.Type == NetworkMessageType.RequestPlayerUpdate &&
             (message.PlayerId is null || string.IsNullOrWhiteSpace(message.DisplayName)))
-            return;
+            return false;
 
         if (message.Type == NetworkMessageType.BuildConstructionRequest &&
             (message.ConstructionSiteId is null || message.UnitIds is null || message.UnitIds.Length == 0))
-            return;
+            return false;
 
         if (message.Type == NetworkMessageType.TrainUnitRequest &&
             (message.UnitId is null || string.IsNullOrWhiteSpace(message.UnitTypeId)))
-            return;
+            return false;
         if (message.Type == NetworkMessageType.ResearchRequest &&
             (message.UnitId is null || string.IsNullOrWhiteSpace(message.UnitTypeId)))
-            return;
+            return false;
 
         if (message.Type == NetworkMessageType.EnterUnitRequest &&
             (message.UnitId is null || message.TargetId is null))
-            return;
+            return false;
 
         if (message.Type == NetworkMessageType.LeaveContainerRequest && message.UnitId is null)
-            return;
+            return false;
 
         if (_requestQueue.Count >= MaximumQueuedRequests)
-            return;
+            return false;
 
         RememberPlanningVersions(message);
         _requestQueue.Enqueue(message);
+        return true;
     }
 
     public void Update(GameTime gameTime)
@@ -366,6 +384,10 @@ public sealed class NetworkHost
                 _pendingGotoReady = false;
                 NetworkMessage? planned = FilterPlannedCommand(finished);
                 if (planned is not null) { CommitGotoEnds(planned); await PublishAsync(planned); }
+                _networkHandler.ResolveLocalRequest(finished.ReceiptRequest, planned is not null,
+                    planned is not null ? null : finished.Versions.Keys.Any(id =>
+                        _world.Units.FindMobileUnitById(id) is MobileUnit mobile && PlanUnitValid(finished, mobile))
+                        ? "No reachable route survived host planning." : "The movement order was superseded or its units disappeared.");
                 ReleasePlanningIntent(finished);
             }
 
@@ -384,6 +406,7 @@ public sealed class NetworkHost
                 if (request.Type is NetworkMessageType.GotoRequest or NetworkMessageType.MoveAwayRequest)
                 {
                     GotoPlan planning = NewGotoPlan(request);
+                    planning.ReceiptRequest = queuedRequest;
                     // Filtering helicopter IDs above creates a record copy. Keep
                     // the original admission versions, including newer queued Stop/Goto.
                     if (_requestVersions.TryGetValue(queuedRequest, out Dictionary<Guid, long>? admittedVersions))
@@ -424,7 +447,7 @@ public sealed class NetworkHost
                         ConfirmPlayerSkin(request),
                         ConfirmTeamId(request)),
                     NetworkMessageType.BuildRequest => TryCreateBuildCommand(request),
-                    NetworkMessageType.BuildConstructionRequest => NetworkCommands.CreateBuildConstructionCommand(_networkHandler.LocalPeerId, request),
+                    NetworkMessageType.BuildConstructionRequest => TryCreateConstructionCommand(request),
                     NetworkMessageType.TrainUnitRequest => TryCreateTrainUnitCommand(request),
                     NetworkMessageType.ResearchRequest => TryCreateResearchCommand(request),
                     NetworkMessageType.SetRallyPointRequest => TryCreateSetRallyPointCommand(request),
@@ -449,10 +472,16 @@ public sealed class NetworkHost
 
                 await PublishEarthworkAsync();
                 if (command is null)
+                {
+                    AIOrderFailure failure = ExplainRejection(queuedRequest);
+                    _networkHandler.ResolveLocalRequest(queuedRequest, false,
+                        $"Host rejected {queuedRequest.Type}: {failure}.", failure);
                     continue;
+                }
 
                 _networkHandler.ApplyLocalCommand(command);
                 await _networkHandler.BroadcastAsync(command, CancellationToken.None);
+                _networkHandler.ResolveLocalRequest(queuedRequest, true);
 
                 if (request.Type == NetworkMessageType.AttackRequest)
                     await _combat.ResolveAttackAsync(request with { UnitIds = command.UnitIds });
@@ -988,6 +1017,44 @@ public sealed class NetworkHost
         return x * x + z * z;
     }
 
+    private NetworkMessage? TryCreateConstructionCommand(NetworkMessage request)
+    {
+        if (request.ConstructionSiteId is not Guid id || _world.Units.FindById(id) is not Building site ||
+            site.IsDying || site.IsCompleted || !_armies.CanControl(request.SenderId, site.ArmyId)) return null;
+        Guid[] workers = (request.UnitIds ?? []).Where(workerId =>
+            _world.Units.FindById(workerId) is MobileUnit worker && !worker.IsDying && !worker.IsEmbarked &&
+            worker.BuildRate > 0 && _armies.CanControl(request.SenderId, worker.ArmyId) && worker.ArmyId == site.ArmyId)
+            .Distinct().ToArray();
+        return workers.Length == 0 ? null : NetworkCommands.CreateBuildConstructionCommand(
+            _networkHandler.LocalPeerId, request with { UnitIds = workers });
+    }
+
+    private AIOrderFailure ExplainRejection(NetworkMessage request)
+    {
+        if (request.Type is NetworkMessageType.BuildRequest or NetworkMessageType.TrainUnitRequest or NetworkMessageType.ResearchRequest)
+        {
+            bool build = request.Type == NetworkMessageType.BuildRequest;
+            Building? producer = request.UnitId is Guid id ? _world.Units.FindById(id) as Building : null;
+            if (!build && (producer is null || producer.IsDying || !producer.IsCompleted ||
+                !_armies.CanControl(request.SenderId, producer.ArmyId))) return AIOrderFailure.Producer;
+            Guid? armyId = build ? _players().FirstOrDefault(player => player.Id == request.SenderId)?.ArmyId : producer?.ArmyId;
+            if (armyId is not Guid owner || _armies.Find(owner) is not Army army) return AIOrderFailure.InvalidTarget;
+            PurchasableType type = build ? PurchasableType.Building : request.Type == NetworkMessageType.ResearchRequest
+                ? PurchasableType.Research : PurchasableType.Unit;
+            PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new(type, request.UnitTypeId ?? "", owner,
+                build ? null : producer?.UnitId));
+            if (quote.MissingPerks.Count > 0) return AIOrderFailure.Perk;
+            if (!quote.IsAvailable) return AIOrderFailure.Validation;
+            if (!quote.CanAfford(army.Resources)) return AIOrderFailure.Resources;
+            if (type == PurchasableType.Research && ResearchProjects.TryGetGrantedPerk(request.UnitTypeId ?? "", out var perk)
+                && army.Perks.Has(perk)) return AIOrderFailure.Perk;
+            if (!build) return AIOrderFailure.Producer;
+            if (request.UnitId is Guid site && _world.Units.FindById(site) is not null) return AIOrderFailure.InvalidTarget;
+            return AIOrderFailure.BuildSite;
+        }
+        return AIOrderFailure.InvalidTarget;
+    }
+
     private NetworkMessage? TryCreateBuildCommand(NetworkMessage request)
     {
         if (!ComplexCommandPayloads.TryValidate(request, out _)) return null;
@@ -1150,10 +1217,14 @@ public sealed class NetworkHost
                 _aiPlayers().Any(ai => ai.Id == player.Id), Guid.NewGuid());
         }).ToArray();
         _startPositionWishes.Clear();
-        if (_pendingGoto is GotoPlan abandoned) ReleasePlanningIntent(abandoned);
+        if (_pendingGoto is GotoPlan abandoned)
+        {
+            _networkHandler.AbandonLocalRequest(abandoned.ReceiptRequest, "Match restarted.");
+            ReleasePlanningIntent(abandoned);
+        }
         _pendingGoto = null;
         _pendingGotoReady = false;
-        _requestQueue.Clear();
+        AbandonQueuedLocalRequests("Match restarted.");
         _planningVersions.Clear();
         _requestVersions.Clear();
         _gotoQueueEnds.Clear();

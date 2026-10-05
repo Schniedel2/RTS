@@ -16,6 +16,7 @@ public sealed class PlayerCommandService
     private readonly NetworkHandler _network;
 
     public Guid PlayerId { get; }
+    public LocalRequestReceipt? LastRequest { get; private set; }
 
     public PlayerCommandService(NetworkHandler network, Guid playerId)
     {
@@ -58,7 +59,7 @@ public sealed class PlayerCommandService
     {
         await SendAsync(NetworkCommands.CreateBuildRequest(PlayerId, buildingTypeName,
             target.X, target.Y, target.Z, rotationDegrees, buildingId), cancellationToken);
-        return buildingId;
+        return LastRequest?.Request.UnitId ?? buildingId;
     }
 
     public Task ConstructAsync(IEnumerable<Guid> workerIds, Guid constructionSiteId,
@@ -76,7 +77,7 @@ public sealed class PlayerCommandService
         NetworkMessage request = NetworkCommands.CreateBuildRequest(PlayerId, buildingTypeName,
             target.X, target.Y, target.Z, rotationDegrees, id, workerIds.Distinct().ToArray());
         await SendAsync(request, cancellationToken);
-        return id;
+        return LastRequest?.Request.UnitId ?? id;
     }
 
     public Task HarvestAsync(Guid harvesterId, Vector3 target,
@@ -132,8 +133,22 @@ public sealed class PlayerCommandService
         SendAsync(new NetworkMessage(NetworkMessageType.MoveAwayRequest, PlayerId, UnitId: unitId,
             X: fromPosition.X, Y: fromPosition.Y, Z: fromPosition.Z), cancellationToken);
 
-    private Task SendAsync(NetworkMessage request, CancellationToken cancellationToken) =>
-        _network.SendToHostAsync(request, cancellationToken);
+    public Task CancelConstructionAsync(Guid buildingId, CancellationToken cancellationToken = default) =>
+        SendAsync(NetworkCommands.CreateCancelConstructionRequest(PlayerId, buildingId), cancellationToken);
+
+    private Task SendAsync(NetworkMessage request, CancellationToken cancellationToken)
+    {
+        LastRequest = _network.TrackLocalRequest(request);
+        if (LastRequest is not null && !ReferenceEquals(LastRequest.Request, request))
+            return Task.CompletedTask;
+        if (!_network.AllowLocalAIRequest(request))
+        {
+            _network.ResolveLocalRequest(request, false, "AI recovery cooldown prevents repeating the failed order.", AIOrderFailure.RecoveryCooldown);
+            return Task.CompletedTask;
+        }
+        if (_network.RouteLocalAIOrder(request)) return Task.CompletedTask;
+        return _network.SendToHostAsync(request, cancellationToken);
+    }
 
     private static bool IsFinite(Vector3 value) =>
         float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);

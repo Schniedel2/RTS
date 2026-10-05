@@ -23,7 +23,7 @@ public sealed class AIProductionPlanExecutor(
     Player actor,
     NetworkHandler network)
 {
-    public const int ResourceReserve = 800;
+
     private const float RetrySeconds = 3.0f;
     private readonly PlayerCommandService _commands = new(network, actor.Id);
     private AIProductionPlan? _plan;
@@ -31,7 +31,13 @@ public sealed class AIProductionPlanExecutor(
     private float _retryElapsed = RetrySeconds;
     private Guid? _requestedBuildingId;
     private bool _requestSent;
-    private int _unitCountBeforeRequest;
+    private Guid? _adoptedProductionOrderId;
+    private readonly AIProgressWatch _progress = new();
+    private LocalRequestReceipt? _receipt;
+    private Guid? _activeProducerId;
+    private bool _wasAcknowledged;
+    private Guid? _observedProductionHead;
+    public const float StallTimeoutSeconds = 60;
 
     public AIPlanExecutionState State { get; private set; } = AIPlanExecutionState.Idle;
     public bool IsBusy => State is not AIPlanExecutionState.Idle and
@@ -68,20 +74,47 @@ public sealed class AIProductionPlanExecutor(
         using var measurement = PerformanceMeasurements.Measure("AI.ProductionPlan");
         if (!IsBusy || CurrentStep is not AIProductionPlanStep step)
             return;
-        _retryElapsed += Math.Max(0.0f, (float)gameTime.ElapsedGameTime.TotalSeconds);
+        float elapsed = Math.Max(0.0f, (float)gameTime.ElapsedGameTime.TotalSeconds);
+        _retryElapsed += elapsed;
+        if (_receipt is not null && _receipt.Generation != network.SessionGeneration)
+        { Fail("Host session changed; abandoning the old plan.", AIOrderFailure.SessionChanged); return; }
 
         if (IsStepComplete(step))
         {
             AdvanceStep();
             return;
         }
+        if (_requestedBuildingId is Guid pausedSite && world.AIOrderQueues.TryGetValue(actor.ArmyId, out var queue)
+            && queue.IsPaused(pausedSite))
+        {
+            _progress.Reset();
+            State = AIPlanExecutionState.WaitingForProducer;
+            LastDecision = $"Construction of {step.TypeId} is paused for a higher-priority AI order.";
+            return;
+        }
+        if (_receipt?.Result.Status is AIOrderStatus.Rejected or AIOrderStatus.Failed)
+        { Fail($"Host rejected or failed {step.TypeId}: {_receipt.Result.Failure}: {_receipt.Result.Reason}"); return; }
+        if (_receipt?.State is LocalRequestState.Rejected or LocalRequestState.Abandoned)
+        { Fail($"Host rejected {step.TypeId}: {_receipt.Reason}"); return; }
+        // Host queue latency is not a failed gameplay job. Keep one outstanding request.
+        if (_receipt?.State == LocalRequestState.Pending)
+        {
+            State = AIPlanExecutionState.WaitingForHost;
+            LastDecision = $"Waiting for host processing of {step.TypeId}; no duplicate is sent.";
+            return;
+        }
+        if (!_progress.Update($"{_stepIndex}:{step.Kind}:{step.TypeId}", GetProgress(step), elapsed, StallTimeoutSeconds))
+        { Fail($"No progress on {step.Kind} {step.TypeId} for {StallTimeoutSeconds:0}s; releasing the plan for recovery.", AIOrderFailure.Timeout); return; }
         if (_requestSent && IsStepAcknowledged(step))
         {
+            _wasAcknowledged = true;
             if (step.Kind == AIProductionPlanStepKind.BuildBuilding)
                 EnsureAcknowledgedBuildingHasWorker(step);
             State = AIPlanExecutionState.InProgress;
             return;
         }
+        if (_wasAcknowledged)
+        { Fail($"Confirmed {step.TypeId} disappeared or was cancelled before completion; replanning is required."); return; }
         if (_requestSent && _retryElapsed < RetrySeconds)
         {
             State = AIPlanExecutionState.WaitingForHost;
@@ -119,7 +152,9 @@ public sealed class AIProductionPlanExecutor(
             .Where(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying && !unit.IsEmbarked && !unit.IsLeavingBuilding &&
                 unit.Occupancy?.IsOperational != false && unit.BuildRate > 0.0f && string.Equals(unit.GameplayTypeId,
                     step.ProducerTypeId, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(unit => unit.UnitId)
+            .OrderBy(unit => world.AIOrderQueues.TryGetValue(actor.ArmyId, out var reservations) &&
+                !reservations.CanUse(unit.UnitId, _requestedBuildingId))
+            .ThenBy(unit => unit.UnitId)
             .FirstOrDefault();
         if (builder is null)
         {
@@ -128,6 +163,18 @@ public sealed class AIProductionPlanExecutor(
             return;
         }
 
+        Building? existing = world.Units.GetArmyUnits(actor.ArmyId).OfType<Building>()
+            .FirstOrDefault(site => !site.IsDying && !site.IsCompleted &&
+                GameplayCatalog.Canonicalize(site.GameplayTypeId) == GameplayCatalog.Canonicalize(step.TypeId));
+        if (existing is not null)
+        {
+            _requestedBuildingId = existing.UnitId;
+            _requestSent = true;
+            EnsureAcknowledgedBuildingHasWorker(step);
+            State = AIPlanExecutionState.InProgress;
+            LastDecision = $"Adopted existing construction of {step.TypeId}.";
+            return;
+        }
         PurchaseQuote quote = Quote(PurchasableType.Building, step.TypeId, builder.UnitId);
         if (!CanPay(quote))
         {
@@ -154,6 +201,7 @@ public sealed class AIProductionPlanExecutor(
         _requestedBuildingId = Guid.NewGuid();
         _ = _commands.BuildAndConstructAsync(step.TypeId, position, 0.0f,
             [builder.UnitId], _requestedBuildingId.Value);
+        _requestedBuildingId = _commands.LastRequest?.Request.UnitId ?? _requestedBuildingId;
         MarkRequest($"Requested {step.TypeId} at ({position.X:0.0}, {position.Z:0.0}).");
     }
 
@@ -168,7 +216,9 @@ public sealed class AIProductionPlanExecutor(
         }
         if (producer.ProductionQueue.Orders.Any(order => GameplayCatalog.Canonicalize(order.UnitTypeId) == step.TypeId))
         {
-            _unitCountBeforeRequest = CountUnits(step.TypeId);
+            _activeProducerId = producer.UnitId;
+            _adoptedProductionOrderId = producer.ProductionQueue.Orders.First(order =>
+                GameplayCatalog.Canonicalize(order.UnitTypeId) == step.TypeId).OrderId;
             _requestSent = true;
             State = AIPlanExecutionState.InProgress;
             LastDecision = $"Waiting for already queued {step.TypeId}.";
@@ -186,7 +236,7 @@ public sealed class AIProductionPlanExecutor(
             WaitForResources(step, quote.FinalPrice);
             return;
         }
-        _unitCountBeforeRequest = CountUnits(step.TypeId);
+        _activeProducerId = producer.UnitId;
         _ = _commands.TrainUnitAsync(producer.UnitId, step.TypeId);
         MarkRequest($"Requested training of {step.TypeId} in {step.ProducerTypeId}.");
     }
@@ -201,7 +251,9 @@ public sealed class AIProductionPlanExecutor(
             .Where(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying && !unit.IsEmbarked && !unit.IsLeavingBuilding &&
                 unit.Occupancy?.IsOperational != false && unit.BuildRate > 0.0f && string.Equals(unit.GameplayTypeId,
                     step.ProducerTypeId, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(unit => unit.UnitId)
+            .OrderBy(unit => world.AIOrderQueues.TryGetValue(actor.ArmyId, out var reservations) &&
+                !reservations.CanUse(unit.UnitId, _requestedBuildingId))
+            .ThenBy(unit => unit.UnitId)
             .FirstOrDefault();
         if (builder is null || builder.IsBuilding || builder.TargetBuildingId == siteId ||
             _retryElapsed < RetrySeconds)
@@ -219,6 +271,16 @@ public sealed class AIProductionPlanExecutor(
         {
             State = AIPlanExecutionState.WaitingForProducer;
             LastDecision = $"Waiting for {step.ProducerTypeId} to research {step.TypeId}.";
+            return;
+        }
+        _activeProducerId = producer.UnitId;
+        if (AIStrategicCatalog.HasQueuedProduct(producer, step.TypeId))
+        {
+            _adoptedProductionOrderId = producer.ProductionQueue.Orders.First(order =>
+                GameplayCatalog.Canonicalize(order.UnitTypeId) == step.TypeId).OrderId;
+            _requestSent = true;
+            State = AIPlanExecutionState.InProgress;
+            LastDecision = $"Waiting for already queued research {step.TypeId}.";
             return;
         }
         PurchaseQuote quote = Quote(PurchasableType.Research, step.TypeId, producer.UnitId);
@@ -245,25 +307,55 @@ public sealed class AIProductionPlanExecutor(
         MarkRequest($"Requested crew {crewId.ToString("N")[..8]} for {targetId.ToString("N")[..8]}.");
     }
 
+    private float GetProgress(AIProductionPlanStep step)
+    {
+        if (step.Kind == AIProductionPlanStepKind.BuildBuilding && _requestedBuildingId is Guid siteId &&
+            world.Units.FindById(siteId) is Building site) return site.ConstructionProgress;
+        if (step.Kind is AIProductionPlanStepKind.TrainUnit or AIProductionPlanStepKind.Research)
+        {
+            Building? producer = FindProducer(step);
+            // Progress of the FIFO head counts when our paid order is behind it.
+            if (producer?.ProductionQueue.ActiveOrder is ProductionOrder order)
+            {
+                if (_observedProductionHead != order.OrderId)
+                { _observedProductionHead = order.OrderId; _progress.Reset(); }
+                return order.ElapsedSeconds;
+            }
+        }
+        if (step.Kind == AIProductionPlanStepKind.AssignCrew && step.UnitId is Guid crewId &&
+            step.TargetUnitId is Guid targetId && world.Units.FindById(crewId) is Unit crew &&
+            world.Units.FindById(targetId) is Unit target)
+            return -Vector2.Distance(new(crew.Position.X, crew.Position.Z), new(target.Position.X, target.Position.Z));
+        return 0;
+    }
+
     private bool IsStepAcknowledged(AIProductionPlanStep step) => step.Kind switch
     {
         AIProductionPlanStepKind.BuildBuilding =>
-            _requestedBuildingId is Guid id && world.Units.FindById(id) is Building,
+            _requestedBuildingId is Guid id && world.Units.FindById(id) is Building { IsDying: false },
         AIProductionPlanStepKind.TrainUnit or AIProductionPlanStepKind.Research =>
             FindProducer(step)?.ProductionQueue.Orders.Any(order =>
-                string.Equals(order.UnitTypeId, step.TypeId, StringComparison.OrdinalIgnoreCase)) == true,
+                order.OrderId == (_receipt?.Request.ProductionOrderId ?? _adoptedProductionOrderId)) == true,
         AIProductionPlanStepKind.AssignCrew =>
             step.UnitId is Guid crewId && world.Units.FindById(crewId) is MobileUnit crew &&
             crew.PendingEnterContainerId == step.TargetUnitId,
         _ => false
     };
 
-    private bool IsStepComplete(AIProductionPlanStep step) => step.Kind switch
+    private bool IsStepComplete(AIProductionPlanStep step)
     {
+        if (_receipt?.Result.ManagedByQueue == true)
+            return _receipt.Result.Status == AIOrderStatus.Completed;
+        if (_adoptedProductionOrderId is Guid adopted)
+            return FindProducer(step)?.ProductionQueue.WasCompleted(adopted) == true;
+        return step.Kind switch
+        {
         AIProductionPlanStepKind.BuildBuilding =>
-            _requestedBuildingId is Guid id && world.Units.FindById(id) is Building { IsCompleted: true },
+            _requestedBuildingId is Guid id && world.Units.FindById(id) is Building { IsCompleted: true, IsDying: false },
         AIProductionPlanStepKind.TrainUnit =>
-            _requestSent && CountUnits(step.TypeId) > _unitCountBeforeRequest,
+            _receipt?.Request.ProductionOrderId is Guid productionId
+                ? FindProducer(step)?.ProductionQueue.WasCompleted(productionId) == true
+                : false,
         AIProductionPlanStepKind.Research =>
             GameplayCatalog.Find(PurchasableType.Research, step.TypeId)?.GrantedPerk is PerkType perk &&
             Globals.Game.Armies.Find(actor.ArmyId)?.Perks.Has(perk) == true,
@@ -272,26 +364,24 @@ public sealed class AIProductionPlanExecutor(
             world.Units.FindById(crewId) is Unit { IsEmbarked: true } crew &&
             crew.ContainerUnitId == targetId,
         _ => false
-    };
+        };
+    }
 
     private Building? FindProducer(AIProductionPlanStep step)
     {
+        if (_activeProducerId is Guid id && world.Units.FindById(id) is Building active &&
+            active.ArmyId == actor.ArmyId && !active.IsDying) return active;
+        if (_activeProducerId is not null && _requestSent) return null;
         PurchasableType type = step.Kind == AIProductionPlanStepKind.Research ? PurchasableType.Research : PurchasableType.Unit;
         GameplayDefinition? product = GameplayCatalog.Find(type, step.TypeId);
         if (product is null) return null;
         return AIStrategicCatalog.FindAvailableProducer(world, actor.ArmyId, product);
     }
 
-    private int CountUnits(string typeId) => world.Units.GetArmyUnits(actor.ArmyId).Count(unit =>
-        unit.ArmyId == actor.ArmyId && !unit.IsDying &&
-        string.Equals(unit.GameplayTypeId, typeId, StringComparison.OrdinalIgnoreCase));
-
     private PurchaseQuote Quote(PurchasableType type, string typeId, Guid producerId) =>
         Globals.Game.Pricing.GetQuote(new PurchaseRequest(type, typeId, actor.ArmyId, producerId));
 
-    private bool CanPay(PurchaseQuote quote) => quote.IsAvailable &&
-        Globals.Game.Armies.Find(actor.ArmyId) is Army army &&
-        army.Resources >= quote.FinalPrice + ResourceReserve;
+    private bool CanPay(PurchaseQuote quote) => AIResourcePlanner.CanPropose(world, actor.ArmyId, quote);
 
     private void WaitForResources(AIProductionPlanStep step, int cost)
     {
@@ -301,7 +391,9 @@ public sealed class AIProductionPlanExecutor(
 
     private void MarkRequest(string decision)
     {
+        if (!_requestSent) _progress.Reset();
         _requestSent = true;
+        _receipt = _commands.LastRequest;
         _retryElapsed = 0.0f;
         State = AIPlanExecutionState.WaitingForHost;
         LastDecision = decision;
@@ -328,11 +420,17 @@ public sealed class AIProductionPlanExecutor(
         _retryElapsed = RetrySeconds;
         _requestedBuildingId = null;
         _requestSent = false;
-        _unitCountBeforeRequest = 0;
+        _adoptedProductionOrderId = null;
+        _receipt = null;
+        _activeProducerId = null;
+        _wasAcknowledged = false;
+        _observedProductionHead = null;
+        _progress.Reset();
     }
 
-    private void Fail(string message)
+    private void Fail(string message, AIOrderFailure failure = AIOrderFailure.Validation)
     {
+        _receipt?.Result.Set(AIOrderStatus.Failed, failure, message);
         State = AIPlanExecutionState.Failed;
         LastDecision = message;
     }

@@ -30,6 +30,74 @@ public sealed class NetworkHandler : IDisposable
     private int _gameThreadId;
     private Guid? _hostPeerId;
     private Func<NetworkMessage>? _sessionSnapshotProvider;
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<NetworkMessage, LocalRequestReceipt> _localRequests = new();
+    private readonly Dictionary<Guid, LocalRequestReceipt> _localRejections = [];
+    private readonly Dictionary<Guid, Func<NetworkMessage, bool>> _localAIPolicies = [];
+    private readonly Dictionary<(Guid Actor, NetworkMessageType Type, Guid? Producer, string? Product), LocalRequestReceipt> _pendingAIPurchases = [];
+    private long _receiptGeneration = -1;
+    private readonly Dictionary<Guid, Func<NetworkMessage, bool>> _localAIOrderRouters = [];
+    internal void SetLocalAIOrderRouter(Guid actorId, Func<NetworkMessage, bool>? router)
+    {
+        if (router is null) _localAIOrderRouters.Remove(actorId);
+        else _localAIOrderRouters[actorId] = router;
+    }
+    internal bool RouteLocalAIOrder(NetworkMessage request) => IsHost &&
+        _localAIOrderRouters.TryGetValue(request.SenderId, out var router) && router(request);
+    internal void SetLocalAIRequestPolicy(Guid actorId, Func<NetworkMessage, bool>? policy)
+    {
+        if (policy is null) _localAIPolicies.Remove(actorId);
+        else _localAIPolicies[actorId] = policy;
+    }
+    internal bool AllowLocalAIRequest(NetworkMessage request) =>
+        !IsHost || !_localAIPolicies.TryGetValue(request.SenderId, out var policy) || policy(request);
+    internal LocalRequestReceipt? TrackLocalRequest(NetworkMessage request)
+    {
+        if (!IsHost) return null;
+        if (_receiptGeneration != SessionGeneration)
+        {
+            _pendingAIPurchases.Clear(); _localRejections.Clear();
+            _receiptGeneration = SessionGeneration;
+        }
+        bool purchase = _localAIPolicies.ContainsKey(request.SenderId) &&
+            request.Type is NetworkMessageType.TrainUnitRequest or NetworkMessageType.ResearchRequest or NetworkMessageType.BuildRequest;
+        var key = LocalPurchaseKey(request);
+        if (purchase && _pendingAIPurchases.TryGetValue(key, out var pending) &&
+            pending.State == LocalRequestState.Pending) return pending;
+        var receipt = _localRequests.GetValue(request, message => new(message, SessionGeneration));
+        if (purchase) _pendingAIPurchases[key] = receipt;
+        return receipt;
+    }
+    public LocalRequestReceipt? GetLastLocalRejection(Guid actorId) =>
+        _localRejections.TryGetValue(actorId, out LocalRequestReceipt? receipt) && receipt.Generation == SessionGeneration
+            && receipt.State == LocalRequestState.Rejected
+            ? receipt : null;
+    internal void ResolveLocalRequest(NetworkMessage request, bool accepted, string? reason = null, AIOrderFailure failure = AIOrderFailure.Validation)
+    {
+        if (!_localRequests.TryGetValue(request, out LocalRequestReceipt? receipt)) return;
+        receipt.State = receipt.Generation != SessionGeneration ? LocalRequestState.Abandoned
+            : accepted ? LocalRequestState.Accepted : LocalRequestState.Rejected;
+        receipt.Reason = reason;
+        receipt.Result.Set(receipt.State == LocalRequestState.Accepted ? AIOrderStatus.Accepted
+            : receipt.State == LocalRequestState.Abandoned ? AIOrderStatus.Failed : AIOrderStatus.Rejected,
+            receipt.State == LocalRequestState.Accepted ? AIOrderFailure.None :
+            receipt.State == LocalRequestState.Abandoned ? AIOrderFailure.SessionChanged : failure, reason);
+        var key = LocalPurchaseKey(request);
+        if (_pendingAIPurchases.TryGetValue(key, out var pending) && ReferenceEquals(receipt, pending))
+            _pendingAIPurchases.Remove(key);
+        if (receipt.State == LocalRequestState.Rejected) _localRejections[request.SenderId] = receipt;
+    }
+    internal void AbandonLocalRequest(NetworkMessage request, string reason)
+    {
+        if (_localRequests.TryGetValue(request, out var abandoned))
+            abandoned.Result.Set(AIOrderStatus.Failed, abandoned.Generation != SessionGeneration
+                ? AIOrderFailure.SessionChanged : AIOrderFailure.Cancelled, reason);
+        ResolveLocalRequest(request, false, reason);
+        if (_localRequests.TryGetValue(request, out var receipt)) receipt.State = LocalRequestState.Abandoned;
+    }
+    private static (Guid Actor, NetworkMessageType Type, Guid? Producer, string? Product) LocalPurchaseKey(NetworkMessage request) =>
+        request.Type == NetworkMessageType.BuildRequest
+            ? (request.SenderId, request.Type, null, $"{request.UnitTypeId}:{request.X:R}:{request.Z:R}:{request.TargetAngleY:R}")
+            : (request.SenderId, request.Type, request.UnitId, request.UnitTypeId);
     public long SessionGeneration => Volatile.Read(ref _generation);
     public NetworkConnectionStatus Status { get; private set; } = NetworkConnectionStatus.Disconnected;
     public string? LastError { get; private set; }
@@ -261,6 +329,7 @@ public sealed class NetworkHandler : IDisposable
     public void EnqueueLocalMessage(NetworkMessage message)
     {
         if (AcceptComplexCommand(message)) EnqueueInbound(new(SessionGeneration, null, message));
+        else ResolveLocalRequest(message, false, "Local host admission rejected an invalid command payload.");
     }
 
     private void EnqueueInbound(Inbound input)

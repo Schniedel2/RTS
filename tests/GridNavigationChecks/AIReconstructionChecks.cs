@@ -7,7 +7,7 @@ using Microsoft.Xna.Framework;
 using RTS;
 using RTS.Network;
 
-internal static class AIReconstructionChecks
+internal static partial class AIReconstructionChecks
 {
     private sealed class CatalogBuilding : Building
     {
@@ -65,6 +65,7 @@ internal static class AIReconstructionChecks
     {
         private readonly RTSGame _savedGame = Globals.Game;
         private readonly GameWorld _savedWorld = Globals.World;
+        private readonly MeshHandler _savedMeshes = Globals.MeshHandler;
         private int _id = 1;
         private double _time;
         public GameWorld World { get; } = new(65, 65, 1, graphicsEnabled: false);
@@ -82,6 +83,12 @@ internal static class AIReconstructionChecks
 
         public Scenario(bool startReady = true)
         {
+            Globals.MeshHandler = new MeshHandler();
+            foreach (var mesh in _savedMeshes.Meshes) Globals.MeshHandler.Meshes[mesh.Key] = mesh.Value;
+            // Low-resource proposals now inspect building footprints before a purchase is funded.
+            foreach (string name in new[] { "gdi-base", "reaktor-1", "reaktor-2", "antenna-1", "gatling-tower-1",
+                "vehicle-factory-1", "helipad-1", "silo-1", "tiberium-refinery-1" })
+                Globals.MeshHandler.Meshes.TryAdd(name, _savedMeshes.Meshes["barracks-1"]);
             Network.CreateSessionAsync("AI reconstruction").GetAwaiter().GetResult();
             var actor = new Player(Network.LocalPeerId, "Test AI");
             // Stable army/seed keep the squad profile and troop requirements reproducible.
@@ -93,6 +100,8 @@ internal static class AIReconstructionChecks
             var game = (RTSGame)RuntimeHelpers.GetUninitializedObject(typeof(RTSGame));
             void Set(string property, object value) => typeof(RTSGame).GetField(
                 $"<{property}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(game, value);
+            typeof(RTSGame).GetField("_players", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(game, new List<Player> { actor });
             Set("World", World);
             Set("Armies", World.SimulationArmies);
             Set("Pricing", new PricingService(World.SimulationArmies, World.Units.FindById));
@@ -118,7 +127,12 @@ internal static class AIReconstructionChecks
             for (int index = 0; index < 4; index++)
                 Soldiers.Add(Add(new Gunner(new(8.5f + index, 0, 12.5f), NextId())));
             AI.BeginMatch(1234, actor.ArmyId);
-            if (startReady) { Tick(); Tick(); Messages.Clear(); }
+            if (startReady)
+            {
+                Tick(); Tick(); Messages.Clear();
+                // Isolate each scenario's new orders from unfunded bootstrap proposals.
+                AI.Controller.OrderQueue?.Dispose();
+            }
         }
 
         public Guid NextId() => new(_id++, 0, 0, new byte[8]);
@@ -172,6 +186,7 @@ internal static class AIReconstructionChecks
             Network.Dispose();
             Globals.Game = _savedGame;
             Globals.World = _savedWorld;
+            Globals.MeshHandler = _savedMeshes;
         }
     }
 
@@ -366,6 +381,8 @@ internal static class AIReconstructionChecks
             scenario.Messages.Clear(); armored.Update(tick); scenario.Network.Update();
             Check(scenario.Messages.Any(m => m.Type == NetworkMessageType.TrainUnitRequest && m.UnitTypeId == "gepard"),
                 "Aircraft losses trigger additional mobile air defense after both original quotas were fulfilled");
+            scenario.PumpHost();
+            factory.ProductionQueue.Update(8, out _);
             scenario.Remove(gepard); scenario.Messages.Clear();
             armored.Update(tick); scenario.Network.Update();
             Check(scenario.Messages.Any(m => m.Type == NetworkMessageType.TrainUnitRequest && m.UnitTypeId == "gepard"),
@@ -470,6 +487,6 @@ internal static class AIReconstructionChecks
                 m.TargetId == enemyAir.UnitId && m.UnitIds!.SequenceEqual([gepard.UnitId])),
                 "A single suitable air-defense escort engages nearby aircraft without incompatible infantry orders");
         }
-        return checks;
+        return checks + RunOrderProgressChecks() + RunOrderQueueChecks() + RunResourcePlanningChecks() + RunReservationChecks() + RunOrderResultChecks() + RunScoutingReservationChecks() + RunScoutingReachabilityChecks();
     }
 }

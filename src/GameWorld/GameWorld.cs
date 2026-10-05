@@ -13,6 +13,12 @@ public class GameWorld
     private Terrain _terrain;
     public Terrain Terrain => _terrain;
     public bool GraphicsEnabled { get; }
+    private Dictionary<Guid, AIOrderProgressMonitor>? _aiOrderMonitors;
+    internal Dictionary<Guid, AIOrderProgressMonitor> AIOrderMonitors => _aiOrderMonitors ??= [];
+    private Dictionary<Guid, AIOrderQueue>? _aiOrderQueues;
+    internal Dictionary<Guid, AIOrderQueue> AIOrderQueues => _aiOrderQueues ??= [];
+    private ScoutingTargets? _scoutingTargets;
+    public ScoutingTargets ScoutingTargets => _scoutingTargets ??= new(this);
     public ArmyHandler SimulationArmies { get; private set; } = new();
     internal RTS.Network.NetworkHandler? SimulationNetwork { get; private set; }
     private Func<Guid, Guid, bool>? _allianceResolver;

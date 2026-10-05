@@ -1,6 +1,7 @@
 using Microsoft.Xna.Framework;
 using RTS.Network;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace RTS;
@@ -40,6 +41,10 @@ public sealed class AISquadPreparationController(
     private readonly AIThreatAssessment _threat = threatAssessment ?? new(armyId);
     private float _thinkElapsed;
     private float _orderElapsed = OrderRetrySeconds;
+    private float _time;
+    private float _progressElapsed;
+    private readonly AIProgressWatch _gatherProgress = new();
+    private readonly Dictionary<Guid, float> _unavailableUntil = [];
 
     public AISquadPreparationState State { get; private set; } = AISquadPreparationState.WaitingForBarracks;
     public bool IsReady => State == AISquadPreparationState.Ready;
@@ -50,6 +55,7 @@ public sealed class AISquadPreparationController(
         State = AISquadPreparationState.WaitingForBarracks;
         _thinkElapsed = ThinkIntervalSeconds;
         _orderElapsed = OrderRetrySeconds;
+        _gatherProgress.Reset();
         LastDecision = "Assessing squad losses and preparing replacements.";
     }
 
@@ -57,6 +63,10 @@ public sealed class AISquadPreparationController(
     {
         using var measurement = PerformanceMeasurements.Measure("AI.SquadPreparation");
         float elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
+        _time += elapsed;
+        foreach (Guid id in _unavailableUntil.Keys.Where(id => _unavailableUntil[id] <= _time ||
+            world.Units.FindById(id) is null).ToArray()) _unavailableUntil.Remove(id);
+        _progressElapsed += elapsed;
         _thinkElapsed += elapsed;
         _orderElapsed += elapsed;
         if (_thinkElapsed < ThinkIntervalSeconds)
@@ -120,6 +130,22 @@ public sealed class AISquadPreparationController(
         }
 
         Soldier[] members = [healer, .. combatSoldiers];
+        Vector3 rally = barracks.RallyPoint ?? FindFallbackRallyPoint(barracks);
+        string objective = $"{leader.UnitId}:{string.Join(',', members.Select(member => member.UnitId))}";
+        float distance = members.Append(leader).Max(unit => HorizontalDistanceSquared(unit.Position, rally));
+        if (!_gatherProgress.Update(objective, -MathF.Sqrt(distance), _progressElapsed,
+                AIOrderProgressMonitor.ProductionTimeoutSeconds, 0.5f))
+        {
+            Soldier unavailable = members.OrderByDescending(member =>
+                HorizontalDistanceSquared(member.Position, rally)).First();
+            _unavailableUntil[unavailable.UnitId] = _time + AIOrderProgressMonitor.FailureCooldownSeconds;
+            _ = _commands.StopAsync([unavailable.UnitId]);
+            _gatherProgress.Reset();
+            _progressElapsed = 0;
+            LastDecision = "Squad preparation is stalled; temporarily replacing an unreachable recruit.";
+            return;
+        }
+        _progressElapsed = 0;
         float assembleRadius = SquadFormation.AssembleRadiusInCells * world.GameGrid.CellSize;
         bool gathered = members.All(member =>
             HorizontalDistanceSquared(member.Position, leader.Position) <= assembleRadius * assembleRadius);
@@ -148,7 +174,8 @@ public sealed class AISquadPreparationController(
     }
 
     private bool IsAvailable(Soldier unit) =>
-        unit.ArmyId == armyId && !unit.IsDying && !unit.IsEmbarked;
+        unit.ArmyId == armyId && !unit.IsDying && !unit.IsEmbarked &&
+        _unavailableUntil.GetValueOrDefault(unit.UnitId) <= _time;
 
     private bool IsAvailableForLeader(Soldier unit, SquadLeader? leader) =>
         IsAvailable(unit) && (unit.SquadLeaderId is null || unit.SquadLeaderId == leader?.UnitId ||
@@ -178,8 +205,7 @@ public sealed class AISquadPreparationController(
 
         PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
             PurchasableType.Unit, unitTypeId, armyId, barracks.UnitId));
-        Army? army = Globals.Game.Armies.Find(armyId);
-        if (!quote.IsAvailable || army is null || !quote.CanAfford(army.Resources))
+        if (!AIResourcePlanner.CanPropose(world, armyId, quote))
         {
             LastDecision = $"Waiting for {quote.FinalPrice} resources for the first squad's {description}.";
             return;

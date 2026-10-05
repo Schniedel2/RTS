@@ -48,6 +48,10 @@ public sealed class AISquadAssaultController(
     private Guid? _lastTargetBuildingId;
     private Guid[] _escortVehicleIds = [];
     private bool _needsReinforcements;
+    private readonly AIProgressWatch _phaseProgress = new();
+    private readonly Dictionary<Guid, float> _unreachableTargets = [];
+    private float _time;
+    private float _progressElapsed;
 
     public AISquadAssaultState State { get; private set; } = AISquadAssaultState.WaitingForSquad;
     public bool HasActiveMission => _targetBuildingId is not null || State == AISquadAssaultState.Retreating;
@@ -64,6 +68,7 @@ public sealed class AISquadAssaultController(
         _escortVehicleIds = [];
         _readinessElapsed = 0.0f;
         ResetProgressWatch();
+        _phaseProgress.Reset();
         _orderElapsed = OrderRefreshSeconds;
         LastDecision = "Recovered squad is preparing its next mission.";
     }
@@ -75,6 +80,8 @@ public sealed class AISquadAssaultController(
             return;
 
         float elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
+        _time += elapsed;
+        _progressElapsed += elapsed;
         _thinkElapsed += elapsed;
         _orderElapsed += elapsed;
         if (_thinkElapsed < ThinkIntervalSeconds)
@@ -145,6 +152,17 @@ public sealed class AISquadAssaultController(
             bool staged = AllWithin([leader, .. members], stagingPoint, radius);
             if (!staged)
             {
+                float gatheringDistance = members.Append<Soldier>(leader)
+                    .Max(unit => HorizontalDistanceSquared(unit.Position, stagingPoint));
+                if (!_phaseProgress.Update("staging", -MathF.Sqrt(gatheringDistance),
+                        _progressElapsed, _profile.AssaultStallTimeoutSeconds, 0.5f))
+                {
+                    _unreachableTargets[target.UnitId] = _time + AIOrderProgressMonitor.FailureCooldownSeconds;
+                    BeginRetreat(leader, members, "Squad staging is unreachable", needsReinforcements: false);
+                    _progressElapsed = 0;
+                    return;
+                }
+                _progressElapsed = 0;
                 State = AISquadAssaultState.Staging;
                 LastDecision = $"Gathering the first squad before attacking {Describe(target)}.";
                 if (_orderElapsed >= OrderRefreshSeconds)
@@ -155,12 +173,14 @@ public sealed class AISquadAssaultController(
                 return;
             }
             State = AISquadAssaultState.Advancing;
+            _phaseProgress.Reset();
         }
 
         MobileUnit[] escortVehicles = FindMissionVehicles();
         Unit? immediateThreat = SelectImmediateThreat(leader, members, escortVehicles);
         if (!UpdateProgressWatch(leader, immediateThreat ?? target))
         {
+            _unreachableTargets[target.UnitId] = _time + AIOrderProgressMonitor.FailureCooldownSeconds;
             BeginRetreat(leader, members,
                 $"The squad made no progress for {_profile.AssaultStallTimeoutSeconds:0} seconds",
                 needsReinforcements: false);
@@ -199,7 +219,10 @@ public sealed class AISquadAssaultController(
 
     private Building? SelectKnownTarget()
     {
+        foreach (Guid id in _unreachableTargets.Keys.Where(id => _unreachableTargets[id] <= _time).ToArray())
+            _unreachableTargets.Remove(id);
         Building[] candidates = world.Units.Units.OfType<Building>()
+            .Where(building => !_unreachableTargets.ContainsKey(building.UnitId))
             .Where(building => building.CanBeTargeted && building.ArmyId != armyId && IsEnemy(building) &&
             world.Visibility.GetDisplayedTerrainVisibility(
                 armyId, world.GameGrid.ToCell(building.Position), forMinimap: false) != VisibilityState.Unexplored)
@@ -300,6 +323,17 @@ public sealed class AISquadAssaultController(
                 : "The first squad destroyed its assigned target and returned to base.";
             return;
         }
+        float distance = survivors.Max(unit => HorizontalDistanceSquared(unit.Position, destination));
+        if (!_phaseProgress.Update("retreat", -MathF.Sqrt(distance), _progressElapsed,
+                _profile.AssaultStallTimeoutSeconds, 0.5f))
+        {
+            _ = _commands.StopAsync(survivors.Select(unit => unit.UnitId));
+            State = AISquadAssaultState.MissionComplete;
+            LastDecision = "Retreat is unreachable; stopped survivors and released the mission for regrouping.";
+            _progressElapsed = 0;
+            return;
+        }
+        _progressElapsed = 0;
         if (_orderElapsed >= OrderRefreshSeconds)
         {
             IssueRetreat(leader, members);
@@ -434,7 +468,8 @@ public sealed class AISquadAssaultController(
         if (movedCloser || damagedTarget)
             _secondsWithoutProgress = 0.0f;
         else
-            _secondsWithoutProgress += ThinkIntervalSeconds;
+            _secondsWithoutProgress += _progressElapsed;
+        _progressElapsed = 0;
 
         _bestTargetDistance = Math.Min(_bestTargetDistance, distance);
         _lowestTargetHitPoints = Math.Min(_lowestTargetHitPoints, objective.HitPoints);
@@ -447,5 +482,7 @@ public sealed class AISquadAssaultController(
         _lowestTargetHitPoints = float.MaxValue;
         _secondsWithoutProgress = 0.0f;
         _progressObjectiveId = null;
+        _progressElapsed = 0;
+        _phaseProgress.Reset();
     }
 }

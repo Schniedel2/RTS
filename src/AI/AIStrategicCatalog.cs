@@ -42,7 +42,8 @@ public static class AIStrategicCatalog
             GameplayCatalog.HasAIRoles(unit.GameplayTypeId, AIUnitRole.Builder) &&
             (productId is null || GameplayCatalog.Find(PurchasableType.Building, productId)?.Producers.Any(p =>
                 GameplayCatalog.Canonicalize(p.TypeId) == GameplayCatalog.Canonicalize(unit.GameplayTypeId)) == true))
-            .OrderBy(unit => unit.IsBuilding || unit.TargetBuildingId is not null).ThenBy(unit => unit.UnitId).FirstOrDefault();
+            .OrderBy(unit => world.AIOrderQueues.TryGetValue(armyId, out var queue) && !queue.CanUse(unit.UnitId))
+            .ThenBy(unit => unit.IsBuilding || unit.TargetBuildingId is not null).ThenBy(unit => unit.UnitId).FirstOrDefault();
 
     public static GameplayDefinition? SelectBuilding(GameWorld world, Guid armyId, AIStrategicBuildingNeed need, bool requireAvailable = false) =>
         Select(world, armyId, GameplayCatalog.All.Where(d => Matches(d, need) && (!requireAvailable ||
@@ -63,10 +64,12 @@ public static class AIStrategicCatalog
 
     public static Building? FindAvailableProducer(GameWorld world, Guid armyId, GameplayDefinition product) =>
         world.Units.GetArmyUnits(armyId).OfType<Building>().Where(b => b.ArmyId == armyId && b.IsCompleted && !b.IsDying &&
+            (!world.AIOrderMonitors.TryGetValue(armyId, out var monitor) || !monitor.AvoidProducer(b.UnitId)) &&
             product.Producers.Any(p => p.TypeId == GameplayCatalog.Canonicalize(b.GameplayTypeId)) &&
             (product.Type != PurchasableType.Unit || HasQueuedProduct(b, product.TypeId) || b.CanProduceUnit(world, product.TypeId)) &&
             Globals.Game.Pricing.GetQuote(new(product.Type, product.TypeId, armyId, b.UnitId)).IsAvailable)
-            .OrderByDescending(b => HasQueuedProduct(b, product.TypeId))
+            .OrderBy(b => world.AIOrderQueues.TryGetValue(armyId, out var queue) && !queue.CanUse(b.UnitId))
+            .ThenByDescending(b => HasQueuedProduct(b, product.TypeId))
             .ThenBy(b => Globals.Game.Pricing.GetQuote(new(product.Type, product.TypeId, armyId, b.UnitId)).FinalPrice)
             .ThenBy(b => b.UnitId).FirstOrDefault();
 

@@ -29,7 +29,7 @@ public sealed class AIDefensePlanner(
     public const float AirThreatThreshold = 0.55f;
     public const float AirThreatPerDefense = 0.75f;
     public const int MaximumAirDefenses = 3;
-    public const int ResourceReserve = 800;
+
     public const int PowerHeadroom = 10;
     private const float ThinkIntervalSeconds = 1.0f;
     private const float RequestTimeoutSeconds = 3.0f;
@@ -37,6 +37,7 @@ public sealed class AIDefensePlanner(
     private readonly AIProductionPlanExecutor _executor = new(world, actor, network);
     private float _thinkElapsed;
     private float _crewActionElapsed = RequestTimeoutSeconds;
+    private float _retryPlanIn;
 
     public AIDefensePlanState State { get; private set; }
     public bool IsBusy => State is AIDefensePlanState.WaitingForResources or
@@ -50,6 +51,7 @@ public sealed class AIDefensePlanner(
         float elapsed = Math.Max(0.0f, (float)gameTime.ElapsedGameTime.TotalSeconds);
         _thinkElapsed += elapsed;
         _crewActionElapsed += elapsed;
+        _retryPlanIn = Math.Max(0, _retryPlanIn - elapsed);
         _executor.Update(gameTime);
         if (_executor.IsBusy)
         {
@@ -60,8 +62,17 @@ public sealed class AIDefensePlanner(
             LastDecision = _executor.LastDecision;
             return;
         }
-        if (_executor.State is AIPlanExecutionState.Completed or AIPlanExecutionState.Failed)
+        if (_executor.State == AIPlanExecutionState.Failed)
+        {
+            LastDecision = _executor.LastDecision;
+            State = AIDefensePlanState.Idle;
             _executor.Reset();
+            _retryPlanIn = 5;
+            return;
+        }
+        if (_executor.State == AIPlanExecutionState.Completed)
+            _executor.Reset();
+        if (_retryPlanIn > 0) return;
         if (_thinkElapsed < ThinkIntervalSeconds)
             return;
         _thinkElapsed %= ThinkIntervalSeconds;
@@ -158,15 +169,17 @@ public sealed class AIDefensePlanner(
                     return true;
                 PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
                     PurchasableType.Unit, solution.CrewTypeId, actor.ArmyId, producerId));
-                if (!quote.IsAvailable || army.Resources < quote.FinalPrice + ResourceReserve)
+                if (!AIResourcePlanner.CanPropose(world, actor.ArmyId, quote, AIOrderPriority.Power))
                 {
-                    LastDecision = $"Waiting for crew cost plus {ResourceReserve} reserve resources.";
+                    LastDecision = $"Waiting for {quote.FinalPrice} resources for power crew.";
                     return true;
                 }
                 LastDecision = $"Training {solution.CrewTypeId} for +{solution.PowerGain} reactor power.";
                 if (_crewActionElapsed >= RequestTimeoutSeconds)
                 {
-                    _ = _commands.TrainUnitAsync(producerId, solution.CrewTypeId);
+                    if (world.AIOrderQueues.TryGetValue(actor.ArmyId, out var queue))
+                        queue.Run(AIOrderPriority.Power, () => _commands.TrainUnitAsync(producerId, solution.CrewTypeId));
+                    else _ = _commands.TrainUnitAsync(producerId, solution.CrewTypeId);
                     _crewActionElapsed = 0.0f;
                 }
                 return true;

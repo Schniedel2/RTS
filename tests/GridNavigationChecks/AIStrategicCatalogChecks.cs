@@ -130,6 +130,7 @@ internal static class AIStrategicCatalogChecks
             executor.Start(new([new(AIProductionPlanStepKind.TrainUnit, "test-air", "test-home")]));
             executor.Update(new(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1)));
             Check(executor.State == AIPlanExecutionState.InProgress && home.ProductionQueue.Orders.Count == 1, "Already queued air support is awaited without money or duplicate ordering");
+            home.ProductionQueue.Update(3, out _);
             AddUnit("test-air"); executor.Update(new(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(1)));
             Check(executor.State == AIPlanExecutionState.Completed, "Awaited catalog unit completes plan after spawn");
             army.Resources = 2000;
@@ -149,9 +150,11 @@ internal static class AIStrategicCatalogChecks
             executor.Update(new(TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(1)));
             Check(executor.State == AIPlanExecutionState.InProgress && port.ProductionQueue.Orders.Count == 1,
                 "Executor uses an existing alternate producer when the planned producer is absent");
+            port.ProductionQueue.Update(2, out _);
             AddUnit("test-air"); executor.Update(new(TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(1)));
             Check(executor.State == AIPlanExecutionState.Completed, "Alternate-producer result advances the active plan");
             list.Remove(list.First(unit => unit.GameplayTypeId == "test-air"));
+            port.ProductionQueue.Enqueue(Guid.NewGuid(), "test-air", actor.Id, 2);
             var infrastructure = new AIInfrastructureController(world, actor, network);
             var airExecutor = (AIProductionPlanExecutor)typeof(AIInfrastructureController).GetField("_executor", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(infrastructure)!;
             airExecutor.Start(new([new(AIProductionPlanStepKind.TrainUnit, "test-air", "test-air-port")]));

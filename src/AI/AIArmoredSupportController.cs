@@ -24,7 +24,7 @@ public sealed class AIArmoredSupportController(
     AIStrategyProfile profile,
     AIThreatAssessment? threatAssessment = null)
 {
-    public const int ResourceReserve = 800;
+
     private const float ThinkIntervalSeconds = 1.0f;
     private const float RequestTimeoutSeconds = 3.0f;
     private readonly PlayerCommandService _commands = new(network, actor.Id);
@@ -113,11 +113,10 @@ public sealed class AIArmoredSupportController(
 
         PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
             PurchasableType.Unit, selected.TypeId, actor.ArmyId, producer.UnitId));
-        Army? army = Globals.Game.Armies.Find(actor.ArmyId);
-        if (!quote.IsAvailable || army is null || army.Resources < quote.FinalPrice + ResourceReserve)
+        if (!AIResourcePlanner.CanPropose(world, actor.ArmyId, quote))
         {
             State = AIArmoredSupportState.WaitingForResources;
-            LastDecision = $"Holding {ResourceReserve} resources in reserve before ordering " +
+            LastDecision = $"Holding {AIResourcePlanner.SafetyReserve} resources in reserve before ordering " +
                 $"{selected.DisplayName} {vehicles + 1}/{profile.RequiredTanks}.";
             return;
         }
@@ -165,9 +164,11 @@ public sealed class AIArmoredSupportController(
         if (product is null || producer is null) return false;
         PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new(
             PurchasableType.Unit, product.TypeId, actor.ArmyId, producer.UnitId));
-        if (!quote.IsAvailable || Globals.Game.Armies.Find(actor.ArmyId) is not Army army ||
-            army.Resources < quote.FinalPrice + ResourceReserve) return false;
-        _ = _commands.TrainUnitAsync(producer.UnitId, product.TypeId);
+        if (!AIResourcePlanner.CanPropose(world, actor.ArmyId, quote, AIOrderPriority.Defense)) return false;
+        if (_threat.Current.AntiAirNeed >= AIDefensePlanner.AirThreatThreshold &&
+            world.AIOrderQueues.TryGetValue(actor.ArmyId, out var queue))
+            queue.Run(AIOrderPriority.Defense, () => _commands.TrainUnitAsync(producer.UnitId, product.TypeId), urgent: true);
+        else _ = _commands.TrainUnitAsync(producer.UnitId, product.TypeId);
         State = AIArmoredSupportState.TrainingAirDefense;
         LastDecision = $"Ordered mobile air defense: {product.DisplayName}.";
         return true;
@@ -191,11 +192,10 @@ public sealed class AIArmoredSupportController(
         string typeId = definition.TypeId;
         PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
             PurchasableType.Building, typeId, actor.ArmyId));
-        Army? army = Globals.Game.Armies.Find(actor.ArmyId);
-        if (!quote.IsAvailable || army is null || army.Resources < quote.FinalPrice + ResourceReserve)
+        if (!AIResourcePlanner.CanPropose(world, actor.ArmyId, quote))
         {
             State = AIArmoredSupportState.WaitingForResources;
-            LastDecision = $"Waiting for vehicle factory cost plus {ResourceReserve} reserve resources.";
+            LastDecision = $"Waiting for vehicle factory cost plus {AIResourcePlanner.SafetyReserve} reserve resources.";
             return;
         }
 
@@ -222,6 +222,7 @@ public sealed class AIArmoredSupportController(
         _factoryId = Guid.NewGuid();
         _ = _commands.BuildAndConstructAsync(typeId, position, 0.0f,
             [bulldozer.UnitId], _factoryId.Value);
+        _factoryId = _commands.LastRequest?.Request.UnitId ?? _factoryId;
         _requestElapsed = 0.0f;
         State = AIArmoredSupportState.FactoryRequested;
         LastDecision = $"Requested vehicle factory at ({position.X:0.0}, {position.Z:0.0}).";

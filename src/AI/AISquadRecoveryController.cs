@@ -16,9 +16,12 @@ public sealed class AISquadRecoveryController(
     private readonly PlayerCommandService _commands = new(network, playerId);
     private Guid[] _soldierIds = [];
     private Guid? _leaderId;
+    private readonly AIProgressWatch _progress = new();
 
     public bool IsActive { get; private set; }
     public bool IsRecovered { get; private set; }
+    public bool HasFailed { get; private set; }
+    public bool IsFinished => IsRecovered || HasFailed;
     public float AverageHealthFraction { get; private set; }
     public string LastDecision { get; private set; } = "Waiting for a returned squad.";
 
@@ -40,6 +43,8 @@ public sealed class AISquadRecoveryController(
         _leaderId = leader.UnitId;
         IsActive = true;
         IsRecovered = false;
+        HasFailed = false;
+        _progress.Reset();
         AverageHealthFraction = CalculateAverageHealth();
         LastDecision = $"Returned squad is recovering ({AverageHealthFraction * 100.0f:0}% health).";
         _ = _commands.ExecuteActionAsync([leader.UnitId], UnitActionType.DisbandSquad,
@@ -47,10 +52,10 @@ public sealed class AISquadRecoveryController(
         return true;
     }
 
-    public void Update()
+    public void Update(GameTime? gameTime = null)
     {
         using var measurement = PerformanceMeasurements.Measure("AI.SquadRecovery");
-        if (!IsActive || IsRecovered)
+        if (!IsActive || IsFinished)
             return;
         AverageHealthFraction = CalculateAverageHealth();
         Soldier[] survivors = GetSurvivors();
@@ -60,6 +65,15 @@ public sealed class AISquadRecoveryController(
             .All(unit => unit.SquadLeaderId is null);
         IsRecovered = disbandConfirmed && hasMedic &&
             AverageHealthFraction >= RequiredAverageHealthFraction;
+        if (!IsRecovered && (survivors.Length == 0 || !hasMedic ||
+            !_progress.Update("healing", AverageHealthFraction,
+                (float)(gameTime?.ElapsedGameTime.TotalSeconds ?? 1),
+                AIOrderProgressMonitor.ProductionTimeoutSeconds, 0.001f)))
+        {
+            HasFailed = true;
+            LastDecision = "Recovery cannot progress; releasing survivors for reinforcement and regrouping.";
+            return;
+        }
         LastDecision = !disbandConfirmed
             ? "Waiting for host-confirmed squad recovery formation."
             : IsRecovered
@@ -71,9 +85,11 @@ public sealed class AISquadRecoveryController(
     {
         IsActive = false;
         IsRecovered = false;
+        HasFailed = false;
         AverageHealthFraction = 0.0f;
         _soldierIds = [];
         _leaderId = null;
+        _progress.Reset();
         LastDecision = "Waiting for a returned squad.";
     }
 
