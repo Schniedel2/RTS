@@ -12,10 +12,11 @@ public enum AIArmoredSupportState
     FactoryRequested,
     ConstructingFactory,
     TrainingTanks,
+    TrainingAirDefense,
     Ready
 }
 
-/// <summary>Builds one vehicle factory and maintains the profile's initial tank complement.</summary>
+/// <summary>Maintains ground combat vehicles and a separate mobile air-defense complement.</summary>
 public sealed class AIArmoredSupportController(
     GameWorld world,
     Player actor,
@@ -34,6 +35,8 @@ public sealed class AIArmoredSupportController(
 
     public AIArmoredSupportState State { get; private set; } = AIArmoredSupportState.WaitingForResources;
     public bool IsReady => State == AIArmoredSupportState.Ready;
+    public bool HasOperationalFactory => AIStrategicCatalog.FindBuilding(world, actor.ArmyId,
+        AIStrategicBuildingNeed.ArmoredProduction, _factoryId) is { IsCompleted: true };
     public string LastDecision { get; private set; } = "Waiting to establish armored production.";
 
     public void Update(GameTime gameTime)
@@ -63,11 +66,21 @@ public sealed class AIArmoredSupportController(
             return;
         }
 
+        int airDefenses = CountSupport(IsMobileAirDefense, queued: false);
+        int queuedAirDefenses = CountSupport(IsMobileAirDefense, queued: true);
+        int desiredAirDefenses = DesiredMobileAirDefenseCount(_threat.Current.AntiAirNeed);
+        // Existing ground forces must not hide a new need for air defense.
+        // Against observed aircraft this order has priority over replenishing tanks.
+        if (_threat.Current.AntiAirNeed >= AIDefensePlanner.AirThreatThreshold &&
+            airDefenses + queuedAirDefenses < desiredAirDefenses && TryOrderAirDefense())
+            return;
+
         float vehicleBias = profile.Type == AIStrategyProfileType.AntiArmor ? 0.45f : 0.15f;
         float infantryBias = profile.Type == AIStrategyProfileType.FastRecon ? 0.35f : 0.1f;
         GameplayDefinition? selected = AIStrategicCatalog.SelectUnit(world, actor.ArmyId,
             _threat.CreateGroundCombatNeed(infantryBias, vehicleBias), requireProducer: true,
-            currentCounts: CountOwnedCatalogUnits());
+            currentCounts: CountOwnedCatalogUnits(),
+            candidateFilter: definition => definition.AI is AIUnitMetadata ai && IsArmoredSupport(ai));
         if (selected is null)
         {
             State = AIArmoredSupportState.WaitingForResources;
@@ -77,14 +90,18 @@ public sealed class AIArmoredSupportController(
 
         Building? producer = AIStrategicCatalog.FindAvailableProducer(world, actor.ArmyId, selected);
         if (producer is null) return;
-        int vehicles = world.Units.GetArmyUnits(actor.ArmyId).Count(unit => unit.ArmyId == actor.ArmyId &&
-            !unit.IsDying && IsArmoredSupport(unit));
-        int queued = world.Units.GetArmyUnits(actor.ArmyId).OfType<Building>().Where(b => b.ArmyId == actor.ArmyId && !b.IsDying)
-            .SelectMany(b => b.ProductionQueue.Orders).Count(order =>
-            GameplayCatalog.Find(PurchasableType.Unit, order.UnitTypeId)?.AI is AIUnitMetadata ai &&
-            IsArmoredSupport(ai));
+        int vehicles = CountSupport(IsArmoredSupport, queued: false);
+        int queued = CountSupport(IsArmoredSupport, queued: true);
         if (vehicles + queued >= profile.RequiredTanks)
         {
+            if (airDefenses + queuedAirDefenses < desiredAirDefenses && TryOrderAirDefense())
+                return;
+            if (airDefenses < desiredAirDefenses)
+            {
+                State = queuedAirDefenses > 0 ? AIArmoredSupportState.TrainingAirDefense : AIArmoredSupportState.WaitingForResources;
+                LastDecision = $"Mobile air defense ({airDefenses}/{desiredAirDefenses} ready, {queuedAirDefenses} queued).";
+                return;
+            }
             State = vehicles >= profile.RequiredTanks
                 ? AIArmoredSupportState.Ready
                 : AIArmoredSupportState.TrainingTanks;
@@ -117,13 +134,44 @@ public sealed class AIArmoredSupportController(
             .GroupBy(unit => unit.GameplayTypeId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
 
-    private static bool IsArmoredSupport(Unit unit) =>
-        GameplayCatalog.Find(PurchasableType.Unit, unit.GameplayTypeId)?.AI is AIUnitMetadata ai &&
-        IsArmoredSupport(ai);
-
     private static bool IsArmoredSupport(AIUnitMetadata ai) =>
         ai.Movement == AIMovementDomain.GroundVehicle &&
-        ai.Roles.HasFlag(AIUnitRole.Attacker);
+        ai.Roles.HasFlag(AIUnitRole.Attacker) &&
+        (ai.AntiInfantry > 0 || ai.AntiVehicle > 0 || ai.AntiBuilding > 0);
+
+    private static bool IsMobileAirDefense(AIUnitMetadata ai) =>
+        ai.Movement == AIMovementDomain.GroundVehicle && ai.AntiAir > 0 &&
+        ai.Roles.HasFlag(AIUnitRole.Defender | AIUnitRole.AntiAir);
+
+    public static int DesiredMobileAirDefenseCount(float airThreat) =>
+        Math.Clamp((int)MathF.Ceiling(airThreat / AIDefensePlanner.AirThreatPerDefense), 1, 3);
+
+    private int CountSupport(Func<AIUnitMetadata, bool> matches, bool queued)
+    {
+        var units = world.Units.GetArmyUnits(actor.ArmyId).Where(unit => !unit.IsDying);
+        return queued
+            ? units.OfType<Building>().SelectMany(building => building.ProductionQueue.Orders)
+                .Count(order => GameplayCatalog.Find(PurchasableType.Unit, order.UnitTypeId)?.AI is AIUnitMetadata ai && matches(ai))
+            : units.Count(unit => GameplayCatalog.Find(PurchasableType.Unit, unit.GameplayTypeId)?.AI is AIUnitMetadata ai && matches(ai));
+    }
+
+    private bool TryOrderAirDefense()
+    {
+        GameplayDefinition? product = AIStrategicCatalog.SelectUnit(world, actor.ArmyId,
+            new(AIUnitRole.Defender | AIUnitRole.AntiAir, AIMovementDomain.GroundVehicle,
+                AntiAir: 1.0f, Defense: 0.5f), requireProducer: true,
+            currentCounts: CountOwnedCatalogUnits());
+        Building? producer = product is null ? null : AIStrategicCatalog.FindAvailableProducer(world, actor.ArmyId, product);
+        if (product is null || producer is null) return false;
+        PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new(
+            PurchasableType.Unit, product.TypeId, actor.ArmyId, producer.UnitId));
+        if (!quote.IsAvailable || Globals.Game.Armies.Find(actor.ArmyId) is not Army army ||
+            army.Resources < quote.FinalPrice + ResourceReserve) return false;
+        _ = _commands.TrainUnitAsync(producer.UnitId, product.TypeId);
+        State = AIArmoredSupportState.TrainingAirDefense;
+        LastDecision = $"Ordered mobile air defense: {product.DisplayName}.";
+        return true;
+    }
 
     private void BuildFactory()
     {

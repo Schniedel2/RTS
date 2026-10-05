@@ -64,6 +64,7 @@ public class MeshHandler
 
         //  vehicles        
         Meshes["tank-1"] = BBModelLoader.Load(Path.Combine(directory, "vehicles/tank-1.bbmodel"), Color.White);
+        Meshes["gepard-1"] = BBModelLoader.Load(Path.Combine(directory, "vehicles/gepard-1.bbmodel"), Color.White);
         Meshes["heli-1"] = BBModelLoader.Load(Path.Combine(directory, "vehicles/heli-1.bbmodel"), Color.White);
         Meshes["harvester-1"] = BBModelLoader.Load(Path.Combine(directory, "vehicles/harvester-1.bbmodel"), Color.White);
         Meshes["heli-1"] = BBModelLoader.Load(Path.Combine(directory, "vehicles/heli-1.bbmodel"), Color.White);

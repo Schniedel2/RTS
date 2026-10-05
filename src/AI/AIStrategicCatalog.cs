@@ -54,8 +54,10 @@ public static class AIStrategicCatalog
             _ => 0
         });
 
-    public static GameplayDefinition? SelectUnit(GameWorld world, Guid armyId, AIProductionNeed need, bool requireProducer = false, IReadOnlyDictionary<string, int>? currentCounts = null) =>
+    public static GameplayDefinition? SelectUnit(GameWorld world, Guid armyId, AIProductionNeed need, bool requireProducer = false,
+        IReadOnlyDictionary<string, int>? currentCounts = null, Func<GameplayDefinition, bool>? candidateFilter = null) =>
         Select(world, armyId, GameplayCatalog.All.Where(d => d.Type == PurchasableType.Unit &&
+            (candidateFilter is null || candidateFilter(d)) &&
             !float.IsNegativeInfinity(AIUnitSelector.Score(d, need, currentCounts)) &&
             (!requireProducer || FindAvailableProducer(world, armyId, d) is not null)), d => AIUnitSelector.Score(d, need, currentCounts));
 

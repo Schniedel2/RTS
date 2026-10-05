@@ -18,6 +18,7 @@ public static class UnitFactory
         ["helicopter"] = (position, id) => new Helicopter(position, id),
         ["heli"] = (position, id) => new Helicopter(position, id),
         ["tank"] = (position, id) => new Tank(position, id),
+        ["gepard"] = (position, id) => new Gepard(position, id),
         ["jeep"] = (position, id) => new Jeep(position, id),
         ["motorbike"] = (position, id) => new MotorBike(position, id),
         ["editor"] = (position, id) => new TerrainEditorTool(position, id),

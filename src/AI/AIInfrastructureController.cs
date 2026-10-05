@@ -19,7 +19,7 @@ public enum AIInfrastructureState
     AirSupportReady
 }
 
-/// <summary>Expands storage when needed and establishes the AI's first air-support base.</summary>
+/// <summary>Expands storage and maintains a small catalog-selected air-combat force.</summary>
 public sealed class AIInfrastructureController(
     GameWorld world,
     Player actor,
@@ -27,6 +27,7 @@ public sealed class AIInfrastructureController(
 {
     public const float StorageFreeFractionThreshold = 0.15f;
     public const int OperationalPowerHeadroom = 10;
+    public const int DesiredAirCombatUnits = 2;
     private const float ThinkIntervalSeconds = 1.0f;
     private readonly AIProductionPlanExecutor _executor = new(world, actor, network);
     private float _thinkElapsed;
@@ -34,6 +35,7 @@ public sealed class AIInfrastructureController(
 
     public AIInfrastructureState State { get; private set; } = AIInfrastructureState.MonitoringStorage;
     public bool IsAirSupportReady => State == AIInfrastructureState.AirSupportReady;
+    public bool HasActivePlan => _executor.IsBusy;
     public bool RequiresImmediatePower =>
         ArmyPowerStatus.Calculate(world.Units.GetArmyUnits(actor.ArmyId), actor.ArmyId).Balance <
             OperationalPowerHeadroom;
@@ -104,7 +106,7 @@ public sealed class AIInfrastructureController(
         if (HasAirSupport())
         {
             State = AIInfrastructureState.AirSupportReady;
-            LastDecision = "First catalog air-combat unit is ready.";
+            LastDecision = $"Air-combat force ready ({DesiredAirCombatUnits} units).";
             return;
         }
         if (airUnit is null)
@@ -117,9 +119,9 @@ public sealed class AIInfrastructureController(
         StartCatalogPlan(PurchasableType.Unit, airUnit.TypeId, gameTime);
     }
 
-    private bool HasAirSupport() => world.Units.GetArmyUnits(actor.ArmyId).Any(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying &&
+    private bool HasAirSupport() => world.Units.GetArmyUnits(actor.ArmyId).Count(unit => unit.ArmyId == actor.ArmyId && !unit.IsDying &&
         GameplayCatalog.Find(PurchasableType.Unit, unit.GameplayTypeId)?.AI is AIUnitMetadata ai &&
-        ai.Movement == AIMovementDomain.Air && ai.Roles.HasFlag(AIUnitRole.Attacker));
+        ai.Movement == AIMovementDomain.Air && ai.Roles.HasFlag(AIUnitRole.Attacker)) >= DesiredAirCombatUnits;
 
     private bool HandleCrewPowerSolution(AIPowerSolution solution, GameTime gameTime)
     {

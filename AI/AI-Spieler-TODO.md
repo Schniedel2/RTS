@@ -19,10 +19,12 @@ Die Modellangaben beziehen sich auf Codex-Aufgaben. `gpt-6-luna` eignet sich fü
   - Ursprüngliche Aufgabe beziehungsweise Sammelposition soll nach Möglichkeit wiederhergestellt werden.
   - Fertig, wenn keine Verteidigungseinheit nach Ende des Alarms am ehemaligen Ziel stehen bleibt.
 
-- [ ] **Taktische KI während des Wiederaufbaus aktiv halten**
+- [x] **Taktische KI während des Wiederaufbaus aktiv halten**
   - **Empfohlenes Modell:** `gpt-6-sol` mit `high` Reasoning.
   - Der Verlust von Reaktor, Raffinerie oder Kaserne startet den Wiederaufbau, ohne Verteidigung, Rückzug und vorhandene Kampftruppen abzuschalten.
   - Fertig, wenn die KI während eines Infrastrukturverlusts weiterhin auf Angriffe reagiert.
+  - **Ergebnis (05.10.2026):** Die erste abgeschlossene Basisvorbereitung aktiviert die taktischen Controller bis zum nächsten Match-Neustart. Erneuter Kernaufbau beendet deren Updates nicht mehr: Bedrohungsbewertung, vorhandene Scouts, Basisverteidigung, laufende Squad-Missionen/Rückzüge und aktive Erholung bleiben erhalten. Neue optionale Ausbildung, Scout-Nachkauf und Ausbau warten während des Kernwiederaufbaus; bestätigte Host-Aufträge laufen weiter. Status zeigt Wiederaufbau und taktische Entscheidung gemeinsam. Strommangel wird weiterhin durch den Infrastruktur-Controller behandelt. Ablauf und Grenzen: [KI-Wiederaufbau-und-Taktik.md](KI-Wiederaufbau-und-Taktik.md).
+  - **Prüfung:** Build ohne Warnungen/Fehler; alle 1.096 Checks bestanden, davon 39 neue in `tests/GridNavigationChecks/AIReconstructionChecks.cs`. Reaktor-/Raffinerie-/Kasernenverlust, Verteidigungsrequests samt echter Host-Anwendung und Rückkehr, laufender Bau, Ressourcenpriorität, Squad-Angriff/Rückzug/Erholung, Wiederaufnahme, Match-Neustart, Idle und Host-Grenze geprüft. Grafikfreie Szenarien; keine neue optische Schlachtabnahme behauptet.
 
 - [ ] **Festgefahrene und unerreichbare AI-Aufträge erkennen**
   - **Empfohlenes Modell:** `gpt-6-astra` mit `high` Reasoning.

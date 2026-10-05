@@ -28,6 +28,10 @@ public class Helicopter : MobileUnit
     public HelicopterFlightState FlightState { get; private set; } = HelicopterFlightState.Landed;
     public bool IsLanded => FlightState == HelicopterFlightState.Landed;
     public float MaximumFuel { get; set; } = 120;
+    /// <summary>Delivery, landing and supply returns finish before a new combat mission can take over.</summary>
+    public bool IsReadyForCombatMission => !IsDying && !IsEmbarked && !_returning &&
+        Fuel >= MaximumFuel * 0.25f && Ammunition > 0 &&
+        FlightState is HelicopterFlightState.Landed or HelicopterFlightState.Flying or HelicopterFlightState.Hovering;
     public float Fuel { get; private set; } = 120;
     public int MaximumAmmunition { get; set; } = 40;
     public int Ammunition { get; private set; } = 40;

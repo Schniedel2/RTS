@@ -3168,6 +3168,7 @@ checks += UnitQueryChecks.Run();
 checks += SimulationIsolationChecks.Run();
 checks += ComplexCommandChecks.Run();
 checks += SessionLifecycleChecks.Run();
+checks += AIReconstructionChecks.Run();
 if (args.Contains("--unit-query-report"))
     System.IO.File.WriteAllText(System.IO.Path.Combine("AI", "Unit-Abfragen-Messung.md"), UnitQueryChecks.MeasurementReport);
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");

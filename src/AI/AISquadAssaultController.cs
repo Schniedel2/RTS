@@ -46,12 +46,13 @@ public sealed class AISquadAssaultController(
     private Guid? _targetBuildingId;
     private Guid? _issuedAttackTargetId;
     private Guid? _lastTargetBuildingId;
-    private Guid[] _escortTankIds = [];
+    private Guid[] _escortVehicleIds = [];
     private bool _needsReinforcements;
 
     public AISquadAssaultState State { get; private set; } = AISquadAssaultState.WaitingForSquad;
     public bool HasActiveMission => _targetBuildingId is not null || State == AISquadAssaultState.Retreating;
     public string LastDecision { get; private set; } = "Waiting for the first squad.";
+    public Guid? ReservedScoutId { get; set; }
 
     public void BeginNextMission()
     {
@@ -60,7 +61,7 @@ public sealed class AISquadAssaultController(
         _targetBuildingId = null;
         _issuedAttackTargetId = null;
         _needsReinforcements = false;
-        _escortTankIds = [];
+        _escortVehicleIds = [];
         _readinessElapsed = 0.0f;
         ResetProgressWatch();
         _orderElapsed = OrderRefreshSeconds;
@@ -130,7 +131,7 @@ public sealed class AISquadAssaultController(
             }
             _targetBuildingId = target.UnitId;
             _leaderId = leader.UnitId;
-            _escortTankIds = FindAvailableTanks().Select(tank => tank.UnitId).ToArray();
+            _escortVehicleIds = FindAvailableCombatEscorts().Select(tank => tank.UnitId).ToArray();
             _orderElapsed = OrderRefreshSeconds;
             ResetProgressWatch();
         }
@@ -223,8 +224,7 @@ public sealed class AISquadAssaultController(
                 HorizontalDistanceSquared(candidate.Position, leader.Position) <= radiusSquared &&
                 world.Visibility.GetDisplayedTerrainVisibility(
                     armyId, world.GameGrid.ToCell(candidate.Position), forMinimap: false) == VisibilityState.Visible &&
-                attackers.Count(attacker => attacker.CanAttackTarget(candidate) && attacker.AttackDamage > 0.0f) >=
-                    MinimumFightingSoldiers)
+                attackers.Any(attacker => attacker.CanAttackTarget(candidate) && attacker.AttackDamage > 0.0f))
             .OrderBy(candidate => HorizontalDistanceSquared(candidate.Position, leader.Position))
             .ThenBy(candidate => candidate.UnitId)
             .FirstOrDefault();
@@ -312,10 +312,10 @@ public sealed class AISquadAssaultController(
         Building? home = FindHomeBuilding();
         if (home is null)
             return;
-        Guid[] tankIds = FindMissionVehicles().Select(vehicle => vehicle.UnitId).ToArray();
+        Guid[] escortIds = FindMissionVehicles().Select(vehicle => vehicle.UnitId).ToArray();
         Guid[] ids = leader is null || leader.IsDying || leader.IsEmbarked
-            ? [.. members.Select(member => member.UnitId), .. tankIds]
-            : [leader.UnitId, .. tankIds];
+            ? [.. members.Select(member => member.UnitId), .. escortIds]
+            : [leader.UnitId, .. escortIds];
         if (ids.Length == 0)
             return;
         _ = RetreatAsync(ids, home.RallyPoint ?? home.Position);
@@ -323,12 +323,23 @@ public sealed class AISquadAssaultController(
 
     private async Task AdvanceAndAttackAsync(Guid[] unitIds, Vector3 targetPosition, Guid targetId)
     {
+        Unit? target = world.Units.FindById(targetId);
+        Guid[] attackers = unitIds.Where(id => world.Units.FindById(id) is Unit unit &&
+            target is not null && unit.CanAttackTarget(target)).ToArray();
+        // Air-only escorts follow the leader while the squad attacks a building.
+        // They receive a combat order when an aircraft enters the local threat area.
+        if (_leaderId is Guid leaderId)
+        {
+            Guid[] followers = unitIds.Except(attackers).Where(id => id != leaderId &&
+                world.Units.FindById(id) is Unit unit && unit.FollowUnitId != leaderId).ToArray();
+            if (followers.Length > 0) await _commands.FollowAsync(followers, leaderId);
+        }
         // Keep existing routes: refreshing the combat target must not run group A* again.
-        Guid[] movingIds = unitIds.Where(id => world.Units.FindById(id) is MobileUnit unit &&
+        Guid[] movingIds = attackers.Where(id => world.Units.FindById(id) is MobileUnit unit &&
             NeedsAdvanceOrder(unit, targetPosition)).ToArray();
         if (movingIds.Length > 0)
             await _commands.GotoAsync(movingIds, targetPosition);
-        await _commands.AttackTargetAsync(unitIds, targetId);
+        if (attackers.Length > 0) await _commands.AttackTargetAsync(attackers, targetId);
     }
 
     internal static bool NeedsAdvanceOrder(MobileUnit unit, Vector3 targetPosition) =>
@@ -349,27 +360,30 @@ public sealed class AISquadAssaultController(
         .ThenBy(building => building.UnitId)
         .FirstOrDefault();
 
-    private MobileUnit[] FindAvailableTanks() => world.Units.GetArmyUnits(armyId).OfType<MobileUnit>()
+    private MobileUnit[] FindAvailableCombatEscorts() => world.Units.GetArmyUnits(armyId).OfType<MobileUnit>()
         .Where(vehicle => vehicle.ArmyId == armyId && !vehicle.IsDying && !vehicle.IsEmbarked &&
-            vehicle.Occupancy?.IsOperational != false && IsArmoredEscort(vehicle))
+            vehicle.UnitId != ReservedScoutId && !vehicle.IsLeavingBuilding &&
+            vehicle.Occupancy?.IsOperational != false && IsCombatEscort(vehicle) &&
+            (vehicle is not Helicopter helicopter || helicopter.IsReadyForCombatMission))
         .OrderBy(vehicle => vehicle.UnitId)
         .ToArray();
 
     private MobileUnit[] FindMissionVehicles()
     {
-        HashSet<Guid> ids = _escortTankIds.ToHashSet();
+        HashSet<Guid> ids = _escortVehicleIds.ToHashSet();
         return world.Units.GetArmyUnits(armyId).OfType<MobileUnit>()
             .Where(vehicle => ids.Contains(vehicle.UnitId) && vehicle.ArmyId == armyId &&
                 !vehicle.IsDying && !vehicle.IsEmbarked && vehicle.Occupancy?.IsOperational != false &&
-                IsArmoredEscort(vehicle))
+                IsCombatEscort(vehicle) && vehicle.UnitId != ReservedScoutId &&
+                (vehicle is not Helicopter helicopter || helicopter.IsReadyForCombatMission))
             .OrderBy(vehicle => vehicle.UnitId)
             .ToArray();
     }
 
-    private static bool IsArmoredEscort(Unit unit) =>
+    private static bool IsCombatEscort(Unit unit) =>
         GameplayCatalog.Find(PurchasableType.Unit, unit.GameplayTypeId)?.AI is AIUnitMetadata ai &&
-        ai.Movement == AIMovementDomain.GroundVehicle &&
-        ai.Roles.HasFlag(AIUnitRole.Attacker) && ai.AntiVehicle > 0.0f;
+        ai.Movement is AIMovementDomain.GroundVehicle or AIMovementDomain.Air &&
+        ai.Roles.HasFlag(AIUnitRole.Attacker) && (ai.AntiVehicle > 0.0f || ai.AntiAir > 0.0f);
 
     private static bool HasRole(Unit unit, AIUnitRole roles) =>
         GameplayCatalog.Find(PurchasableType.Unit, unit.GameplayTypeId)?.AI is AIUnitMetadata ai &&

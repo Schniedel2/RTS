@@ -71,7 +71,7 @@ internal static class CatalogChecks
             Globals.MeshHandler = new MeshHandler();
             Mesh mesh = savedMeshes.Meshes["barracks-1"];
             foreach (string name in new[] { "Soldier-2", "blue-pick-up-truck", "bulldozer-1", "harvester-1", "heli-1", "motorbike-1",
-                "tank-1", "TankBody-1", "TankTurret-1", "TankBarrel-2", "barracks-1", "gdi-base", "reaktor-1", "reaktor-2", "gatling-tower-1",
+                "tank-1", "gepard-1", "TankBody-1", "TankTurret-1", "TankBarrel-2", "barracks-1", "gdi-base", "reaktor-1", "reaktor-2", "gatling-tower-1",
                 "vehicle-factory-1", "antenna-1", "helipad-1", "silo-1", "tiberium-refinery-1", "tiberiumSource-1", "building-1", "default",
                 "ak47", "m16", "breda-m1935pg", "brok17", "kraber-ap-sniper", "uzi-mac-10", "minigun", "hunting", "ar-15", "sten-mk2-apocalypse",
                 "rpg", "toolKit", "medKit", "rpg-projectile" }) Globals.MeshHandler.Meshes[name] = mesh;

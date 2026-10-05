@@ -151,13 +151,18 @@ internal static class AIStrategicCatalogChecks
                 "Executor uses an existing alternate producer when the planned producer is absent");
             AddUnit("test-air"); executor.Update(new(TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(1)));
             Check(executor.State == AIPlanExecutionState.Completed, "Alternate-producer result advances the active plan");
+            list.Remove(list.First(unit => unit.GameplayTypeId == "test-air"));
             var infrastructure = new AIInfrastructureController(world, actor, network);
             var airExecutor = (AIProductionPlanExecutor)typeof(AIInfrastructureController).GetField("_executor", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(infrastructure)!;
             airExecutor.Start(new([new(AIProductionPlanStepKind.TrainUnit, "test-air", "test-air-port")]));
             Set(infrastructure, typeof(AIInfrastructureController), "_airPlan", true);
             infrastructure.Update(new(TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(1)));
+            Check(!infrastructure.IsAirSupportReady && airExecutor.IsBusy && port.ProductionQueue.Orders.Count == 1,
+                "One air unit keeps the second air-combat slot active without duplicating its queued order");
+            AddUnit("test-air");
+            infrastructure.Update(new(TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(1)));
             Check(infrastructure.IsAirSupportReady && !airExecutor.IsBusy && port.ProductionQueue.Orders.Count == 1,
-                "Existing air unit completes infrastructure goal before another training step executes");
+                "Two existing air units complete infrastructure goal before another training step executes");
             var foreignHome = AddBuilding("test-home"); Set(foreignHome, typeof(Unit), "<ArmyId>k__BackingField", Guid.NewGuid());
             Check(AIStrategicCatalog.FindBuilding(world, army.Id, AIStrategicBuildingNeed.Base, foreignHome.UnitId) == home,
                 "Preferred building ID cannot select another army's producer");

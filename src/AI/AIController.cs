@@ -696,6 +696,7 @@ public sealed class AIController
     }
 
     private readonly ArmyGoalController _goals = new();
+    private bool _tacticsActivated;
     private ScoutingController? _scouting;
     private AIBaseDefenseController? _baseDefense;
     private AISquadPreparationController? _squadPreparation;
@@ -734,6 +735,7 @@ public sealed class AIController
 
     public void BeginMatch(int matchSeed, Guid armyId)
     {
+        _tacticsActivated = false;
         _scouting = null;
         _baseDefense = null;
         _squadPreparation = null;
@@ -757,7 +759,11 @@ public sealed class AIController
             return;
 
         _goals.Update(gameTime, ai.Player, world, network, ai.SetStatus);
-        if (_goals.Goal != AIGoalState.BaseDefenseReady)
+        bool coreReady = _goals.Goal == AIGoalState.BaseDefenseReady;
+        // Initial setup unlocks tactics once per match. Maintenance must never
+        // suspend existing defenders, scouts or a squad's combat/retreat state.
+        _tacticsActivated |= coreReady;
+        if (!_tacticsActivated)
             return;
 
         _strategyProfile ??= AIStrategyProfile.Create(0, ai.Player.ArmyId);
@@ -778,7 +784,7 @@ public sealed class AIController
             world, ai.Player, network, _threatAssessment);
 
         bool infrastructureUpdated = false;
-        if (_infrastructure.RequiresImmediatePower)
+        if (coreReady && _infrastructure.RequiresImmediatePower)
         {
             _infrastructure.Update(gameTime);
             infrastructureUpdated = true;
@@ -803,7 +809,9 @@ public sealed class AIController
             _scoutId = scout?.UnitId;
             if (scout is null)
             {
-                _scoutingDecision = TryRequestReplacementScout(ai.Player, world, network);
+                _scoutingDecision = coreReady
+                    ? TryRequestReplacementScout(ai.Player, world, network)
+                    : "Scouting paused; core reconstruction takes priority over a replacement scout.";
             }
             else
             {
@@ -819,11 +827,16 @@ public sealed class AIController
 
         _scouting.Update(gameTime);
         _baseDefense.Update(gameTime, _scoutId);
-        _armoredSupport.Update(gameTime);
-        if (_armoredSupport.IsReady)
+        // Keep discretionary production/expansion from taking the maintenance
+        // plan's resources or builder. Confirmed host jobs continue normally.
+        if (coreReady)
+            _armoredSupport.Update(gameTime);
+        // Completed production infrastructure is enough to begin expansion.
+        // Combat losses and a pending vehicle order must not suspend air research.
+        if (coreReady && _armoredSupport.HasOperationalFactory)
         {
             _defensePlanner.Update(gameTime);
-            if (!_defensePlanner.IsBusy && !infrastructureUpdated)
+            if ((!_defensePlanner.IsBusy || _infrastructure.HasActivePlan) && !infrastructureUpdated)
                 _infrastructure.Update(gameTime);
         }
         if (_squadCyclePhase == SquadCyclePhase.Combat &&
@@ -836,7 +849,7 @@ public sealed class AIController
         if (_squadCyclePhase is SquadCyclePhase.InitialPreparation or
             SquadCyclePhase.Reinforcing or SquadCyclePhase.Reassembling)
         {
-            if (!_squadPreparation.IsReady)
+            if (coreReady && !_squadPreparation.IsReady)
                 _squadPreparation.Update(gameTime, _scoutId);
             if (_squadPreparation.IsReady)
             {
@@ -864,7 +877,10 @@ public sealed class AIController
 
         if (_squadCyclePhase == SquadCyclePhase.Combat &&
             (_squadPreparation.IsReady || _squadAssault.HasActiveMission) && !_baseDefense.IsEngaging)
+        {
+            _squadAssault.ReservedScoutId = _scoutId;
             _squadAssault.Update(gameTime);
+        }
         if (_baseDefense.IsEngaging)
             _scoutingDecision = _baseDefense.LastDecision;
         else if (_squadCyclePhase is SquadCyclePhase.Reinforcing or SquadCyclePhase.Reassembling ||
@@ -877,12 +893,17 @@ public sealed class AIController
         else if (scout is not null)
             _scoutingDecision = $"Scout {scout.UnitId.ToString()[..8]} is exploring unknown terrain; " +
                 "the first squad is assembled at the base and awaits orders.";
-        if (!_armoredSupport.IsReady)
-            _scoutingDecision = $"{_scoutingDecision} | {_armoredSupport.LastDecision}";
-        else if (_defensePlanner.IsBusy)
-            _scoutingDecision = $"{_scoutingDecision} | {_defensePlanner.LastDecision}";
-        else if (!_infrastructure.IsAirSupportReady)
-            _scoutingDecision = $"{_scoutingDecision} | {_infrastructure.LastDecision}";
+        if (!coreReady)
+            _scoutingDecision = $"Core reconstruction: {_goals.LastDecision} | {_scoutingDecision}";
+        else
+        {
+            if (!_armoredSupport.IsReady)
+                _scoutingDecision = $"{_scoutingDecision} | {_armoredSupport.LastDecision}";
+            if (_defensePlanner.IsBusy)
+                _scoutingDecision = $"{_scoutingDecision} | {_defensePlanner.LastDecision}";
+            if (_infrastructure.HasActivePlan || _armoredSupport.HasOperationalFactory && !_infrastructure.IsAirSupportReady)
+                _scoutingDecision = $"{_scoutingDecision} | {_infrastructure.LastDecision}";
+        }
     }
 
     private string TryRequestReplacementScout(Player actor, GameWorld world, NetworkHandler network)
