@@ -36,7 +36,7 @@ public sealed class Harvester : Car
         new(UnitActionType.Stop, "Stop", 7, 1)
     ];
 
-    public Harvester(Vector3 position, Guid unitId) : base(position, unitId)
+    public Harvester(Vector3 position, Guid unitId, bool loadModel = true) : base(position, unitId)
     {
         Length = 4;
         Width = 3;
@@ -55,7 +55,7 @@ public sealed class Harvester : Car
             ReverseAlignmentToleranceDegrees: 8.0f,
             ReverseMaximumDistance: 5.0f);
         HitPoints = MaxHitPoints = 900.0f;
-        SetMesh("harvester-1");
+        if (loadModel) SetMesh("harvester-1");
     }
 
     internal void ApplyHarvestState(HarvestPhase phase, float cargoAmount)

@@ -4,55 +4,30 @@ using RTS.Network;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
 internal static class HarvestSystemChecks
 {
-    private static T Empty<T>() where T : class => (T)RuntimeHelpers.GetUninitializedObject(typeof(T));
-    private static void Set(object target, Type type, string name, object value) =>
-        type.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(target, value);
-
     public static int Run()
     {
         int checks = 0;
         void Check(bool condition, string message) { if (!condition) throw new Exception(message); checks++; }
-        var savedWorld = Globals.World;
-        var savedGame = Globals.Game;
         using var network = new NetworkHandler();
-        try
         {
-            var terrain = Empty<Terrain>();
-            Set(terrain, typeof(Terrain), "<Width>k__BackingField", 41);
-            Set(terrain, typeof(Terrain), "<Height>k__BackingField", 41);
-            Set(terrain, typeof(Terrain), "HeightMap", new float[41 * 41]);
-            var grid = new GameGrid(40, 40, 1); grid.BindTerrain(terrain);
-            var world = Empty<GameWorld>();
-            var units = new UnitHandler();
-            var tiberium = new TiberiumHandler();
-            Set(world, typeof(GameWorld), "_terrain", terrain);
-            Set(world, typeof(GameWorld), "<GameGrid>k__BackingField", grid);
-            Set(world, typeof(GameWorld), "<Units>k__BackingField", units);
-            Set(world, typeof(GameWorld), "<Tiberium>k__BackingField", tiberium);
-            Set(world, typeof(GameWorld), "<Markers>k__BackingField", new MarkerHandler());
-            Set(world, typeof(GameWorld), "<PathfindingManager>k__BackingField", new PathfindingManager(world));
+            var world = SimulationFixture.World();
+            var units = world.Units;
+            var tiberium = world.Tiberium;
             var armies = new ArmyHandler();
             Guid owner = network.LocalPeerId, armyId = Guid.NewGuid();
             Army army = armies.EnsureArmy(armyId, owner);
-            var game = Empty<RTSGame>();
-            Set(game, typeof(RTSGame), "<World>k__BackingField", world);
-            Set(game, typeof(RTSGame), "<Armies>k__BackingField", armies);
-            Set(game, typeof(RTSGame), "<Network>k__BackingField", network);
-            Globals.World = world; Globals.Game = game;
-            var list = (IList<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(units)!;
-            var harvester = new Harvester(new Vector3(5.5f, 0, 5.5f), Guid.NewGuid());
-            var silo = new TiberiumRefinery(new Vector3(25.5f, 0, 25.5f), Guid.NewGuid());
+            var list = new SimulationFixture.Membership(world);
+            var harvester = new Harvester(new Vector3(5.5f, 0, 5.5f), Guid.NewGuid(), loadModel: false);
+            var silo = new TiberiumRefinery(new Vector3(25.5f, 0, 25.5f), Guid.NewGuid(), loadModel: false);
             silo.AdvanceConstruction(silo.TotalBuildingPointsNeeded);
-            Set(harvester, typeof(Unit), "<ArmyId>k__BackingField", armyId);
-            Set(silo, typeof(Unit), "<ArmyId>k__BackingField", armyId);
+            harvester.SetArmy(armyId);
+            silo.SetArmy(armyId);
             list.Add(harvester); list.Add(silo);
-            var input = new NetworkInput(network);
+            using var input = new NetworkInput(network, world, armies);
             var commands = new List<NetworkMessage>();
             Task Publish(NetworkMessage command) { commands.Add(command); network.ApplyLocalCommand(command); return Task.CompletedTask; }
             Func<bool>? valid = null;
@@ -153,7 +128,6 @@ internal static class HarvestSystemChecks
             list.Remove(harvester); Tick();
             Check(system.ActiveJobCount == 0, "Removing a harvester removes its job");
         }
-        finally { Globals.World = savedWorld; Globals.Game = savedGame; }
         return checks;
     }
 }

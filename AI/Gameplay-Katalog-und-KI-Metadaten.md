@@ -2,6 +2,8 @@
 
 Seit Architektur-Aufgabe 08 werden Katalog und Factory-Registrierungen beim ersten Katalogzugriff auf Konsistenz geprüft. Forschungs-Grants, Zeiten und Angebote stammen aus dem Katalog; gemeinsame Building-Regeln unterstützen mehrere Forschungsproduzenten. Unbekannte Produkte sind nicht verfügbare Quotes mit erklärendem Fehlergrund; kostenlose Sandbox-Typen sind ausdrücklich aufgelistet. Erweiterung und Prüfgrenzen stehen in [Katalog-Registrierung.md](Katalog-Registrierung.md).
 
+Der aktuelle Arbeitsablauf für neue Units, Buildings, Forschungen, Perks, Fähigkeiten und KI-Angebote steht in [Erweiterungsleitfaden.md](Erweiterungsleitfaden.md). Er unterscheidet kataloggesteuerte Produkt-/KI-Auswahl von weiterhin expliziter Laufzeit- und Netzwerklogik.
+
 ## Ziel
 
 Spieleroberfläche, Host und KI sollen dieselben statischen Spieldaten verwenden. Eine neue Einheit soll nicht an mehreren Stellen mit Preis, Bauzeit und Produktionsgebäude eingetragen werden müssen. Der gemeinsame Einstiegspunkt ist `GameplayCatalog` in `src/Gameplay/GameplayCatalog.cs`.

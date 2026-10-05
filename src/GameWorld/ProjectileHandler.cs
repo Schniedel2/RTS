@@ -7,6 +7,9 @@ namespace RTS;
 
 public sealed class ProjectileHandler
 {
+    private readonly Action<Vector3>? _emitExplosion;
+    public ProjectileHandler() : this(position => Globals.World.Particles.EmitExplosion(position)) { }
+    public ProjectileHandler(Action<Vector3>? emitExplosion) => _emitExplosion = emitExplosion;
     private readonly List<Projectile> _projectiles = [];
     private readonly List<PendingVisualImpact> _pendingImpacts = [];
     public int ActiveProjectileCount => _projectiles.Count + _pendingImpacts.Count;
@@ -49,7 +52,7 @@ public sealed class ProjectileHandler
         int index = _projectiles.FindIndex(projectile => projectile.ProjectileId == projectileId);
         if (index < 0)
         {
-            Globals.World.Particles.EmitExplosion(position);
+            _emitExplosion?.Invoke(position);
             return;
         }
         if (!_pendingImpacts.Exists(impact => impact.ProjectileId == projectileId))
@@ -66,7 +69,7 @@ public sealed class ProjectileHandler
             if (projectile.IsExpired)
             {
                 if (projectile.ExplodeOnExpiry)
-                    Globals.World.Particles.EmitExplosion(projectile.Position);
+                    _emitExplosion?.Invoke(projectile.Position);
                 _projectiles.RemoveAt(index);
             }
         }
@@ -79,7 +82,7 @@ public sealed class ProjectileHandler
                 continue;
 
             _projectiles.RemoveAll(projectile => projectile.ProjectileId == impact.ProjectileId);
-            Globals.World.Particles.EmitExplosion(impact.Position);
+            _emitExplosion?.Invoke(impact.Position);
             _pendingImpacts.RemoveAt(index);
         }
     }

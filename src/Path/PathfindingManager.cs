@@ -28,7 +28,7 @@ public class PathfindingManager
         Vector2 target,
         int pathRequestId)
     {
-        if (!MobileUnit.IsMovementAuthority) return;
+        if (!_map.IsMovementAuthority) return;
         EnsureSession();
         Debug($"request unit={ShortId(unit.UnitId)} target=({target.X:0.0},{target.Y:0.0}) request={pathRequestId}");
         _requests.Enqueue(
@@ -49,13 +49,13 @@ public class PathfindingManager
             if (request.Unit._pathRequestId == request.PathRequestId && request.Unit.CurrentCommand?.Target == request.Target)
                 request.Unit.OnPathSearchFailed();
         Scheduler.Reset();
-        _network = Globals.Game?.Network;
+        _network = _map.SimulationNetwork ?? (_map.SimulationArmies is null ? Globals.Game?.Network : null);
         _sessionGeneration = _network?.SessionGeneration ?? 0;
     }
 
     private void EnsureSession()
     {
-        Network.NetworkHandler? network = Globals.Game?.Network;
+        Network.NetworkHandler? network = _map.SimulationNetwork ?? (_map.SimulationArmies is null ? Globals.Game?.Network : null);
         if (!ReferenceEquals(_network, network) || (network?.SessionGeneration ?? 0) != _sessionGeneration)
         {
             if (_network is not null) Reset();
@@ -68,7 +68,7 @@ public class PathfindingManager
         double maximumMilliseconds = PlanningScheduler.MaximumMillisecondsPerUpdate)
     {
         EnsureSession();
-        if (!MobileUnit.IsMovementAuthority) { Reset(); return; }
+        if (!_map.IsMovementAuthority) { Reset(); return; }
         for (int count = 0; count < 64 && _requests.TryDequeue(out PathRequest request); count++)
         {
             MobileUnit unit = request.Unit;
@@ -102,7 +102,7 @@ public class PathfindingManager
         // Synchronous compatibility for diagnostics. Runtime gameplay enqueues
         // CreateSearch(...).Work() into Scheduler instead.
         path = [];
-        return MobileUnit.IsMovementAuthority &&
+        return _map.IsMovementAuthority &&
             _pathfinder.TryFindPathFrom(unit, unit.MovementProfile, start, target, out path);
     }
 

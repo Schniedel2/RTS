@@ -6,7 +6,7 @@ using System.Linq;
 namespace RTS.Network;
 
 /// <summary>Host-only scheduler. Clients receive movement orders and absolute cell results.</summary>
-public sealed class EarthworkController(GameWorld world, Guid hostId, Action<NetworkMessage> publish, bool refreshGraphics = true)
+public sealed class EarthworkController(GameWorld world, Guid hostId, Action<NetworkMessage> publish, bool refreshGraphics = true, ArmyHandler? armies = null)
 {
     private sealed class Job(GDIBulldozer worker, Guid player, EarthworkOrder order, List<Point> cells)
     {
@@ -27,7 +27,7 @@ public sealed class EarthworkController(GameWorld world, Guid hostId, Action<Net
     {
         if (request.UnitId is not Guid id || request.EarthworkKind is not EarthworkKind kind || !Enum.IsDefined(kind) ||
             world.Units.FindById(id) is not GDIBulldozer worker || worker.IsDying || worker.IsEmbarked || worker.IsLeavingBuilding ||
-            worker.Occupancy?.IsOperational == false || !Globals.Game.Armies.CanControl(request.SenderId, worker.ArmyId) ||
+            worker.Occupancy?.IsOperational == false || !(armies ?? Globals.Game.Armies).CanControl(request.SenderId, worker.ArmyId) ||
             !float.IsFinite(request.X) || !float.IsFinite(request.Z) || request.X < 0 || request.Z < 0 ||
             request.X >= world.Terrain.Width - 1 || request.Z >= world.Terrain.Height - 1)
             return null;
@@ -62,11 +62,12 @@ public sealed class EarthworkController(GameWorld world, Guid hostId, Action<Net
             NetworkMessageType.FollowRequest or NetworkMessageType.AttackTargetRequest or NetworkMessageType.AttackGroundRequest or
             NetworkMessageType.BuildConstructionRequest or NetworkMessageType.EnterUnitRequest)) return;
         foreach (Guid id in request.UnitIds ?? (request.UnitId is Guid single ? new[] { single } : Array.Empty<Guid>()))
-            if (_jobs.TryGetValue(id, out Job? job) && Globals.Game.Armies.CanControl(request.SenderId, job.Worker.ArmyId)) Cancel(id);
+            if (_jobs.TryGetValue(id, out Job? job) && (armies ?? Globals.Game.Armies).CanControl(request.SenderId, job.Worker.ArmyId)) Cancel(id);
     }
 
     internal void Reset()
     {
+        foreach (Job job in _jobs.Values) job.Worker.EndEarthwork();
         _jobs.Clear();
     }
 
@@ -83,7 +84,7 @@ public sealed class EarthworkController(GameWorld world, Guid hostId, Action<Net
         {
             GDIBulldozer worker = job.Worker;
             if (worker.EarthworkOrder?.Id != job.Order.Id || world.Units.FindById(worker.UnitId) != worker || worker.IsDying || worker.IsEmbarked || worker.IsLeavingBuilding ||
-                !Globals.Game.Armies.CanControl(job.Player, worker.ArmyId) || worker.Occupancy?.IsOperational == false)
+                !(armies ?? Globals.Game.Armies).CanControl(job.Player, worker.ArmyId) || worker.Occupancy?.IsOperational == false)
             { Cancel(worker.UnitId); continue; }
             if (job.Order.IsDrive) { UpdateDrive(job, seconds); continue; }
             while (job.Index < job.Cells.Count && !Earthwork.NeedsWork(world, job.Order, job.Cells[job.Index])) job.Index++;
@@ -183,9 +184,10 @@ public sealed class EarthworkController(GameWorld world, Guid hostId, Action<Net
             job.Approach = next;
             Vector3 nextPosition = world.GameGrid.ToWorldPosition(next, 0);
             if (start == next) return;
-            var command = new NetworkMessage(NetworkMessageType.GotoCommand, hostId, UnitIds: new[] { worker.UnitId },
-                X: nextPosition.X, Z: nextPosition.Z, EarthworkOrderId: job.Order.Id,
-                Routes: [new UnitRoute(worker.UnitId, route!.ToArray(), nextPosition.X, nextPosition.Z)]);
+            var command = ComplexCommandPayloads.Create(hostId, new GotoCommandPayload(hostId,
+                [worker.UnitId], new(nextPosition.X, 0, nextPosition.Z),
+                [new UnitRoute(worker.UnitId, route!.ToArray(), nextPosition.X, nextPosition.Z)],
+                EarthworkOrderId: job.Order.Id));
             worker.TryReceiveGotoCommand(world, new GotoCommand(new(nextPosition.X, nextPosition.Z)), route: route);
             publish(command);
         }, () => job.Planning = false);

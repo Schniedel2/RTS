@@ -37,3 +37,13 @@ HarvestSystem besitzt die hostseitigen Erntejobs und Phasen. NetworkHost überni
 ## Sanitäter-System (01.10.2026)
 
 MedicSystem besitzt Patientenwahl, automatische Anfahrt, Haltezustand und Heilintervalle. Der Host übernimmt weiterhin geordnete Requests, Squad-Empfänger, gemeinsame Routenplanung und Veröffentlichung. Heilung wird einmal hostseitig angewandt und als absoluter HP-Wert im bestehenden UnitHitCommand repliziert. Sessionwechsel und akzeptierter game-start setzen das System zurück. Details und Prüfgrenzen: MedicSystem-Architektur.md.
+
+## Typisierte Befehle (05.10.2026)
+
+Goto, Build und Harvest verwenden je eigene Request-/Command-Payloads mit gemeinsamer Strukturprüfung auf lokalen und entfernten Wegen. Der JSON-Vertrag enthält genau einen zum Nachrichtentyp passenden Payload; der bestehende interne NetworkMessage-Dispatcher wird zentral adaptiert. Bestätigte Goto-Befehle enthalten für jede Unit eine Route, Build-Bestätigungen die hostseitigen Finanzierungsdaten. Aufgabe 12 führte Protokollversion **5** ein (aktuell **6**, siehe Lifecycle unten); inkompatible Versionen werden beim Beitritt erklärt und abgewiesen. Verträge, Grenzen und TCP-Checks: [Typisierte Netzwerkbefehle](Typisierte-Netzwerkbefehle.md).
+
+## Session-Lifecycle und Late Join (05.10.2026)
+
+SessionStateService übernimmt Snapshot-Aufnahme, Rekonstruktion und den bestätigten Match-Neustart. Besatzung wird vor der äußeren Grid-Belegung wiederhergestellt; Fahrer/Crews und Fahrzeuge im Fabrikausgang benötigen keinen normalen freien Spawnplatz. Ausfahrt, ausgerüstete Soldatenwaffe und aktiver Planiermodus/Sequenz werden jetzt mit übertragen. Protokollversion **6** erfordert auf Host und Clients denselben neuen Build.
+
+Ernte-/Heil-/Erdarbeitsjobs und Sucharbeit bleiben hostintern. Ein erfolgreicher game-start verwirft alle alten Aufträge/Systemjobs; ein abgewiesener Start erhält sie. Echte TCP-Integrationschecks vergleichen Produktion, Forschung, Ernte, Entladen, Ressourcen und wiederholte Neustarts. Datenbesitz, Ablauf und Abnahmegrenzen: [Session-Lifecycle und Late Join](Session-Lifecycle-und-Late-Join.md).

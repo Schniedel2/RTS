@@ -89,7 +89,7 @@ public class Soldier : MobileUnit
     public Soldier(
         Vector3 position,
         Guid unitId,
-        IMovementProfile? movementProfile = null
+        IMovementProfile? movementProfile = null, bool loadModel = true
         ) : base(
             position,
             unitId,
@@ -104,10 +104,10 @@ public class Soldier : MobileUnit
 
         HeadOverlayClips = new List<string> { "head:idle0", "head:idle1", "head:idle2", "head:idle3" };
         DeathClips = new List<string> { "die0", "die1", "die2" };        
-        SetMesh("Soldier-2", deriveDimensions: true);
+        if (loadModel) SetMesh("Soldier-2", deriveDimensions: true);
 
-        _animationPlayer = new AnimationPlayer(_meshSet!.RootMesh.Animations);        
-        if (_meshSet.RootMesh.Animations.TryGetValue("die0", out MeshAnimationClip? deathClip))
+        _animationPlayer = new AnimationPlayer(_meshSet?.RootMesh.Animations ?? new Dictionary<string, MeshAnimationClip>());
+        if (_meshSet is not null && _meshSet.RootMesh.Animations.TryGetValue("die0", out MeshAnimationClip? deathClip))
             _deathAnimationDuration = Math.Max(0.05f, deathClip.DurationSeconds);
         _animationPlayer.Play("idle");
         _animationPlayer.SetRandomAnimationTime();
@@ -115,8 +115,11 @@ public class Soldier : MobileUnit
         //_animationPlayer.AddOverlay("pose:idleRifle", weight: 1.0f);        
 
         //turret mount point for the weapon
-        SetRandomHeadPose();
-        SetRandomHeadPose();
+        if (loadModel)
+        {
+            SetRandomHeadPose();
+            SetRandomHeadPose();
+        }
 
         uint weaponSeed = BitConverter.ToUInt32(unitId.ToByteArray(), 0);
         Weapon weapon = AvailableWeapons[weaponSeed % (uint)AvailableWeapons.Length];
@@ -288,6 +291,7 @@ public class Soldier : MobileUnit
 
     public override void PlayShotEffects()
     {
+        if (!SimulationWorld.GraphicsEnabled) return;
         if (_isDying)
             return;
         TriggerVisualRecoil(new Vector3(0.0f, 0.0f, 0.0f), -5.0f);
@@ -312,14 +316,14 @@ public class Soldier : MobileUnit
         {
             _launcherReloadRemaining = AttackCooldown;
             SetLauncherProjectileVisible(false);
-            Globals.World.Particles.EmitSmoke(
+            SimulationWorld.Particles.EmitSmoke(
                 muzzlePosition,
                 barrelDirection,
                 SmokeEmissionPresets.RpgMuzzle());
 
             if (TryGetAnimatedPivotWorldTransform("pivot:exhaust", out Matrix exhaustWorld))
             {
-                Globals.World.Particles.EmitSmoke(
+                SimulationWorld.Particles.EmitSmoke(
                     exhaustWorld.Translation,
                     -barrelDirection,
                     SmokeEmissionPresets.RpgBackblast());
@@ -327,7 +331,7 @@ public class Soldier : MobileUnit
             return;
         }
 
-        Globals.World.Particles.EmitRifleMuzzleFlash(muzzlePosition, barrelDirection);
+        SimulationWorld.Particles.EmitRifleMuzzleFlash(muzzlePosition, barrelDirection);
     }
 
     private AnimationPlayer? _seatPosePlayer;

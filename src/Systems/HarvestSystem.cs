@@ -72,6 +72,7 @@ public sealed class HarvestSystem
     }
     public NetworkMessage? TryStart(NetworkMessage request)
     {
+        if (request.Type != NetworkMessageType.HarvestRequest || !ComplexCommandPayloads.TryValidate(request, out _)) return null;
         if (request.UnitId is not Guid id || _world.Units.FindById(id) is not Harvester harvester ||
             harvester.IsDying || !_armies.CanControl(request.SenderId, harvester.ArmyId) ||
             !float.IsFinite(request.X) || !float.IsFinite(request.Z)) return null;
@@ -409,8 +410,7 @@ public sealed class HarvestSystem
             ? QueueHarvestMovement(harvester, job, new[] { ((Point?)null, target) })
             : Task.FromResult(false);
     private NetworkMessage CreateHarvestStateCommand(Harvester harvester, HarvestPhase phase) =>
-        new(NetworkMessageType.HarvestCommand, _peerId, UnitId: harvester.UnitId,
-            HarvestPhase: phase, CargoAmount: harvester.CargoAmount);
+        ComplexCommandPayloads.Create(_peerId, new HarvestCommandPayload(harvester.UnitId, phase, harvester.CargoAmount));
 
     private Task PublishHarvestStateAsync(Harvester harvester, HarvestPhase phase) => _publish(CreateHarvestStateCommand(harvester, phase));
 

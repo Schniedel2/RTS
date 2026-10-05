@@ -1117,6 +1117,7 @@ var startMarkers = new GameplayMarkerHandler();
 startMarkers.Add(GameplayMarkerType.PlayerStart, new Vector3(2.5f, 0, 2.5f), 45);
 startMarkers.Add(GameplayMarkerType.PlayerStart, new Vector3(9.5f, 0, 9.5f), 225);
 Field(world, typeof(GameWorld), "<GameplayMarkers>k__BackingField", startMarkers);
+Field(world, typeof(GameWorld), "<PathfindingManager>k__BackingField", new PathfindingManager(world));
 typeof(NetworkHost).GetMethod("RememberStartPositionWish", BindingFlags.Instance | BindingFlags.NonPublic)!
     .Invoke(host, new object[] { NetworkCommands.CreateStartPositionWishRequest(ownerId, 2) });
 var matchHarvest = (HarvestSystem)typeof(NetworkHost)
@@ -1190,7 +1191,7 @@ using (var commandNetwork = new NetworkHandler("CommandServiceTest"))
         "Shared player command service preserves the human or AI actor identity");
 }
 var combinedBuild = NetworkCommands.CreateBuildRequest(Guid.NewGuid(), "Reaktor", 1, 0, 1, 0, Guid.NewGuid())
-    with { UnitIds = [Guid.NewGuid()], PurchasePrice = 725 };
+    with { UnitIds = [Guid.NewGuid()], PurchasePrice = 725, ArmyId = Guid.NewGuid() };
 var confirmedBuild = NetworkCommands.CreateBuildCommand(Guid.NewGuid(), combinedBuild);
 Check(confirmedBuild.UnitIds!.SequenceEqual(combinedBuild.UnitIds) &&
       confirmedBuild.UnitId == combinedBuild.UnitId && confirmedBuild.PurchasePrice == 725,
@@ -2914,7 +2915,7 @@ routeReplica.Stop();
 Check(routeReplica.CurrentCommand is null && routeReplica.MovementStatus == MovementStatus.Idle && routeReplica.PlannedPath.Count == 0,
     "Explicit Stop still cancels movement and recovery");
 NetworkMessage coordinateMessage = new(NetworkMessageType.GotoCommand, Guid.NewGuid(),
-    Routes: [new UnitRoute(routeOwner.UnitId, [new Point(7, 11), new Point(8, 12)], 8.5f, 12.5f)]);
+    UnitIds: [routeOwner.UnitId], Routes: [new UnitRoute(routeOwner.UnitId, [new Point(7, 11), new Point(8, 12)], 8.5f, 12.5f)]);
 NetworkMessage coordinateReplay = JsonSerializer.Deserialize<NetworkMessage>(
     JsonSerializer.Serialize(coordinateMessage, NetworkJson.Options), NetworkJson.Options)!;
 Check(coordinateReplay.Routes![0].Cells.SequenceEqual(coordinateMessage.Routes![0].Cells),
@@ -3164,6 +3165,9 @@ checks += CombatSystemChecks.Run();
 checks += CatalogChecks.Run();
 checks += AIStrategicCatalogChecks.Run();
 checks += UnitQueryChecks.Run();
+checks += SimulationIsolationChecks.Run();
+checks += ComplexCommandChecks.Run();
+checks += SessionLifecycleChecks.Run();
 if (args.Contains("--unit-query-report"))
     System.IO.File.WriteAllText(System.IO.Path.Combine("AI", "Unit-Abfragen-Messung.md"), UnitQueryChecks.MeasurementReport);
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");

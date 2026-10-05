@@ -4,50 +4,29 @@ using RTS.Network;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Tasks;
 
 internal static class MedicSystemChecks
 {
-    private static T Empty<T>() where T : class => (T)RuntimeHelpers.GetUninitializedObject(typeof(T));
-    private static void Set(object target, Type type, string name, object? value) =>
-        type.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(target, value);
-    private static T Soldier<T>(Guid army, Vector3 position, float health) where T : RTS.Soldier
-    {
-        T unit = Empty<T>();
-        Set(unit, typeof(Unit), "<UnitId>k__BackingField", Guid.NewGuid());
-        Set(unit, typeof(Unit), "<ArmyId>k__BackingField", army);
-        Set(unit, typeof(Unit), "<MaxHitPoints>k__BackingField", 100f);
-        Set(unit, typeof(MobileUnit), "_plannedPath", new List<Point>());
-        unit.HitPoints = health;
-        unit.SetPosition(position);
-        return unit;
-    }
     public static int Run()
     {
         int checks = 0;
         void Check(bool condition, string message) { if (!condition) throw new Exception(message); checks++; }
-        var savedWorld = Globals.World;
-        try
         {
-            var world = Empty<GameWorld>();
-            var units = new UnitHandler();
-            Set(world, typeof(GameWorld), "<Units>k__BackingField", units);
-            Set(world, typeof(GameWorld), "<GameGrid>k__BackingField", new GameGrid(40, 40, 1));
-            Globals.World = world;
-            var list = (IList<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(units)!;
+            var world = SimulationFixture.World();
+            var units = world.Units;
+            var list = new SimulationFixture.Membership(world);
             var armies = new ArmyHandler();
             Guid owner = Guid.NewGuid(), army = Guid.NewGuid(), enemy = Guid.NewGuid();
             armies.EnsureArmy(army, owner);
-            var medic = Soldier<Medic>(army, Vector3.Zero, 100);
-            var patient = Soldier<RTS.Soldier>(army, new Vector3(2, 0, 0), 50);
-            var other = Soldier<RTS.Soldier>(enemy, Vector3.Zero, 1);
+            var medic = SimulationFixture.Owned(new Medic(Vector3.Zero, Guid.NewGuid(), loadModel: false), army, 100);
+            var patient = SimulationFixture.Owned(new SimulationFixture.Patient(new Vector3(2, 0, 0), Guid.NewGuid()), army, 50);
+            var other = SimulationFixture.Owned(new SimulationFixture.Patient(Vector3.Zero, Guid.NewGuid()), enemy, 1);
             list.AddRange(new Unit[] { medic, patient, other });
             var commands = new List<NetworkMessage>();
             using var healingNetwork = new NetworkHandler();
-            var healingInput = new NetworkInput(healingNetwork);
+            using var healingInput = new NetworkInput(healingNetwork, world, armies);
             Task Publish(NetworkMessage message)
             {
                 var wire = JsonSerializer.Deserialize<NetworkMessage>(JsonSerializer.Serialize(message, NetworkJson.Options), NetworkJson.Options)!;
@@ -103,39 +82,37 @@ internal static class MedicSystemChecks
 
             system.Reset(); patient.SetPosition(new Vector3(8, 0, 0)); Tick(7);
             Check(valid!(), "Reset releases the hold state for future independent pursuit");
-            Set(patient, typeof(RTS.Soldier), "_isDying", true);
+            patient.Dead = true;
             Check(!valid!(), "Dying patient invalidates pending medic planning");
             abort!(); Tick(8);
             Check(system.ActiveJobCount == 0, "Dying patient is removed from automatic pursuit");
-            Set(patient, typeof(RTS.Soldier), "_isDying", false);
+            patient.Dead = false;
             patient.HitPoints = 0; Tick(9);
             Check(system.ActiveJobCount == 0, "Zero-health patients cannot be selected");
             patient.HitPoints = 50; Tick(10);
-            Set(patient, typeof(Unit), "<ContainerUnitId>k__BackingField", Guid.NewGuid());
-            Set(patient, typeof(Unit), "<IsEmbarked>k__BackingField", true);
+            patient.Embark(Guid.NewGuid());
             Check(!valid!(), "Embarking the patient invalidates pending pursuit");
-            Set(patient, typeof(Unit), "<ContainerUnitId>k__BackingField", null);
-            Set(patient, typeof(Unit), "<IsEmbarked>k__BackingField", false);
+            patient.Disembark(patient.Position);
 
             system.Reset(); Tick(11);
-            var leader = Soldier<SquadLeader>(army, Vector3.Zero, 100); list.Add(leader);
-            Set(medic, typeof(MobileUnit), "<SquadLeaderId>k__BackingField", leader.UnitId);
+            var leader = SimulationFixture.Owned(new SquadLeader(Vector3.Zero, Guid.NewGuid(), loadModel: false), army, 100); list.Add(leader);
+            medic.SquadLeaderId = leader.UnitId;
             Check(!valid!(), "Joining a squad invalidates an independent pending pursuit");
             Tick(12);
             Check(system.ActiveJobCount == 0 && patient.HitPoints == 50, "Squad medic drops independent jobs and does not chase outside healing radius");
             patient.SetPosition(new Vector3(1, 0, 0)); Tick(13);
             Check(patient.HitPoints == 50, "Squad medic does not heal unrelated nearby soldiers");
-            Set(patient, typeof(MobileUnit), "<SquadLeaderId>k__BackingField", leader.UnitId); Tick(14);
+            patient.SquadLeaderId = leader.UnitId; Tick(14);
             Check(patient.HitPoints == 55, "Squad medic heals nearby members of its own squad");
 
-            var secondMedic = Soldier<Medic>(army, Vector3.Zero, 100);
-            Set(secondMedic, typeof(MobileUnit), "<SquadLeaderId>k__BackingField", leader.UnitId); list.Add(secondMedic);
+            var secondMedic = SimulationFixture.Owned(new Medic(Vector3.Zero, Guid.NewGuid(), loadModel: false), army, 100);
+            secondMedic.SquadLeaderId = leader.UnitId; list.Add(secondMedic);
             Tick(14.5);
             Check(patient.HitPoints == 55, "Multiple medics share a per-patient pulse limit");
             Tick(15);
             Check(patient.HitPoints == 60, "Two squad medics cannot double-heal the same patient in one pulse");
             list.Remove(secondMedic);
-            Set(medic, typeof(MobileUnit), "<SquadLeaderId>k__BackingField", null);
+            medic.SquadLeaderId = null;
             patient.SetPosition(new Vector3(8, 0, 0)); Tick(16);
             Check(valid!(), "Leaving a squad restores independent pursuit");
             session++;
@@ -157,14 +134,13 @@ internal static class MedicSystemChecks
             Tick(23);
             finish!(new(NetworkMessageType.GotoCommand, owner, UnitIds: new[] { medic.UnitId },
                 Routes: new[] { new UnitRoute(medic.UnitId, new[] { new Point(8, 0) }) }));
-            Set(medic, typeof(Unit), "<CurrentCommand>k__BackingField", new GotoCommand(new Vector2(8, 0)));
-            Set(medic, typeof(MobileUnit), "<SquadLeaderId>k__BackingField", leader.UnitId);
+            medic.TryReceiveGotoCommand(world, new GotoCommand(new Vector2(8, 0)), route: [new Point(8, 0)]);
+            medic.SquadLeaderId = leader.UnitId;
             published = commands.Count; Tick(24);
             Check(system.ActiveJobCount == 0 && medic.CurrentCommand is null &&
                 commands.Skip(published).Any(message => message.Type == NetworkMessageType.StopCommand),
                 "Joining a squad stops an already issued independent patient pursuit through the host command gateway");
         }
-        finally { Globals.World = savedWorld; }
         return checks;
     }
 }

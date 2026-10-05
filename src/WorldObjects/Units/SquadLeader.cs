@@ -7,10 +7,10 @@ namespace RTS;
 public sealed class SquadLeader : Soldier
 {
     public override string GameplayTypeId => "squad-leader";
-    public SquadLeader(Vector3 position, Guid unitId)
-        : base(position, unitId, new GroundMovementProfile(MovementModes.Walk, 50.0f))
+    public SquadLeader(Vector3 position, Guid unitId, bool loadModel = true)
+        : base(position, unitId, new GroundMovementProfile(MovementModes.Walk, 50.0f), loadModel)
     {
-        SetMesh("Soldier-2", deriveDimensions: true);
+        if (loadModel) SetMesh("Soldier-2", deriveDimensions: true);
         SetWeapon(Weapon.Brok17);
         IsCrewMember = true;
         SightRange = 20;

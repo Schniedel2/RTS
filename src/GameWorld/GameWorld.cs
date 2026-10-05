@@ -12,6 +12,27 @@ public class GameWorld
 {
     private Terrain _terrain;
     public Terrain Terrain => _terrain;
+    public bool GraphicsEnabled { get; }
+    public ArmyHandler SimulationArmies { get; private set; } = new();
+    internal RTS.Network.NetworkHandler? SimulationNetwork { get; private set; }
+    private Func<Guid, Guid, bool>? _allianceResolver;
+    internal bool IsMovementAuthority =>
+        (SimulationNetwork ?? (SimulationArmies is null ? Globals.Game?.Network : null))
+            is not { IsConnected: true, IsHost: false };
+    internal bool AreArmiesAllied(Guid firstId, Guid secondId)
+    {
+        if (_allianceResolver is not null) return _allianceResolver(firstId, secondId);
+        Army? first = SimulationArmies.Find(firstId);
+        Army? second = SimulationArmies.Find(secondId);
+        return first?.TeamId is Guid team && second?.TeamId == team;
+    }
+    internal void ConfigureSimulation(ArmyHandler armies, RTS.Network.NetworkHandler network,
+        Func<Guid, Guid, bool>? allianceResolver = null)
+    {
+        SimulationArmies = armies;
+        SimulationNetwork = network;
+        _allianceResolver = allianceResolver;
+    }
     public UnitHandler Units { get; }
     public MarkerHandler Markers { get; }
     public ProjectileHandler Projectiles { get; }
@@ -27,24 +48,29 @@ public class GameWorld
     public Vector3 Center => new Vector3(_terrain.Width * 0.5f, 0.0f, _terrain.Height * 0.5f);
     public bool IsEditorActive => Units.Units.Any(unit => unit is TerrainEditorTool && !unit.IsDying);
 
+    /// <summary>Initializes gameplay normally; graphicsEnabled=false omits GPU terrain resources and visual emissions.</summary>
     public GameWorld(
         int terrainWidth,
         int terrainHeight,
-        int gameGridCellSize)
+        int gameGridCellSize, bool graphicsEnabled = true)
     {
-        Globals.MapsDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Maps");
-        Globals.MapsDirectory = "c:\\temp\\Maps";
+        GraphicsEnabled = graphicsEnabled;
+        if (graphicsEnabled)
+        {
+            Globals.MapsDirectory = Path.Combine(AppContext.BaseDirectory, "Content", "Maps");
+            Globals.MapsDirectory = "c:\\temp\\Maps";
+        }
 
         _terrain =
             new Terrain(
                 width: terrainWidth,
-                height: terrainHeight);
+                height: terrainHeight, graphicsEnabled: graphicsEnabled);
 
         GameGrid = new GameGrid(terrainWidth, terrainHeight, gameGridCellSize);
         GameGrid.BindTerrain(_terrain);
-        Units = new UnitHandler();
+        Units = new UnitHandler(this);
         Markers = new MarkerHandler();
-        Projectiles = new ProjectileHandler();
+        Projectiles = new ProjectileHandler(graphicsEnabled ? ParticlesExplosion : null);
         Particles = new ParticleSystem();
         Decals = new DecalHandler();
         SmokeEmitters = new SmokeEmitterHandler();
@@ -54,6 +80,8 @@ public class GameWorld
         Visibility = new VisibilitySystem(this);
         GameplayMarkers = new GameplayMarkerHandler();
     }
+
+    private void ParticlesExplosion(Vector3 position) => Particles.EmitExplosion(position);
 
     public void DrawShadow(
         Effect effect,

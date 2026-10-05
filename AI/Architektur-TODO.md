@@ -129,28 +129,43 @@ Offizielle Orientierung: [OpenAI-Modellleitfaden](https://developers.openai.com/
 
 ### 11 – Grafikfreien Testaufbau und explizite Systemabhängigkeiten ermöglichen
 
-- [ ] Offen. Priorität: mittel. Modell: **GPT-6 Astra, high**. Nach 05–07.
+- [x] Erledigt am 01.10.2026. Priorität: mittel. Modell: **GPT-6 Astra, high**. Nach 05–07.
 - Neue Spielsysteme erhalten Welt, Dienste und Ergebniszugang explizit. Für deren Tests reguläre kleine Welten/Units ohne Grafikgerät und Mesh-Laden aufbauen.
 - Reflection und GetUninitializedObject in den betroffenen Tests durch reguläre Fixtures ersetzen. Globale Zugriffe schrittweise an den bearbeiteten Grenzen reduzieren, nicht das ganze Projekt gleichzeitig umbauen.
 - Fertig wenn zwei getrennte Testwelten ohne gegenseitige Zustandsbeeinflussung ausführbar sind und die extrahierten Systeme ohne Rendering getestet werden können.
 
+- Ergebnis: Reguläre grafikfreie GameWorld-/Terrain-Konstruktion und Modell-freie Konstruktorpfade für die getesteten Units/Buildings. Registrierte Units, Bewegung und Zielauflösung verwenden ihre gebundene Welt; NetworkInput erhält Welt/Armies und ist abmeldbar. NetworkHost erhält Army-/Player-/AI-Anbieter und Verlustmeldung explizit; RTSGame verdrahtet diese auch im normalen Spiel. Die drei extrahierten Systemtests benötigen keine Reflection, uninitialisierten Objekte oder globale Weltumschaltung mehr.
+- Validierung: Build ohne Warnungen/Fehler; 928 Checks bestanden, 18 zusätzliche Isolation-/Konstruktions-/Lifecyclechecks. Zwei reguläre Welten mit gleichen IDs laufen gleichzeitig durch Heilung, Ernte, Kampf und tatsächliche lokale Netzwerk-Replikation; Reset, Ressourcen, Allianzen, Targets und Mitgliedschaft bleiben getrennt. Details in `Grafikfreie-Spielsystemtests.md`.
+- Grenzen: Kein kompletter grafikfreier RTSGame/HUD; weitere Editor-/Netzwerkaktionen und ältere Tests behalten Globals/Reflection. Mesh-/Content-Abnahme und optische Fahrzeugabnahme 02 bleiben offen. Nächster umsetzbarer Punkt ist 12.
+
 ### 12 – Komplexe Netzwerkbefehle schrittweise typisieren
 
-- [ ] Offen. Priorität: mittel. Modell: **GPT-6 Astra, high**. Nach 01 und 05–08.
+- [x] Erledigt am 05.10.2026. Priorität: mittel. Modell: **GPT-6 Astra, high**. Nach 01 und 05–08.
 - Für Goto, Build und Harvest eigene Payloads mit eindeutigen Pflichtparametern einführen. Kleine UnitActions können UnitActionContext weiterverwenden.
 - Serialisierung, Eingangsprüfung, Protokollversion und Verhalten bei inkompatiblen Clients gemeinsam berücksichtigen. Einen Befehlsweg nach dem anderen migrieren.
 - Fertig wenn gültige Nachrichten hin/zurück serialisieren, ungültige Kombinationen abgewiesen werden und Mensch/KI/Host/Client denselben Vertrag verwenden.
 
+- Ergebnis: Sechs eigene Request-/Command-Payloads für Goto, Build und Harvest mit eindeutigen Pflichtdaten. Gemeinsame Factory-/Eingangsprüfung für Mensch, Host-KI, lokalen Host und entfernten Client; striktes JSON ohne konkurrierende flache Felder. Bestätigte Goto-Routen müssen alle Empfänger abdecken. Baupreis, Army und Ressourcen bleiben hostseitig. Protokollversion 5 weist inkompatible Clients vor dem Beitritt verständlich ab.
+- Validierung: Build ohne Warnungen/Fehler; 999 Checks bestanden, davon 71 neue Vertrags-/Transportchecks. Roundtrips, ungültige Feldkombinationen/Zahlen/Routen, lokale Anwendung, echte TCP-Versionsablehnung, gemeinsame Human-/KI-Requests und unveränderte Client-Routenübernahme geprüft. Details in `Typisierte-Netzwerkbefehle.md`.
+- Grenzen: Ein zentraler Adapter erhält den bisherigen internen NetworkMessage-Dispatcher; dessen vollständige Ablösung ist nicht Teil dieser schrittweisen Migration. Kleine UnitActions und Session-Snapshots behalten ihre Verträge. Alle Multiplayer-Teilnehmer benötigen den neuen Build. Keine grafische Abnahme; Fahrzeugabnahme 02 bleibt offen. Nächster umsetzbarer Punkt ist 13.
+
 ### 13 – Integrationsprüfung für Neustart, Late Join und Abbruch ergänzen
 
-- [ ] Offen. Priorität: mittel. Modell: **GPT-6 Astra, high**. Nach 02–12.
+- [x] Erledigt am 05.10.2026. Priorität: mittel. Modell: **GPT-6 Astra, high**. Nach 02–12.
 - Neue Systeme auf Reset und Zustandsbesitz prüfen. Session-Snapshot muss den nötigen Clientzustand rekonstruieren, ohne hostinterne Planungsarbeit versehentlich auf Clients zu starten.
 - Szenarien: Einstieg bei laufender Produktion/Ernte/Forschung, Stop während Planung, zerstörter Auftraggeber, wiederholtes game-start und Sessionwechsel.
 - Fertig wenn Tests Zustände und Ressourcen vergleichen und dokumentiert ist, welche Daten nur Map-Startdaten bzw. laufender Sessionzustand sind. Kein vollständiges Savegame-System als Nebenprojekt einführen.
 
+- Ergebnis: Gemeinsamer SessionStateService für Aufnahme, Client-Rekonstruktion und Match-Neustart. Späte Clients erhalten auch Besatzungsrollen/Waffen, Fabrikausfahrt und Planiermodus/Sequenz; Wiederherstellung benötigt keinen normalen Spawn oder Client-Pfadsuchen. Erfolgreicher game-start verwirft sämtliche bisherigen Host-Aufträge/Systemjobs; abgewiesener Start erhält laufende Planung. Erdarbeitsreset beendet den Modus und stellt Fahrparameter wieder her. Erweiterter Snapshot verwendet Protokollversion 6.
+- Validierung: Build ohne Warnungen/Fehler; 1.057 Checks bestanden, davon 58 neue reguläre Integrationschecks. Echte TCP-Beitritte während Produktion/Forschung/Ernte und Entladen, gleiche Zustände/Ressourcen, einmalige Gutschrift, Stop/Tod während Planung, Produzententod, zwei Match-Neustarts mit aktiven Systemjobs/Geschossen und Sessionwechsel geprüft. `git diff --check` sauber. Zustandsbesitz und Map-Startdaten gegenüber Sessionzustand in `Session-Lifecycle-und-Late-Join.md` dokumentiert.
+- Grenzen: Keine neue grafische Multiplayer-Abnahme; optische Fahrzeugabnahme 02 bleibt offen. Grafikfreie Factory-Fixtures verwenden Katalogdaten und reguläre Konstruktoren. Kein Savegame/Hostwechsel und keine Rekonstruktion flüchtiger Todesanimationen/bereits laufender visueller Raketen; spätere Einschläge bleiben repliziert. Alle Teilnehmer benötigen den neuen Build. Nächster umsetzbarer Punkt ist 14.
+
 ### 14 – Erweiterungsleitfaden und Architekturübersicht aktualisieren
 
-- [ ] Offen. Priorität: abschließend. Modell: **GPT-6 Luna, high**. Nach 13.
+- [x] Erledigt am 05.10.2026. Priorität: abschließend. Modell: **GPT-6 Luna, high**. Nach 13.
 - Tatsächlichen Endstand dokumentieren: neue Unit, Building, Forschung, Fähigkeit und KI-Angebot ergänzen; zuständige Dateien und Datenflüsse nennen.
 - Bestehende Architekturtexte und TODOs auf Widersprüche prüfen. Künftige Erweiterungen sollen eine nachvollziehbare Anleitung statt zusätzlicher versteckter Switches erhalten.
 - Fertig wenn Beispiele anhand des realen Codes geprüft sind und offene Einschränkungen ausdrücklich genannt werden. Keine Gameplay-Änderungen in dieser Dokumentationsaufgabe.
+- Ergebnis: `Erweiterungsleitfaden.md` dokumentiert reale Registrierungs-, Produktions-, Forschungs-/Perk-, Action-/Netzwerk- und KI-Pfade. Beispiele `motorbike` (zwei Produzenten) und `air-technology` wurden im Code geprüft. Katalogmetadaten von weiterhin expliziter Runtime-/KI-Logik abgegrenzt; Hostgrenzen generischer UnitActions, Factory-Ausnahmen und Late-Join-Grenzen genannt. Katalogübersicht und Registrierungsdokument verlinken den Leitfaden; veralteter Standvermerk in `Katalog-Registrierung.md` aktualisiert.
+- Validierung: Dokumentationsaufgabe; Quelltext gegen Factories, Katalog, Perks, Building-Aktionen, AI-Planer, NetworkHost/NetworkInput und Session-Dokumentation abgeglichen. Keine Gameplay-Änderung; Tests nicht ausgeführt.
+- Verbleibende Einschränkung: Die Erweiterungsarchitektur ist nicht vollständig datengetrieben. Spezielle Actions, Runtime-Verhalten und manche KI-Strategien benötigen weiterhin explizite Klassen/Systeme und Host-/Snapshot-Anpassungen; diese Grenzen stehen im Leitfaden.

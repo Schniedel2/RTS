@@ -6,8 +6,7 @@ namespace RTS.Network;
 public static class NetworkCommands
 {
     public static NetworkMessage CreateHarvestRequest(Guid senderId, Guid harvesterId, Vector3 target) =>
-        new(NetworkMessageType.HarvestRequest, senderId, PlayerId: senderId, UnitId: harvesterId,
-            X: target.X, Y: target.Y, Z: target.Z);
+        ComplexCommandPayloads.Create(senderId, new HarvestRequestPayload(harvesterId, new(target.X, target.Y, target.Z)));
 
     public static NetworkMessage CreateUnitActionRequest(
         Guid senderId, Guid[] unitIds, UnitActionType actionType, UnitActionContext? context = null) =>
@@ -116,20 +115,10 @@ public static class NetworkCommands
 
     public static NetworkMessage CreateBuildCommand(Guid hostId, NetworkMessage request)
     {
-        return new NetworkMessage(
-            NetworkMessageType.BuildCommand,
-            hostId,
-            PlayerId: request.PlayerId ?? request.SenderId,
-            UnitId: request.UnitId ?? Guid.NewGuid(),
-            UnitTypeId: request.UnitTypeId,
-            UnitIds: request.UnitIds,
-            X: request.X,
-            Y: request.Y,
-            Z: request.Z,
-            TargetAngleY: request.TargetAngleY,
-            ArmyId: request.ArmyId,
-            ResourceAmount: request.ResourceAmount,
-            PurchasePrice: request.PurchasePrice);
+        return ComplexCommandPayloads.Create(hostId, new BuildCommandPayload(
+            request.PlayerId ?? request.SenderId, request.ArmyId ?? Guid.Empty,
+            request.UnitId ?? Guid.NewGuid(), request.UnitTypeId!, new(request.X, request.Y, request.Z),
+            request.TargetAngleY, request.PurchasePrice, request.ResourceAmount, request.UnitIds));
     }
 
     public static NetworkMessage CreateTextMessage(Guid senderId, string text)
@@ -258,17 +247,8 @@ public static class NetworkCommands
         UnitRoute[]? routes = null,
         float? formationFacingDegrees = null)
     {
-        return new NetworkMessage(
-            NetworkMessageType.GotoRequest,
-            senderId,
-            PlayerId: senderId,
-            UnitIds: unitIds,
-            X: x,
-            Y: y,
-            Z: z,
-            AppendToQueue: appendToQueue,
-            FormationFacingDegrees: formationFacingDegrees,
-            Routes: routes);
+        return ComplexCommandPayloads.Create(senderId, new GotoRequestPayload(unitIds,
+            new(x, y, z), appendToQueue, routes, formationFacingDegrees));
     }
 
     public static NetworkMessage CreateGotoCommand(
@@ -276,17 +256,9 @@ public static class NetworkCommands
         NetworkMessage request,
         UnitRoute[] routes)
     {
-        return new NetworkMessage(
-            NetworkMessageType.GotoCommand,
-            hostId,
-            PlayerId: request.PlayerId ?? request.SenderId,
-            UnitIds: request.UnitIds,
-            X: request.X,
-            Y: request.Y,
-            Z: request.Z,
-            AppendToQueue: request.AppendToQueue,
-            FormationFacingDegrees: request.FormationFacingDegrees,
-            Routes: routes);
+        return ComplexCommandPayloads.Create(hostId, new GotoCommandPayload(
+            request.PlayerId ?? request.SenderId, request.UnitIds!, new(request.X, request.Y, request.Z),
+            routes, request.AppendToQueue, request.FormationFacingDegrees));
     }
 
     public static NetworkMessage CreateStopRequest(Guid senderId, Guid[] unitIds) =>
@@ -553,19 +525,10 @@ public static class NetworkCommands
         float y,
         float z,
         float targetAngleY,
-        Guid unitId)
+        Guid unitId, Guid[]? workerIds = null)
     {
-        NetworkMessage request = new NetworkMessage(
-            NetworkMessageType.BuildRequest,
-            senderId,
-            PlayerId: senderId,
-            X: x,
-            Y: y,
-            Z: z,
-            UnitTypeId: buildingTypeName,
-            TargetAngleY: targetAngleY,
-            UnitId: unitId);
-        return request;
+        return ComplexCommandPayloads.Create(senderId, new BuildRequestPayload(buildingTypeName,
+            new(x, y, z), targetAngleY, unitId, workerIds));
     }
 
     public static NetworkMessage CreateToolActionCommand(

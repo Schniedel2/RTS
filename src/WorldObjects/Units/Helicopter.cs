@@ -611,9 +611,9 @@ public class Helicopter : MobileUnit
         _landingAttitude = Quaternion.Normalize(new(data.LandingTiltX, data.LandingTiltY, data.LandingTiltZ, data.LandingTiltW));
         _yaw = data.Yaw; SetRotationYDegrees(MathHelper.ToDegrees(_yaw)); SetPosition(new(data.X, data.Y, data.Z));
         QueueRenderPose(Position, _yaw);
-        Globals.World.GameGrid.Remove(this);
+        SimulationWorld.GameGrid.Remove(this);
         if (AssignedHelipadId is null && (IsLanded || _landing is not null))
-            Globals.World.GameGrid.TryPlace(this, _landing ?? Position, MathHelper.ToDegrees(_yaw));
+            SimulationWorld.GameGrid.TryPlace(this, _landing ?? Position, MathHelper.ToDegrees(_yaw));
         Occupancy!.EntryEnabled = IsLanded;
         StateRevision = state.Revision;
     }

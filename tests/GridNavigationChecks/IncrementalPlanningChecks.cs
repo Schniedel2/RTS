@@ -228,7 +228,7 @@ static class IncrementalPlanningChecks
             published.Clear();
             Send(NetworkCommands.CreateGotoRequest(owner, [mover.UnitId], 12.5f, 0, 12.5f)); Tick();
             Send(NetworkCommands.CreateStopRequest(Guid.NewGuid(), [mover.UnitId]));
-            Send(NetworkCommands.CreateGotoRequest(owner, [mover.UnitId], float.NaN, 0, 5));
+            Send(new NetworkMessage(NetworkMessageType.GotoRequest, owner, UnitIds: [mover.UnitId], X: float.NaN, Z: 5));
             Drain();
             Check(published.Count(message => message.Type == NetworkMessageType.GotoCommand) == 1 &&
                 mover.CurrentCommand?.Target == new Vector2(12.5f, 12.5f),

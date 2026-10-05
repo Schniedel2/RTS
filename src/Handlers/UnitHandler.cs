@@ -21,11 +21,23 @@ public class UnitHandler
     private long _membershipRevision;
 
     /// <summary>Stable, read-only membership snapshot. Unit objects retain their live state.</summary>
+    // Membership operations are internal; gameplay spawn/removal still validate placement and lifecycle.
+    internal void Register(Unit unit) => _units.Add(unit);
+    internal bool Unregister(Unit unit) => _units.Remove(unit);
+    internal void ClearMembership() => _units.Clear();
+
     public IReadOnlyList<Unit> Units => GetSnapshot();
     public long MembershipRevision { get { lock (_unitsSync) return _membershipRevision; } }
     public int Count { get { lock (_unitsSync) return _units.Count; } }
 
-    public UnitHandler() => _units = new UnitCollection(this);
+    private readonly GameWorld? _world;
+    private GameWorld World => _world ?? Globals.World;
+    private ArmyHandler Armies => _world?.SimulationArmies ?? Globals.Game.Armies;
+    public UnitHandler(GameWorld? world = null)
+    {
+        _world = world;
+        _units = new UnitCollection(this);
+    }
 
     public IReadOnlyList<Unit> GetSnapshot()
     {
@@ -52,6 +64,7 @@ public class UnitHandler
         if (_registered.Contains(unit) && unit != replacing ||
             unit.UnitId != Guid.Empty && _byId.TryGetValue(unit.UnitId, out Unit? existing) && existing != replacing)
             throw new InvalidOperationException($"Unit '{unit.UnitId}' is already registered.");
+        if (_world is not null) unit.BindWorld(_world);
     }
 
     private void Attach(Unit unit)
@@ -168,7 +181,7 @@ public class UnitHandler
         if (unit is null)
             return SpawnBuilding(unitTypeName, position, RotateYDegrees, unitId, creatorPlayerId);
 
-        if (unit is Building building && !building.EvaluatePlacement(Globals.World, position, RotateYDegrees).IsAllowed)
+        if (unit is Building building && !building.EvaluatePlacement(World, position, RotateYDegrees).IsAllowed)
             return null;
         AssignCurrentArmy(unit, creatorPlayerId);
         if (SetFootprints(unit, RotateYDegrees))
@@ -215,7 +228,7 @@ public class UnitHandler
         unit.SetArmy(armyId);
         if (unit is Helicopter helicopter && FindById(sourceBuildingId) is Helipad pad)
         {
-            helicopter.InitializeDelivery(Globals.World, pad, spawnPosition);
+            helicopter.InitializeDelivery(World, pad, spawnPosition);
             pad.DeliveryPending = false;
         }
         else
@@ -245,7 +258,7 @@ public class UnitHandler
         if (unit is null)
             return null;
 
-        if (unit is Building building && !building.EvaluatePlacement(Globals.World, position, RotateYDegrees).IsAllowed)
+        if (unit is Building building && !building.EvaluatePlacement(World, position, RotateYDegrees).IsAllowed)
             return null;
         AssignCurrentArmy(unit, creatorPlayerId);
         if (SetFootprints(unit, RotateYDegrees))
@@ -303,7 +316,7 @@ public class UnitHandler
     public void DrawShadow(Effect effect)
     {
         foreach (Unit unit in Units)
-            if (!unit.IsEmbarked && Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
+            if (!unit.IsEmbarked && World.Visibility.IsUnitVisibleToLocalPlayer(unit))
             {
                 unit.DrawShadow(effect);
                 unit.DrawSeatedOccupants(effect);
@@ -314,7 +327,7 @@ public class UnitHandler
     {
         foreach (Building unit in Units.OfType<Building>())
         {
-            if (unit.IsEmbarked || !Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
+            if (unit.IsEmbarked || !World.Visibility.IsUnitVisibleToLocalPlayer(unit))
                 continue;
 
             // Restore the normal building atlas before a BBModel sub-mesh
@@ -349,7 +362,7 @@ public class UnitHandler
     {
         foreach (MobileUnit unit in Units.OfType<MobileUnit>())
         {
-            if (unit.IsEmbarked || !Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
+            if (unit.IsEmbarked || !World.Visibility.IsUnitVisibleToLocalPlayer(unit))
                 continue;
 
             // Restore the normal unit atlas before a BBModel sub-mesh
@@ -401,7 +414,7 @@ public class UnitHandler
                     mobileUnit.Stop();
             }
 
-        Globals.World.GameGrid.Remove(unit);
+        World.GameGrid.Remove(unit);
         RemovePerkSource(unit.UnitId);
         if (!unit.BeginDeathSequence())
             lock (_unitsSync) _units.Remove(unit);
@@ -432,7 +445,7 @@ public class UnitHandler
             if (other != building)
                 other.ClearReferencesToDestroyedUnit(unitId);
 
-        Globals.World.GameGrid.Remove(building);
+        World.GameGrid.Remove(building);
         RemovePerkSource(building.UnitId);
         building.BeginSelling();
         return true;
@@ -448,7 +461,7 @@ public class UnitHandler
             return false;
         }
 
-        Globals.World.GameGrid.Remove(occupant);
+        World.GameGrid.Remove(occupant);
         occupant.Embark(container.UnitId);
         occupant.SetPosition(container.Position);
         if (occupancy.ControllerRole == role)
@@ -468,8 +481,8 @@ public class UnitHandler
 
         if (container is Helicopter { IsLanded: false }) return false;
         occupant.Disembark(exitPosition);
-        Point exitCell = Globals.World.GameGrid.ToCell(exitPosition);
-        if (!Globals.World.GameGrid.TryMove(occupant, exitCell))
+        Point exitCell = World.GameGrid.ToCell(exitPosition);
+        if (!World.GameGrid.TryMove(occupant, exitCell))
         {
             occupant.Embark(container.UnitId);
             occupant.SetPosition(container.Position);
@@ -509,10 +522,10 @@ public class UnitHandler
         lock (_unitsSync) _units.Remove(occupant);
     }
 
-    private static Player? ResolveArmyOwner(Unit unit)
+    private Player? ResolveArmyOwner(Unit unit)
     {
         if (unit.Occupancy?.GetController() is OccupantAssignment controller &&
-            Globals.World.Units.FindById(controller.UnitId) is Unit driver)
+            World.Units.FindById(controller.UnitId) is Unit driver)
         {
             Player? driverOwner = Globals.Game.Players.FirstOrDefault(
                 player => player.Id == driver.CreatorPlayerId);
@@ -538,7 +551,7 @@ public class UnitHandler
                 member => member.SquadLeaderId == leader.UnitId))
                 member.SquadLeaderId = null;
         }
-        Globals.World.GameGrid.Remove(unit);
+        World.GameGrid.Remove(unit);
         RemovePerkSource(unit.UnitId);
         lock (_unitsSync) _units.Remove(unit);
     }
@@ -548,7 +561,7 @@ public class UnitHandler
     {
         lock (_unitsSync)
         {
-            foreach (Unit unit in _units) Globals.World.GameGrid.Remove(unit);
+            foreach (Unit unit in _units) World.GameGrid.Remove(unit);
             _units.Clear();
         }
         _perkSourceArmies.Clear();
@@ -560,12 +573,12 @@ public class UnitHandler
         if (_perkSourceArmies.TryGetValue(unit.UnitId, out Guid previousArmyId) &&
             previousArmyId != currentArmyId)
         {
-            Globals.Game.Armies.Find(previousArmyId)?.Perks.RemoveSource(unit.UnitId);
+            Armies.Find(previousArmyId)?.Perks.RemoveSource(unit.UnitId);
             _perkSourceArmies.Remove(unit.UnitId);
         }
 
         if (unit is not IPerkProvider provider || currentArmyId is not Guid armyId ||
-            Globals.Game.Armies.Find(armyId) is not Army army)
+            Armies.Find(armyId) is not Army army)
         {
             RemovePerkSource(unit.UnitId);
             return;
@@ -582,7 +595,7 @@ public class UnitHandler
     private void RemovePerkSource(Guid sourceId)
     {
         if (_perkSourceArmies.Remove(sourceId, out Guid armyId))
-            Globals.Game.Armies.Find(armyId)?.Perks.RemoveSource(sourceId);
+            Armies.Find(armyId)?.Perks.RemoveSource(sourceId);
     }
 
     public void Draw2D(SpriteBatch spriteBatch, Camera camera, Viewport viewport)
@@ -593,7 +606,7 @@ public class UnitHandler
 
         foreach (Unit unit in Units)
         {
-            if (unit.IsEmbarked || !Globals.Game.World.Visibility.IsUnitVisibleToLocalPlayer(unit))
+            if (unit.IsEmbarked || !World.Visibility.IsUnitVisibleToLocalPlayer(unit))
                 continue;
             unit.Draw2D(spriteBatch, camera, viewport);
             HealthInformationLevel healthInformation = HealthBarRenderer.GetInformationLevel(
@@ -604,20 +617,20 @@ public class UnitHandler
 
     private bool SetFootprints(Unit unit, float rotateYDegrees)
     {
-        if (unit is Helicopter helicopter) return helicopter.InitializeOnGround(Globals.World);
-        Point cell = Globals.World.GameGrid.ToCell(unit.Position);
+        if (unit is Helicopter helicopter) return helicopter.InitializeOnGround(World);
+        Point cell = World.GameGrid.ToCell(unit.Position);
         MobileUnit? mobileUnit = unit as MobileUnit;
         if (mobileUnit != null)
         {
-            if (!Globals.World.GameGrid.TryMove(mobileUnit, cell))
+            if (!World.GameGrid.TryMove(mobileUnit, cell))
             {
                 Random rnd = new Random();
                 cell.X += rnd.Next(-10, 10);
                 cell.Y += rnd.Next(-10, 10);
-                return Globals.World.GameGrid.TryMove(mobileUnit, cell);
+                return World.GameGrid.TryMove(mobileUnit, cell);
             }
         }
-        else if (!Globals.World.GameGrid.TryPlace(unit, unit.Position, rotateYDegrees))
+        else if (!World.GameGrid.TryPlace(unit, unit.Position, rotateYDegrees))
         {
             Console.WriteLine($"Cannot place building '{unit.GetType().Name}' at {unit.Position}: footprint is blocked.");
             return false;

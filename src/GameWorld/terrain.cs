@@ -19,6 +19,7 @@ public class Terrain
     private TerrainTile[,] _tiles = null!;
     
     private Texture2D _tileMapTexture = null!;
+    private readonly bool _graphicsEnabled = true;
 
     public Terrain(string mapDirectory)
     {
@@ -28,8 +29,10 @@ public class Terrain
 
     public Terrain(
         int width,
-        int height)
+        int height, bool graphicsEnabled = true)
     {
+        if (width < 2 || height < 2) throw new ArgumentOutOfRangeException(nameof(width));
+        _graphicsEnabled = graphicsEnabled;
         Width = width;
         Height = height;
 
@@ -42,6 +45,7 @@ public class Terrain
 
     public void UpdateTilemapTexture()
     {
+        if (!_graphicsEnabled) return;
         if (_tileMapTexture is null || _tileMapTexture.Width != Width || _tileMapTexture.Height != Height)
         {
             _tileMapTexture?.Dispose();

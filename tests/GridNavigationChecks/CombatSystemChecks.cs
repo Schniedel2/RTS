@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Xna.Framework;
@@ -11,11 +9,10 @@ using RTS.Network;
 
 internal static class CombatSystemChecks
 {
-    private static T Empty<T>() where T : class => (T)RuntimeHelpers.GetUninitializedObject(typeof(T));
-    private static void Set(object target, Type type, string name, object? value) =>
-        type.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(target, value);
-    private sealed class Fighter(Vector3 position, Guid id) : Unit(position, id)
+    private sealed class Fighter : Unit
     {
+        public Fighter(Vector3 position, Guid id) : base(position, id)
+        { Height = 2; Width = Length = 1; }
         public bool Rocket;
         public bool Disabled;
         public bool Dead;
@@ -39,33 +36,17 @@ internal static class CombatSystemChecks
     {
         int checks = 0;
         void Check(bool condition, string message) { if (!condition) throw new Exception(message); checks++; }
-        var savedWorld = Globals.World;
-        var savedGame = Globals.Game;
-        try
         {
-            var terrain = Empty<Terrain>();
-            Set(terrain, typeof(Terrain), "<Width>k__BackingField", 41);
-            Set(terrain, typeof(Terrain), "<Height>k__BackingField", 41);
-            Set(terrain, typeof(Terrain), "HeightMap", new float[41 * 41]);
-            var world = Empty<GameWorld>();
-            var units = new UnitHandler();
-            var grid = new GameGrid(40, 40, 1); grid.BindTerrain(terrain);
-            Set(world, typeof(GameWorld), "_terrain", terrain);
-            Set(world, typeof(GameWorld), "<Units>k__BackingField", units);
-            Set(world, typeof(GameWorld), "<GameGrid>k__BackingField", grid);
-            Set(world, typeof(GameWorld), "<Projectiles>k__BackingField", new ProjectileHandler());
-            Globals.World = world;
-            var list = (IList<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(units)!;
+            var world = SimulationFixture.World();
+            var units = world.Units;
+            var list = new SimulationFixture.Membership(world);
             Fighter Add(Vector3 pos, Guid? id = null)
             {
                 var unit = new Fighter(pos, id ?? Guid.NewGuid()) { Behavior = UnitBehavior.Passive };
-                Set(unit, typeof(Unit), "<Height>k__BackingField", 2f);
-                Set(unit, typeof(Unit), "<Width>k__BackingField", 1);
-                Set(unit, typeof(Unit), "<Length>k__BackingField", 1);
                 list.Add(unit); return unit;
             }
             using var network = new NetworkHandler();
-            var input = new NetworkInput(network);
+            using var input = new NetworkInput(network, world, world.SimulationArmies);
             var commands = new List<NetworkMessage>();
             int losses = 0;
             Task Publish(NetworkMessage command)
@@ -89,25 +70,19 @@ internal static class CombatSystemChecks
                 "Hitscan impact visualization precedes authoritative hit confirmation");
             network.ApplyLocalCommand(commands.Last());
             Check(target.HitPoints == 80 && target.HitCalls == 1, "Repeated absolute hit confirmation does not subtract damage twice");
-            var clientWorld = Empty<GameWorld>();
-            var clientUnits = new UnitHandler();
+            var clientWorld = SimulationFixture.World();
             var clientTarget = new Fighter(target.Position, target.UnitId);
-            var clientList = (IList<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(clientUnits)!;
-            clientList.Add(clientTarget);
-            Set(clientWorld, typeof(GameWorld), "<Units>k__BackingField", clientUnits);
+            clientWorld.Units.Register(clientTarget);
             using (var clientNetwork = new NetworkHandler())
             {
-                var clientInput = new NetworkInput(clientNetwork);
-                Globals.World = clientWorld;
-                try
+                using var clientInput = new NetworkInput(clientNetwork, clientWorld, clientWorld.SimulationArmies);
                 {
                     clientNetwork.ApplyLocalCommand(commands.Last());
                     clientNetwork.ApplyLocalCommand(commands.Last());
                     Check(clientTarget.HitPoints == 80 && clientTarget.HitCalls == 0,
                         "Separate client receives absolute host HP over actual NetworkInput without running damage logic");
                 }
-                finally { Globals.World = world; }
-            }
+                    }
             target.ArmorType = ArmorClass.HeavyVehicle;
             Fire(shooter, target.Position + Vector3.Up);
             Check(target.HitPoints == 79, "Combat retains small arms versus heavy armor balancing");
@@ -205,33 +180,26 @@ internal static class CombatSystemChecks
                 "Actual rocket collision resolves the elevated aircraft instead of ground terrain beneath it");
 
             // Verify the real host's lifecycle gateway, not only CombatSystem.Reset in isolation.
-            var host = new NetworkHost(network, input, world);
-            var hostCombat = (CombatSystem)typeof(NetworkHost).GetField("_combat", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(host)!;
-            typeof(NetworkHost).GetMethod("EnsureSessionGeneration", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, null);
+            Guid armyId = Guid.NewGuid();
+            var armies = world.SimulationArmies; armies.EnsureArmy(armyId, network.LocalPeerId);
+            var players = new List<Player> { new(network.LocalPeerId, "host", armyId: armyId) };
+            var host = new NetworkHost(network, input, world, armies, () => players,
+                () => Array.Empty<AIPlayer>(), (_, _) => { });
+            var hostCombat = host.Combat;
+            host.EnsureSessionGeneration();
             hostCombat.ResolveAttackAsync(Shot(shooter, aircraft.Position + Vector3.Up)).GetAwaiter().GetResult();
             Check(hostCombat.ActiveProjectileCount == 1, "Host delegates rocket flight state to its combat system");
-            Set(host, typeof(NetworkHost), "_sessionGeneration", network.SessionGeneration - 1);
-            typeof(NetworkHost).GetMethod("EnsureSessionGeneration", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(host, null);
+            network.Disconnect();
+            host.EnsureSessionGeneration();
             Check(hostCombat.ActiveProjectileCount == 0 && hostCombat.PendingImpactCount == 0,
                 "Real host session lifecycle clears combat projectiles and pending impacts");
-            var game = Empty<RTSGame>();
-            var armyId = Guid.NewGuid();
-            var armies = new ArmyHandler(); armies.EnsureArmy(armyId, network.LocalPeerId);
-            Set(game, typeof(RTSGame), "<World>k__BackingField", world);
-            Set(game, typeof(RTSGame), "<Armies>k__BackingField", armies);
-            Set(game, typeof(RTSGame), "_players", new List<Player> { new(network.LocalPeerId, "host", armyId: armyId) });
-            Set(game, typeof(RTSGame), "_aiPlayers", new Dictionary<Guid, AIPlayer>());
-            Globals.Game = game;
-            var starts = new GameplayMarkerHandler(); starts.Add(GameplayMarkerType.PlayerStart, new(3, 0, 3), 0);
-            Set(world, typeof(GameWorld), "<GameplayMarkers>k__BackingField", starts);
+            world.GameplayMarkers.Add(GameplayMarkerType.PlayerStart, new(3, 0, 3), 0);
             hostCombat.ResolveAttackAsync(Shot(shooter, aircraft.Position + Vector3.Up)).GetAwaiter().GetResult();
-            var startMethod = typeof(NetworkHost).GetMethod("TryCreateStartMultiplayerGameCommand", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            Check(startMethod.Invoke(host, [NetworkCommands.CreateStartMultiplayerGameRequest(Guid.NewGuid())]) is null && hostCombat.ActiveProjectileCount == 1,
+            Check(host.TryCreateStartMultiplayerGameCommand(NetworkCommands.CreateStartMultiplayerGameRequest(Guid.NewGuid())) is null && hostCombat.ActiveProjectileCount == 1,
                 "Rejected game-start preserves authoritative projectile state");
-            Check(startMethod.Invoke(host, [NetworkCommands.CreateStartMultiplayerGameRequest(network.LocalPeerId)]) is NetworkMessage && hostCombat.ActiveProjectileCount == 0,
+            Check(host.TryCreateStartMultiplayerGameCommand(NetworkCommands.CreateStartMultiplayerGameRequest(network.LocalPeerId)) is NetworkMessage && hostCombat.ActiveProjectileCount == 0,
                 "Accepted game-start resets authoritative projectile state before the new match");
         }
-        finally { Globals.World = savedWorld; Globals.Game = savedGame; }
         return checks;
     }
 }

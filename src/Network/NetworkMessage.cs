@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 using Microsoft.Xna.Framework;
 
 namespace RTS.Network;
@@ -126,9 +127,10 @@ public sealed record WorldData(
     TiberiumSeedState[]? TiberiumCells = null,
     MapObjectState[]? MapObjects = null);
 
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record UnitRoute(
-    Guid UnitId,
-    Point[] Cells,
+    [property: JsonRequired] Guid UnitId,
+    [property: JsonRequired] Point[] Cells,
     float? TargetX = null,
     float? TargetZ = null);
 
@@ -151,10 +153,12 @@ public sealed record ArmySnapshot(Guid Id, Guid? TeamId, int Resources, Guid[] O
 public sealed record VisibilitySnapshot(Guid ArmyId, byte[] Cells);
 public sealed record ExploredVisibilitySnapshot(Guid ArmyId, int CellCount, byte[] Bits);
 public sealed record OccupantSnapshot(Guid UnitId, OccupantRole Role);
+public sealed record BuildingExitSnapshot(Guid SourceBuildingId, float X, float Y, float Z);
 public sealed record RuntimeUnitSnapshot(string TypeId, Guid UnitId, Guid CreatorPlayerId, Guid? ArmyId,
     float X, float Y, float Z, float RotationDegrees, float HitPoints, UnitBehavior Behavior,
     int PurchasePrice, UnitState State, OccupantSnapshot[] Occupants,
-    HarvestPhase? HarvestPhase = null, float CargoAmount = 0.0f);
+    HarvestPhase? HarvestPhase = null, float CargoAmount = 0.0f, BuildingExitSnapshot? BuildingExit = null,
+    EarthworkOrder? EarthworkOrder = null, int EarthworkSequence = 0, Soldier.Weapon? SoldierWeapon = null);
 public sealed record SessionSnapshot(WorldData World, ArmySnapshot[] Armies,
     RuntimeUnitSnapshot[] Units, VisibilitySnapshot[] Visibility, double HostTime,
     bool IsMatchStarted = false);

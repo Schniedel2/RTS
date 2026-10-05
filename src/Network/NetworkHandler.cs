@@ -19,7 +19,7 @@ public sealed class NetworkHandler : IDisposable
 {
     public const int SessionPortStart = 27000;
     public const int SessionPortEnd = 27010;
-    public const int ProtocolVersion = 4;
+    public const int ProtocolVersion = 6;
     public const int MaximumMessagesPerUpdate = 128;
     public const int MaximumPendingMessages = 8192;
     private readonly NetworkInbox<Inbound> _receivedMessages = new(input => input.Message, input => (input.Generation, input.Client));
@@ -196,6 +196,7 @@ public sealed class NetworkHandler : IDisposable
             command,
             arguments);
 
+        if (!AcceptComplexCommand(message)) return Task.CompletedTask;
         if (IsHost)
         {
             EnqueueLocalMessage(message);
@@ -247,11 +248,20 @@ public sealed class NetworkHandler : IDisposable
     public void ApplyLocalCommand(NetworkMessage message)
     {
         AssertGameThread();
-        MessageReceived?.Invoke(message);
+        if (AcceptComplexCommand(message)) MessageReceived?.Invoke(message);
     }
 
-    public void EnqueueLocalMessage(NetworkMessage message) =>
-        EnqueueInbound(new(SessionGeneration, null, message));
+    private bool AcceptComplexCommand(NetworkMessage message)
+    {
+        if (ComplexCommandPayloads.TryValidate(message, out string error)) return true;
+        ReportError(error);
+        return false;
+    }
+
+    public void EnqueueLocalMessage(NetworkMessage message)
+    {
+        if (AcceptComplexCommand(message)) EnqueueInbound(new(SessionGeneration, null, message));
+    }
 
     private void EnqueueInbound(Inbound input)
     {
@@ -393,7 +403,7 @@ public sealed class NetworkHandler : IDisposable
         {
             if (message.ProtocolVersion != ProtocolVersion)
             {
-                ReportError("Incompatible network protocol. Host and clients must use the same build.");
+                ReportError($"Incompatible network protocol: client {ProtocolVersion}, host {message.ProtocolVersion}. Host and clients must use the same build.");
                 _connections.GetValueOrDefault(_serverConnection!)?.Dispose();
                 return;
             }
@@ -426,7 +436,12 @@ public sealed class NetworkHandler : IDisposable
         if (message.Type == NetworkMessageType.JoinSession)
         {
             string name = message.DisplayName?.Trim() ?? "";
-            if (message.ProtocolVersion != ProtocolVersion || name.Length is < 1 or > 32 ||
+            if (message.ProtocolVersion != ProtocolVersion)
+            {
+                RejectJoin(client, $"Incompatible network protocol: host {ProtocolVersion}, client {message.ProtocolVersion}. Use the same build.");
+                return;
+            }
+            if (name.Length is < 1 or > 32 ||
                 message.SenderId == Guid.Empty || message.SenderId == LocalPeerId ||
                 _members.ContainsKey(message.SenderId) || _members.Values.Any(peer => peer.Client == client) ||
                 string.Equals(name, DisplayName, StringComparison.OrdinalIgnoreCase) ||

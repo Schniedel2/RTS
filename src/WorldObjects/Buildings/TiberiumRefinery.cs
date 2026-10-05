@@ -15,12 +15,12 @@ public class TiberiumRefinery : Building
         Vector3 position,
         Guid unitId,
         string meshName = "tiberium-refinery-1",
-        int purchasePrice = 0
+        int purchasePrice = 0, bool loadModel = true
         ) : base(
             position,
             unitId, purchasePrice)
     {
-        SetMesh(meshName, deriveDimensions: true);
+        if (loadModel) SetMesh(meshName, deriveDimensions: true);
 
         ProductionQueue.Capacity = 1;
         ApplyCatalogMetadata();

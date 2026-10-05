@@ -12,10 +12,10 @@ public sealed class Medic : Soldier
     public const float SearchRadiusInCells = 12.0f;
     public const float HealingRadiusInCells = 2.5f;
 
-    public Medic(Vector3 position, Guid unitId)
-        : base(position, unitId, new GroundMovementProfile(MovementModes.Walk, 50.0f))
+    public Medic(Vector3 position, Guid unitId, bool loadModel = true)
+        : base(position, unitId, new GroundMovementProfile(MovementModes.Walk, 50.0f), loadModel)
     {
-        SetMesh("Soldier-2", deriveDimensions: true);
+        if (loadModel) SetMesh("Soldier-2", deriveDimensions: true);
         SetWeapon(Weapon.Medikit);
         IsCrewMember = true;
     }

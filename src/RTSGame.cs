@@ -19,6 +19,7 @@ public class RTSGame
     public ShadowMap ShadowMap => _shadowMap;
     public NetworkHandler Network { get; }
     public NetworkInput NetworkInput { get; }
+    public SessionStateService SessionState { get; }
     public NetworkHost NetworkHost { get; }
     public NetworkClient NetworkClient { get; }
     public NetworkSyncDiagnostics NetworkSyncDiagnostics { get; }
@@ -76,6 +77,13 @@ public class RTSGame
         Globals.Console = new GameConsole();
 
         Network = new NetworkHandler();
+        World.ConfigureSimulation(Armies, Network, (firstId, secondId) =>
+        {
+            Army? first = Armies.Find(firstId), second = Armies.Find(secondId);
+            Player? firstOwner = first is null ? null : Players.FirstOrDefault(player => first.OwnerPlayerIds.Contains(player.Id));
+            Player? secondOwner = second is null ? null : Players.FirstOrDefault(player => second.OwnerPlayerIds.Contains(player.Id));
+            return firstOwner is not null && secondOwner is not null && firstOwner.TeamId == secondOwner.TeamId;
+        });
         Player localPlayer = new(Network.LocalPeerId, Network.DisplayName);
         _players.Add(localPlayer);
         Teams.UpdateMembership(localPlayer.Id, localPlayer.TeamId, localPlayer.TeamId);
@@ -97,8 +105,10 @@ public class RTSGame
             World.GetWorldData()));
         Network.SetSessionSnapshotProvider(CreateSessionSnapshotCommand);
         Network.Diagnostic += error => Globals.Console.Print($"[Network] {error}");
-        NetworkInput = new NetworkInput(Network);
-        NetworkHost = new NetworkHost(Network, NetworkInput, World);
+        SessionState = new SessionStateService(World, Armies);
+        NetworkInput = new NetworkInput(Network, World, Armies, SessionState);
+        NetworkHost = new NetworkHost(Network, NetworkInput, World, Armies,
+            () => Players, () => AIPlayers, NotifyCombatLoss);
         NetworkSyncDiagnostics = new NetworkSyncDiagnostics(Network, NetworkInput,
             CaptureSessionSnapshot, message => Globals.Console.Print(message));
         Network.SetHostTimeProvider(() => NetworkHost.HostTime);
@@ -132,77 +142,22 @@ public class RTSGame
     internal SessionSnapshot CaptureSessionSnapshot()
     {
         Network.AssertGameThread();
-        RuntimeUnitSnapshot[] units = World.Units.Units
-            .Where(unit => unit is not TiberiumSource && !unit.IsDying &&
-                !string.IsNullOrWhiteSpace(GetSnapshotTypeId(unit)))
-            .Select(unit => new RuntimeUnitSnapshot(
-                GetSnapshotTypeId(unit), unit.UnitId, unit.CreatorPlayerId, unit.ArmyId,
-                unit.Position.X, unit.Position.Y, unit.Position.Z, GetYawDegrees(unit.Transform),
-                unit.HitPoints, unit.Behavior, unit is Building building ? building.PurchasePrice : 0,
-                unit.GetState(), unit.Occupancy?.Occupants
-                    .Select(item => new OccupantSnapshot(item.UnitId, item.Role)).ToArray() ?? [],
-                unit is Harvester harvester ? harvester.HarvestPhase : null,
-                unit is Harvester cargo ? cargo.CargoAmount : 0.0f))
-            .ToArray();
-        return new SessionSnapshot(World.GetWorldData(), Armies.GetSnapshot(), units,
-            World.Visibility.GetSnapshot(), NetworkHost.HostTime, IsMatchStarted);
+        return SessionState.Capture(NetworkHost.HostTime, IsMatchStarted);
     }
 
     internal void ApplySessionSnapshot(SessionSnapshot snapshot)
     {
         Network.AssertGameThread();
         IsMatchStarted = snapshot.IsMatchStarted;
-        World.Units.ClearForNetworkSnapshot();
-        Armies.ApplySnapshot(snapshot.Armies);
+        SessionState.Apply(snapshot);
         foreach (Player player in _players)
             if (snapshot.Armies.FirstOrDefault(army => army.Owners.Contains(player.Id)) is ArmySnapshot army)
                 player.SetArmy(army.Id);
-        World.ApplyWorldData(snapshot.World);
-
-        foreach (RuntimeUnitSnapshot state in snapshot.Units
-            .OrderBy(unit => IsSnapshotBuilding(unit.TypeId) ? 0 : 1))
-        {
-            Vector3 position = new(state.X, state.Y, state.Z);
-            Unit? unit = IsSnapshotBuilding(state.TypeId)
-                ? World.Units.SpawnBuilding(state.TypeId, position, state.RotationDegrees,
-                    state.UnitId, state.CreatorPlayerId, state.PurchasePrice)
-                : World.Units.SpawnUnit(state.TypeId, position, state.RotationDegrees,
-                    state.UnitId, state.CreatorPlayerId);
-            if (unit is null) continue;
-            unit.SetArmy(state.ArmyId);
-            unit.HitPoints = Math.Clamp(state.HitPoints, 0.0f, unit.MaxHitPoints);
-            unit.Behavior = state.Behavior;
-            unit.ApplyState(state.State);
-            if (unit is Harvester harvester && state.HarvestPhase is HarvestPhase phase)
-                harvester.ApplyHarvestState(phase, state.CargoAmount);
-        }
-        foreach (RuntimeUnitSnapshot container in snapshot.Units.Where(unit => unit.Occupants.Length > 0))
-            foreach (OccupantSnapshot occupant in container.Occupants)
-                World.Units.EmbarkUnit(occupant.UnitId, container.UnitId, occupant.Role);
-        World.Visibility.ApplySnapshot(snapshot.Visibility);
-        World.ClearTransientEffects();
         Hud.Reset();
         _fogTexture.Reset();
     }
 
     internal void MarkMatchStarted() => IsMatchStarted = true;
-
-    private static bool IsSnapshotBuilding(string typeId) => typeId is
-        "gdi-barracks" or "gdi-base" or "reaktor" or "turret-minigun" or
-        "building-1" or "vehicle-factory" or "communicationstower" or
-        "command-center" or "helipad" or "silo" or "tiberium-refinery";
-
-    private static string GetSnapshotTypeId(Unit unit) => unit switch
-    {
-        GenericBuilding => "building-1",
-        TerrainEditorTool => "editor",
-        Soldier when string.IsNullOrWhiteSpace(unit.GameplayTypeId) => "soldier",
-        Car when string.IsNullOrWhiteSpace(unit.GameplayTypeId) => "car",
-        _ => unit.GameplayTypeId
-    };
-
-    private static float GetYawDegrees(Matrix transform) =>
-        MathHelper.ToDegrees(MathF.Atan2(-transform.Forward.X, -transform.Forward.Z));
 
     public void UpdatePlayer(Guid playerId, string name, int teamId, PlayerSkin skin)
     {

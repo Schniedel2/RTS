@@ -69,7 +69,7 @@ public class MobileUnit : Unit
         if (target is not Vector2 position || CurrentCommand is not null)
             return;
 
-        GameWorld world = Globals.World;
+        GameWorld world = SimulationWorld;
         Point center = world.GameGrid.ToCell(new Vector3(position.X, 0, position.Y));
         // Earlier recruits may already occupy the marker. Gather around it
         // instead of abandoning every subsequent order at the building exit.
@@ -125,8 +125,7 @@ public class MobileUnit : Unit
     private const float BlockedMovementGraceSeconds = MovementStallTimeoutSeconds;
 
     // Offline worlds are authoritative too; connected clients only predict confirmed routes.
-    internal static bool IsMovementAuthority =>
-        Globals.Game?.Network is not { IsConnected: true, IsHost: false };
+    internal bool IsMovementAuthority => SimulationWorld.IsMovementAuthority;
     public MovementStatus MovementStatus { get; private set; }
     public int MovementRetryCount => _movementRetryCount;
     private float _retryMovementSeconds;
@@ -187,14 +186,14 @@ public class MobileUnit : Unit
 
     public void AlignToTerrain()
     {
-        Transform = CreateTerrainTransform(Globals.World.Terrain);
+        Transform = CreateTerrainTransform(SimulationWorld.Terrain);
     }
 
     public void AlignToTerrain(GameTime gameTime)
     {
         if (!UseTerrainLandingPhysics)
         {
-            Transform = CreateTerrainTransform(Globals.World.Terrain);
+            Transform = CreateTerrainTransform(SimulationWorld.Terrain);
             Velocity = Vector3.Zero;
             return;
         }
@@ -207,7 +206,7 @@ public class MobileUnit : Unit
         transform.Translation = nextPosition;
         Transform = transform;
 
-        Matrix terrainTransform = CreateTerrainTransform(Globals.World.Terrain);
+        Matrix terrainTransform = CreateTerrainTransform(SimulationWorld.Terrain);
         float targetHeight = terrainTransform.Translation.Y;
 
         if (nextPosition.Y > targetHeight)
@@ -233,7 +232,7 @@ public class MobileUnit : Unit
             return;
 
         Point nextCell = _plannedPath[0];
-        Point currentCell = Globals.World.GameGrid.ToCell(Position);
+        Point currentCell = SimulationWorld.GameGrid.ToCell(Position);
 
         // Safe lookahead may pass inside a corner and reach a later confirmed
         // route cell without touching every earlier cell center. Advance to that
@@ -251,7 +250,7 @@ public class MobileUnit : Unit
         }
         nextCell = _plannedPath[0];
 
-        Vector3 target = Globals.World.GameGrid.ToWorldPosition(nextCell, Position.Y);
+        Vector3 target = SimulationWorld.GameGrid.ToWorldPosition(nextCell, Position.Y);
         Vector3 toTarget = target - Position;
         toTarget.Y = 0.0f;
 
@@ -271,12 +270,12 @@ public class MobileUnit : Unit
         // footprint cut straight across building corners.
         float intermediateRadius = Math.Max(
             0.05f,
-            Globals.World.GameGrid.CellSize * 0.15f);
+            SimulationWorld.GameGrid.CellSize * 0.15f);
         float arrivalRadius = !isFinalWaypoint
             ? Math.Min(WaypointArrivalRadius, intermediateRadius)
             : TargetBuildingId is not null
                 ? Math.Min(WaypointArrivalRadius, 0.15f)
-                : Math.Min(WaypointArrivalRadius, Globals.World.GameGrid.CellSize * 0.35f);
+                : Math.Min(WaypointArrivalRadius, SimulationWorld.GameGrid.CellSize * 0.35f);
         if (distanceToTarget <= arrivalRadius)
         {
             CompleteWaypoint();
@@ -366,7 +365,7 @@ public class MobileUnit : Unit
             // A distant destination normally favors forward travel, but a
             // wheeled vehicle beside a front obstacle first needs turning room.
             CurrentSpeed = 0.0f;
-            float cellSize = Globals.World.GameGrid.CellSize;
+            float cellSize = SimulationWorld.GameGrid.CellSize;
             float turningRadius = Math.Max(0.0f, MoveSpeed) /
                 Math.Max(0.01f, steering.MovingTurnRadiansPerSecond);
             _reverseClearanceRemaining = Math.Clamp(
@@ -431,7 +430,7 @@ public class MobileUnit : Unit
         Vector3 previous = Position;
         foreach (Point cell in _plannedPath)
         {
-            Vector3 waypoint = Globals.World.GameGrid.ToWorldPosition(cell, Position.Y);
+            Vector3 waypoint = SimulationWorld.GameGrid.ToWorldPosition(cell, Position.Y);
             distance += MathF.Sqrt(HorizontalDistanceSquared(previous, waypoint));
             if (distance > stopAfter) return distance;
             previous = waypoint;
@@ -473,7 +472,7 @@ public class MobileUnit : Unit
     private Vector3 GetRouteSteeringTarget(Vector3 fallback)
     {
         if (!CanOnlyMoveForward || _plannedPath.Count == 0) return fallback;
-        GameGrid grid = Globals.World.GameGrid;
+        GameGrid grid = SimulationWorld.GameGrid;
         Point currentCell = grid.ToCell(Position);
         if (_steeringRouteHead == _plannedPath[0] && _steeringWaypoint is Point retained &&
             retained != currentCell && grid.CanTraverseDirect(this, currentCell, retained))
@@ -515,7 +514,7 @@ public class MobileUnit : Unit
         _movementRetryCount++;
         MovementStatus = MovementStatus.Planning;
         NavigationChanged();
-        Globals.World.PathfindingManager.RequestPath(this, MovementProfile, CurrentCommand.Value.Target, _pathRequestId);
+        SimulationWorld.PathfindingManager.RequestPath(this, MovementProfile, CurrentCommand.Value.Target, _pathRequestId);
     }
 
     internal void OnPathSearchFailed()
@@ -535,10 +534,10 @@ public class MobileUnit : Unit
         if (CurrentCommand is null || MovementStatus != MovementStatus.Blocked) return;
         _retryMovementSeconds -= seconds;
         if (_retryMovementSeconds > 0) return;
-        if (TargetBuildingId is Guid siteId && Globals.World.Units.FindById(siteId) is Building site)
+        if (TargetBuildingId is Guid siteId && SimulationWorld.Units.FindById(siteId) is Building site)
         {
             _movementRetryCount++;
-            TryReceiveBuildConstructionCommand(Globals.World, site, preserveQueue: true);
+            TryReceiveBuildConstructionCommand(SimulationWorld, site, preserveQueue: true);
         }
         else RequestMovementRecovery();
     }
@@ -556,7 +555,7 @@ public class MobileUnit : Unit
         if (CanTurnInPlace) return;
 
         Transform = transformBeforeTurn;
-        Globals.World.GameGrid.TryUpdateFootprint(this);
+        SimulationWorld.GameGrid.TryUpdateFootprint(this);
     }
 
     protected bool TryMoveAfterTurn(Vector3 targetPosition, Matrix transformBeforeTurn)
@@ -589,7 +588,7 @@ public class MobileUnit : Unit
             Transform = candidateTransform;
             // Rotation updates the soft movement clearance. The hard core footprint
             // remains stable, so a visual turn cannot invalidate an accepted route.
-            if (!Globals.World.GameGrid.TryUpdateFootprint(this))
+            if (!SimulationWorld.GameGrid.TryUpdateFootprint(this))
                 Transform = previousTransform;
 
             return GetHorizontalDirection(Vector3.Forward);
@@ -648,7 +647,7 @@ public class MobileUnit : Unit
         {
             var queued = _commandQueue.Dequeue();
             if (queued.Route is { Length: 0 }) continue;
-            StartGoto(Globals.World, queued.Command, queued.Route);
+            StartGoto(SimulationWorld, queued.Command, queued.Route);
             return;
         }
         ClearCommand();
@@ -656,7 +655,7 @@ public class MobileUnit : Unit
 
     protected bool TryMoveTo(Vector3 position)
     {
-        GameGrid grid = Globals.World.GameGrid;
+        GameGrid grid = SimulationWorld.GameGrid;
         Point targetCell = grid.ToCell(position);
         Point currentCell = grid.ToCell(Position);
 
@@ -724,8 +723,8 @@ public class MobileUnit : Unit
             return true;
         }
 
-        Point exitCell = Globals.World.GameGrid.ToCell(SpawnExitPosition);
-        if (!Globals.World.GameGrid.TryMove(this, exitCell))
+        Point exitCell = SimulationWorld.GameGrid.ToCell(SpawnExitPosition);
+        if (!SimulationWorld.GameGrid.TryMove(this, exitCell))
         {
             PathDebug($"building exit blocked cell=({exitCell.X},{exitCell.Y}); waiting");
             return true;
@@ -965,7 +964,7 @@ public class MobileUnit : Unit
         ResetSteeringTarget();
         _plannedPath.Clear();
         _plannedPath.AddRange(path);
-        _previousRouteCell = Globals.World?.GameGrid.ToCell(Position);
+        _previousRouteCell = SimulationWorld?.GameGrid.ToCell(Position);
         _pathProgress = 0;
         _retryMovementSeconds = 0;
         MovementStatus = path.Count > 0 ? MovementStatus.FollowingRoute : MovementStatus.Idle;
@@ -992,7 +991,7 @@ public class MobileUnit : Unit
             PathDebug($"command cleared remainingWaypoints={_plannedPath.Count}");
         _plannedPath.Clear();
         if (PendingEnterContainerId is Guid containerId &&
-            Globals.World.Units.FindById(containerId) is Unit container)
+            SimulationWorld.Units.FindById(containerId) is Unit container)
         {
             container.Occupancy?.ClearReservation(UnitId);
         }
@@ -1067,7 +1066,7 @@ public class MobileUnit : Unit
         Matrix oldVisual = GetVisualWorldMatrix();
         Matrix transform = Matrix.CreateRotationY(MathHelper.ToRadians(data.YawDegrees));
         transform.Translation = new Vector3(data.X, data.Y, data.Z);
-        bool positionApplied = Globals.World.GameGrid.TryApplyAuthoritativeTransform(this, transform);
+        bool positionApplied = SimulationWorld.GameGrid.TryApplyAuthoritativeTransform(this, transform);
         Vector3 correction = positionApplied ? oldVisual.Translation - Position : _renderCorrectionOffset;
         // Blend small prediction errors visually. Teleports must not sweep across the map.
         _renderCorrectionOffset = correction.LengthSquared() <= 16.0f ? correction : Vector3.Zero;
@@ -1097,7 +1096,7 @@ public class MobileUnit : Unit
             _plannedPath.Clear();
             _plannedPath.AddRange(_replicatedRoute.Skip(consumed));
             _previousRouteCell = consumed > 0 ? _replicatedRoute[consumed - 1]
-                : _replicatedPreviousCell ?? Globals.World.GameGrid.ToCell(Position);
+                : _replicatedPreviousCell ?? SimulationWorld.GameGrid.ToCell(Position);
             _pathProgress = data.PathProgress;
         }
         else if (data.Navigation is null && !data.IsMoving)
@@ -1118,7 +1117,7 @@ public class MobileUnit : Unit
         if (TargetBuildingId is not Guid buildingId)
             return;
 
-        if (Globals.World.Units.FindById(buildingId) is not Building constructionSite ||
+        if (SimulationWorld.Units.FindById(buildingId) is not Building constructionSite ||
             constructionSite.IsDying || constructionSite.IsCompleted)
         {
             TargetBuildingId = null;
@@ -1129,7 +1128,7 @@ public class MobileUnit : Unit
         }
         if (IsBuilding) return;
 
-        if (Globals.World.GameGrid.AreFootprintsAdjacent(this, constructionSite))
+        if (SimulationWorld.GameGrid.AreFootprintsAdjacent(this, constructionSite))
             BeginConstructionAtCurrentPosition();
     }
 
@@ -1154,7 +1153,7 @@ public class MobileUnit : Unit
 
         Point waypoint = _steeringWaypoint is Point selected && _plannedPath.Contains(selected)
             ? selected : _plannedPath[0];
-        Vector3 target = Globals.World.GameGrid.ToWorldPosition(waypoint, Position.Y);
+        Vector3 target = SimulationWorld.GameGrid.ToWorldPosition(waypoint, Position.Y);
         float distanceSquared = HorizontalDistanceSquared(Position, target);
         if (_progressWaypoint != waypoint ||
             MathF.Sqrt(distanceSquared) < MathF.Sqrt(_bestWaypointDistanceSquared) - MinimumProgressDistance)
@@ -1226,7 +1225,7 @@ public class MobileUnit : Unit
         if (needsReplan)
         {
             PathDebug($"attack replan target=({approachTarget.X:0.0},{approachTarget.Y:0.0})");
-            if (TryReceiveGotoCommand(Globals.World, new GotoCommand(approachTarget)))
+            if (TryReceiveGotoCommand(SimulationWorld, new GotoCommand(approachTarget)))
                 _lastAttackApproachTarget = approachTarget;
         }
         _nextAttackReplanTime = gameTime.TotalGameTime.TotalSeconds + 0.5;
@@ -1237,7 +1236,7 @@ public class MobileUnit : Unit
         if (FollowUnitId is not Guid followId)
             return;
 
-        Unit? followUnit = Globals.World.Units.FindById(followId);
+        Unit? followUnit = SimulationWorld.Units.FindById(followId);
         if (followUnit is null || followUnit == this)
         {
             ClearFollowUnit();
@@ -1271,7 +1270,7 @@ public class MobileUnit : Unit
         bool needsReplan = !_followPathActive || CurrentCommand is null ||
             _lastFollowApproachTarget is null ||
             Vector2.DistanceSquared(approachTarget, _lastFollowApproachTarget.Value) > 4.0f;
-        if (needsReplan && TryReceiveGotoCommand(Globals.World, new GotoCommand(approachTarget)))
+        if (needsReplan && TryReceiveGotoCommand(SimulationWorld, new GotoCommand(approachTarget)))
         {
             _followPathActive = true;
             _lastFollowApproachTarget = approachTarget;

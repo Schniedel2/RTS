@@ -58,26 +58,44 @@ public sealed class NetworkHost
     public double HostTime => _hostTime;
     private readonly CombatSystem _combat;
 
+    private readonly ArmyHandler _armies;
+    private readonly Func<IReadOnlyList<Player>> _players;
+    private readonly Func<IReadOnlyCollection<AIPlayer>> _aiPlayers;
+    private readonly Func<bool> _isMatchStarted;
+    internal CombatSystem Combat => _combat;
+    internal HarvestSystem Harvest => _harvest;
+    internal MedicSystem Medics => _medics;
+    internal EarthworkController Earthworks => _earthworks;
+
     public NetworkHost(
         NetworkHandler networkHandler,
         NetworkInput networkInput,
-        GameWorld world)
+        GameWorld world) : this(networkHandler, networkInput, world, Globals.Game.Armies,
+            () => Globals.Game.Players, () => Globals.Game.AIPlayers,
+            (target, attacker) => Globals.Game.NotifyCombatLoss(target, attacker)) { }
+
+    public NetworkHost(NetworkHandler networkHandler, NetworkInput networkInput, GameWorld world,
+        ArmyHandler armies, Func<IReadOnlyList<Player>> players,
+        Func<IReadOnlyCollection<AIPlayer>> aiPlayers, Action<Unit, Unit?> notifyCombatLoss, Func<bool>? isMatchStarted = null)
     {
+        _armies = armies;
+        _isMatchStarted = isMatchStarted ?? (() => Globals.Game.IsMatchStarted);
+        _players = players;
+        _aiPlayers = aiPlayers;
         _networkHandler = networkHandler;
         _world = world;
-        _combat = new CombatSystem(world, networkHandler.LocalPeerId, PublishAsync,
-            (target, attacker) => Globals.Game.NotifyCombatLoss(target, attacker));
-        _harvest = new HarvestSystem(world, Globals.Game.Armies, networkHandler.LocalPeerId,
+        _combat = new CombatSystem(world, networkHandler.LocalPeerId, PublishAsync, notifyCombatLoss);
+        _harvest = new HarvestSystem(world, _armies, networkHandler.LocalPeerId,
             PublishAsync, QueueHarvestRoute, () => networkHandler.SessionGeneration,
             id => _planningVersions.GetValueOrDefault(id));
-        _medics = new MedicSystem(world, Globals.Game.Armies, networkHandler.LocalPeerId,
+        _medics = new MedicSystem(world, _armies, networkHandler.LocalPeerId,
             PublishAsync, CreateStopCommand, QueueMedicRoute, () => networkHandler.SessionGeneration,
             id => _planningVersions.GetValueOrDefault(id));
         _earthworks = new EarthworkController(world, networkHandler.LocalPeerId, command =>
         {
             networkHandler.ApplyLocalCommand(command);
             _earthworkBroadcasts.Enqueue(command);
-        });
+        }, refreshGraphics: world.GraphicsEnabled, armies: armies);
         networkInput.MessageReceived += HandleMessage;
     }
 
@@ -137,7 +155,7 @@ public sealed class NetworkHost
     private NetworkMessage? TryCreateHelicopterOrder(NetworkMessage request)
     {
         if (request.UnitId is not Guid id || _world.Units.FindById(id) is not Helicopter helicopter ||
-            !Globals.Game.Armies.CanControl(request.SenderId, helicopter.ArmyId) ||
+            !_armies.CanControl(request.SenderId, helicopter.ArmyId) ||
             request.HelicopterOrder is not HelicopterOrder order || !Enum.IsDefined(order) ||
             !float.IsFinite(request.X) || !float.IsFinite(request.Z)) return null;
         bool accepted;
@@ -158,7 +176,7 @@ public sealed class NetworkHost
             if (_world.Units.FindById(id) is not Unit attacker) continue;
             if (attacker is Helicopter helicopter)
             {
-                if (request.SenderId != _networkHandler.LocalPeerId && !Globals.Game.Armies.CanControl(request.SenderId, helicopter.ArmyId)) continue;
+                if (request.SenderId != _networkHandler.LocalPeerId && !_armies.CanControl(request.SenderId, helicopter.ArmyId)) continue;
                 Vector2 offset = new(request.X - helicopter.Position.X, request.Z - helicopter.Position.Z);
                 if (!float.IsFinite(request.Y) || !float.IsFinite(offset.X) || !float.IsFinite(offset.Y) || offset.LengthSquared() > helicopter.AttackRange * helicopter.AttackRange ||
                     !helicopter.TryAuthorizeShot(_hostTime)) continue;
@@ -178,7 +196,7 @@ public sealed class NetworkHost
             .Distinct()
             .Where(id => _world.Units.FindById(id) is Unit attacker &&
                 (request.SenderId == _networkHandler.LocalPeerId ||
-                 Globals.Game.Armies.CanControl(request.SenderId, attacker.ArmyId)) &&
+                 _armies.CanControl(request.SenderId, attacker.ArmyId)) &&
                 attacker.CanAttackTarget(target))
             .ToArray();
         return accepted.Length == 0
@@ -193,7 +211,7 @@ public sealed class NetworkHost
             .Distinct()
             .Where(id => _world.Units.FindById(id) is Unit attacker &&
                 (request.SenderId == _networkHandler.LocalPeerId ||
-                 Globals.Game.Armies.CanControl(request.SenderId, attacker.ArmyId)) &&
+                 _armies.CanControl(request.SenderId, attacker.ArmyId)) &&
                 attacker.CanAttackDomain(TargetDomain.Ground))
             .ToArray();
         return accepted.Length == 0
@@ -202,7 +220,7 @@ public sealed class NetworkHost
                 _networkHandler.LocalPeerId, request with { UnitIds = accepted });
     }
 
-    private void EnsureSessionGeneration()
+    internal void EnsureSessionGeneration()
     {
         long generation = _networkHandler.SessionGeneration;
         if (generation == _sessionGeneration) return;
@@ -230,6 +248,7 @@ public sealed class NetworkHost
 
     private void HandleMessage(NetworkMessage message)
     {
+        if (!ComplexCommandPayloads.TryValidate(message, out _)) return;
         EnsureSessionGeneration();
         if (!_networkHandler.IsHost)
             return;
@@ -358,7 +377,7 @@ public sealed class NetworkHost
                 if (request.Type is NetworkMessageType.GotoRequest or NetworkMessageType.StopRequest or
                     NetworkMessageType.FollowRequest or NetworkMessageType.AttackTargetRequest or NetworkMessageType.AttackGroundRequest)
                     request = request with { UnitIds = (request.UnitIds ?? Array.Empty<Guid>()).Where(id =>
-                        _world.Units.FindById(id) is not Helicopter helicopter || Globals.Game.Armies.CanControl(request.SenderId, helicopter.ArmyId)).ToArray() };
+                        _world.Units.FindById(id) is not Helicopter helicopter || _armies.CanControl(request.SenderId, helicopter.ArmyId)).ToArray() };
                 _medics.HandleCommandOverride(request, ExpandSquadUnitIds(request.UnitIds ?? []));
                 _earthworks.CancelForRequest(request);
                 _harvest.CancelForRequest(request);
@@ -475,7 +494,7 @@ public sealed class NetworkHost
     private NetworkMessage CreateTransferUnitCommand(NetworkMessage request)
     {
         Player? recipient = request.TargetId is Guid playerId
-            ? Globals.Game.Players.FirstOrDefault(player => player.Id == playerId)
+            ? _players().FirstOrDefault(player => player.Id == playerId)
             : null;
         return NetworkCommands.CreateTransferUnitCommand(
             _networkHandler.LocalPeerId, request, recipient?.ArmyId ?? Guid.Empty);
@@ -533,7 +552,7 @@ public sealed class NetworkHost
 
     private bool PlanVersionValid(GotoPlan plan, MobileUnit unit) =>
         !unit.IsDying && !unit.IsEmbarked &&
-        Globals.Game.Armies.CanControl(plan.Request.SenderId, unit.ArmyId) &&
+        _armies.CanControl(plan.Request.SenderId, unit.ArmyId) &&
         plan.Versions.TryGetValue(unit.UnitId, out long version) && version == _planningVersions.GetValueOrDefault(unit.UnitId);
 
     private bool PlanUnitValid(GotoPlan plan, MobileUnit unit) =>
@@ -541,9 +560,6 @@ public sealed class NetworkHost
 
     private void RememberPlanningVersions(NetworkMessage request)
     {
-        if (request.Type == NetworkMessageType.StartMultiplayerGameRequest && request.SenderId == _networkHandler.LocalPeerId)
-            foreach (MobileUnit mobile in _world.Units.Units.OfType<MobileUnit>())
-                _planningVersions[mobile.UnitId] = _planningVersions.GetValueOrDefault(mobile.UnitId) + 1;
         bool replaces = !request.AppendToQueue && request.Type is NetworkMessageType.GotoRequest or
             NetworkMessageType.StopRequest or NetworkMessageType.MoveAwayRequest or
             NetworkMessageType.BuildConstructionRequest or NetworkMessageType.EnterUnitRequest or
@@ -554,7 +570,7 @@ public sealed class NetworkHost
         foreach (Guid unitId in ids.Distinct())
         {
             if (_world.Units.FindMobileUnitById(unitId) is not MobileUnit unit ||
-                !Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId)) continue;
+                !_armies.CanControl(request.SenderId, unit.ArmyId)) continue;
             long version = _planningVersions.GetValueOrDefault(unitId);
             if (replaces) _planningVersions[unitId] = ++version;
             versions[unitId] = version;
@@ -588,7 +604,7 @@ public sealed class NetworkHost
         foreach (SquadLeader leader in requestedIds.Distinct()
             .Select(_world.Units.FindById)
             .OfType<SquadLeader>()
-            .Where(leader => Globals.Game.Armies.CanControl(request.SenderId, leader.ArmyId)))
+            .Where(leader => _armies.CanControl(request.SenderId, leader.ArmyId)))
         {
             Soldier[] members = GetSquadMembers(leader).ToArray();
             float? facingDegrees = request.FormationFacingDegrees;
@@ -608,7 +624,7 @@ public sealed class NetworkHost
         MobileUnit[] units = ExpandSquadUnitIds(requestedIds)
             .Distinct()
             .Select(_world.Units.FindMobileUnitById)
-            .Where(unit => unit is not null && Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId))
+            .Where(unit => unit is not null && _armies.CanControl(request.SenderId, unit.ArmyId))
             .Cast<MobileUnit>()
             .OrderBy(unit => Vector2.DistanceSquared(new Vector2(unit.Position.X, unit.Position.Z), target))
             .ToArray();
@@ -767,7 +783,7 @@ public sealed class NetworkHost
     {
         Guid[] ids = ExpandSquadUnitIds(request.UnitIds ?? [])
             .Where(id => _world.Units.FindById(id) is Unit unit &&
-                Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId))
+                _armies.CanControl(request.SenderId, unit.ArmyId))
             .ToArray();
         foreach (Guid id in ids)
         {
@@ -793,7 +809,7 @@ public sealed class NetworkHost
 
         Guid[] acceptedIds = requestedIds.Distinct().Where(id =>
             _world.Units.FindById(id) is Unit unit && !unit.IsDying &&
-            Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId)).ToArray();
+            _armies.CanControl(request.SenderId, unit.ArmyId)).ToArray();
         if (acceptedIds.Length == 0)
             return null;
         if (actionType == UnitActionType.Stop)
@@ -874,7 +890,7 @@ public sealed class NetworkHost
     {
         NetworkMessage request = plan.Request;
         if (request.UnitId is not Guid id || _world.Units.FindMobileUnitById(id) is not MobileUnit unit ||
-            unit.IsDying || !Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId) ||
+            unit.IsDying || !_armies.CanControl(request.SenderId, unit.ArmyId) ||
             !float.IsFinite(request.X) || !float.IsFinite(request.Z)) yield break;
 
         Vector2 away = new(unit.Position.X - request.X, unit.Position.Z - request.Z);
@@ -913,7 +929,7 @@ public sealed class NetworkHost
         Point? chosenResource = null;
         IEnumerable<int> Work()
         {
-            Guid sender = harvester.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army
+            Guid sender = harvester.ArmyId is Guid armyId && _armies.Find(armyId) is Army army
                 ? army.OwnerPlayerIds.FirstOrDefault() : _networkHandler.LocalPeerId;
             foreach (var candidate in candidates)
             {
@@ -939,7 +955,7 @@ public sealed class NetworkHost
     private void QueueMedicRoute(Medic medic, Vector3 target, Func<bool> valid,
         Action<NetworkMessage?> completed, Action cancelled)
     {
-        Guid sender = medic.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army &&
+        Guid sender = medic.ArmyId is Guid armyId && _armies.Find(armyId) is Army army &&
             army.OwnerPlayerIds.Count > 0 ? army.OwnerPlayerIds.OrderBy(id => id).First() : _networkHandler.LocalPeerId;
         GotoPlan plan = NewGotoPlan(NetworkCommands.CreateGotoRequest(sender, [medic.UnitId], target.X, target.Y, target.Z));
         _world.PathfindingManager.Scheduler.Enqueue(PlanGoto(plan),
@@ -974,13 +990,14 @@ public sealed class NetworkHost
 
     private NetworkMessage? TryCreateBuildCommand(NetworkMessage request)
     {
+        if (!ComplexCommandPayloads.TryValidate(request, out _)) return null;
         if (string.IsNullOrWhiteSpace(request.UnitTypeId) ||
             !float.IsFinite(request.X) || !float.IsFinite(request.Y) || !float.IsFinite(request.Z) ||
             !float.IsFinite(request.TargetAngleY) || request.X < 0 || request.Z < 0 ||
             request.X >= _world.Terrain.Width - 1 || request.Z >= _world.Terrain.Height - 1)
             return null;
-        Player? player = Globals.Game.Players.FirstOrDefault(player => player.Id == request.SenderId);
-        if (player is null || Globals.Game.Armies.Find(player.ArmyId) is not Army army)
+        Player? player = _players().FirstOrDefault(player => player.Id == request.SenderId);
+        if (player is null || _armies.Find(player.ArmyId) is not Army army)
             return null;
         Guid armyId = player.ArmyId;
         PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
@@ -1003,7 +1020,7 @@ public sealed class NetworkHost
             request with { UnitId = unitId, PlayerId = request.SenderId, Y = position.Y,
                 UnitIds = (request.UnitIds ?? Array.Empty<Guid>()).Distinct().Where(id =>
                     _world.Units.FindById(id) is MobileUnit worker && worker.BuildRate > 0 &&
-                    worker.IsSelectable && Globals.Game.Armies.CanControl(request.SenderId, worker.ArmyId)).ToArray(),
+                    worker.IsSelectable && _armies.CanControl(request.SenderId, worker.ArmyId)).ToArray(),
                 ArmyId = armyId, ResourceAmount = army.Resources, PurchasePrice = quote.FinalPrice });
     }
 
@@ -1013,9 +1030,9 @@ public sealed class NetworkHost
             _world.Units.FindById(buildingId) is not Building building ||
             building is GenericBuilding || building.IsDying || !building.IsCompleted ||
             building.ArmyId is not Guid armyId ||
-            Globals.Game.Players.FirstOrDefault(player => player.Id == request.SenderId)?.ArmyId != armyId ||
+            _players().FirstOrDefault(player => player.Id == request.SenderId)?.ArmyId != armyId ||
             building.Occupancy?.Occupants.Count > 0 ||
-            Globals.Game.Armies.Find(armyId) is not Army army)
+            _armies.Find(armyId) is not Army army)
         {
             return null;
         }
@@ -1032,8 +1049,8 @@ public sealed class NetworkHost
             _world.Units.FindById(buildingId) is not Building building ||
             building is GenericBuilding || building.IsDying || building.IsCompleted ||
             building.ArmyId is not Guid armyId ||
-            Globals.Game.Players.FirstOrDefault(player => player.Id == request.SenderId)?.ArmyId != armyId ||
-            Globals.Game.Armies.Find(armyId) is not Army army)
+            _players().FirstOrDefault(player => player.Id == request.SenderId)?.ArmyId != armyId ||
+            _armies.Find(armyId) is not Army army)
         {
             return null;
         }
@@ -1050,7 +1067,7 @@ public sealed class NetworkHost
             _world.Units.FindById(buildingId) is not Building building ||
             building.IsDying ||
             building.ArmyId is not Guid armyId ||
-            Globals.Game.Players.FirstOrDefault(player => player.Id == request.SenderId)?.ArmyId != armyId)
+            _players().FirstOrDefault(player => player.Id == request.SenderId)?.ArmyId != armyId)
         {
             return null;
         }
@@ -1061,7 +1078,7 @@ public sealed class NetworkHost
     private NetworkMessage? RememberStartPositionWish(NetworkMessage request)
     {
         if (request.StartPositionSlot is not int slot ||
-            !Globals.Game.Players.Any(player => player.Id == request.SenderId) ||
+            !_players().Any(player => player.Id == request.SenderId) ||
             !_world.GameplayMarkers.Markers.Any(marker =>
                 marker.Type == GameplayMarkerType.PlayerStart && marker.PlayerSlot == slot))
         {
@@ -1073,7 +1090,7 @@ public sealed class NetworkHost
         return null;
     }
 
-    private NetworkMessage? TryCreateStartMultiplayerGameCommand(NetworkMessage request)
+    internal NetworkMessage? TryCreateStartMultiplayerGameCommand(NetworkMessage request)
     {
         if (request.SenderId != _networkHandler.LocalPeerId)
             return null;
@@ -1081,8 +1098,8 @@ public sealed class NetworkHost
         // AI controllers live only on the host. Include their player identities
         // explicitly so a map publish or player-list rebuild cannot drop them
         // from the following match.
-        Player[] players = Globals.Game.Players
-            .Concat(Globals.Game.AIPlayers.Select(ai => ai.Player))
+        Player[] players = _players()
+            .Concat(_aiPlayers().Select(ai => ai.Player))
             .DistinctBy(player => player.Id)
             .OrderBy(player => player.Id)
             .ToArray();
@@ -1130,12 +1147,23 @@ public sealed class NetworkHost
             return new MatchStartAssignment(
                 player.Id, player.ArmyId, marker.PlayerSlot!.Value,
                 marker.Position.X, y, marker.Position.Z, marker.RotationDegrees, Guid.NewGuid(),
-                Globals.Game.AIPlayers.Any(ai => ai.Id == player.Id), Guid.NewGuid());
+                _aiPlayers().Any(ai => ai.Id == player.Id), Guid.NewGuid());
         }).ToArray();
         _startPositionWishes.Clear();
+        if (_pendingGoto is GotoPlan abandoned) ReleasePlanningIntent(abandoned);
+        _pendingGoto = null;
+        _pendingGotoReady = false;
+        _requestQueue.Clear();
+        _planningVersions.Clear();
+        _requestVersions.Clear();
+        _gotoQueueEnds.Clear();
+        _world.PathfindingManager.Reset();
+        _earthworks.Reset();
+        _earthworkBroadcasts.Clear();
         _harvest.Reset();
         _medics.Reset();
         _combat.Reset();
+        _nextExploredVisibilitySync = 0;
         return NetworkCommands.CreateStartMultiplayerGameCommand(
             _networkHandler.LocalPeerId, assignments);
     }
@@ -1144,7 +1172,7 @@ public sealed class NetworkHost
     {
         if (request.UnitId is not Guid unitId || request.RallyPoint is not RallyPointState requested ||
             _world.Units.FindById(unitId) is not Unit unit || !unit.SupportsRallyPoint || unit.IsDying ||
-            !Globals.Game.Armies.CanControl(request.SenderId, unit.ArmyId))
+            !_armies.CanControl(request.SenderId, unit.ArmyId))
             return null;
 
         Vector3? position = null;
@@ -1173,10 +1201,10 @@ public sealed class NetworkHost
             string.IsNullOrWhiteSpace(request.UnitTypeId) ||
             _world.Units.FindById(buildingId) is not Building building ||
             !building.IsCompleted ||
-            !Globals.Game.Armies.CanControl(request.SenderId, building.ArmyId) ||
+            !_armies.CanControl(request.SenderId, building.ArmyId) ||
             !building.TryGetProductionDuration(request.UnitTypeId, out float durationSeconds) ||
             building.ArmyId is not Guid armyId ||
-            Globals.Game.Armies.Find(armyId) is not Army army)
+            _armies.Find(armyId) is not Army army)
         {
             return null;
         }
@@ -1215,10 +1243,10 @@ public sealed class NetworkHost
             _world.Units.FindById(buildingId) is not Building building ||
             !building.IsCompleted ||
             !ResearchProjects.TryGetGrantedPerk(request.UnitTypeId, out PerkType perk) ||
-            !Globals.Game.Armies.CanControl(request.SenderId, building.ArmyId) ||
+            !_armies.CanControl(request.SenderId, building.ArmyId) ||
             !building.TryGetProductionDuration(request.UnitTypeId, out float durationSeconds) ||
             building.ArmyId is not Guid armyId ||
-            Globals.Game.Armies.Find(armyId) is not Army army ||
+            _armies.Find(armyId) is not Army army ||
             army.Perks.Has(perk) ||
             _world.Units.Units.OfType<Building>().Any(candidate => candidate.ArmyId == armyId &&
                 candidate.ProductionQueue.Orders.Any(order =>
@@ -1249,7 +1277,7 @@ public sealed class NetworkHost
             _world.Units.FindById(occupantId) is not MobileUnit occupant ||
             _world.Units.FindById(containerId) is not Unit container ||
             container.Occupancy is not OccupancyComponent occupancy ||
-            !Globals.Game.Armies.CanControl(request.SenderId, occupant.ArmyId) ||
+            !_armies.CanControl(request.SenderId, occupant.ArmyId) ||
             !occupancy.TryReserve(occupant, request.OccupantRole, out OccupantRole role))
         {
             return null;
@@ -1265,7 +1293,7 @@ public sealed class NetworkHost
             container is Helicopter { IsLanded: false } ||
             container.Occupancy?.GetPreferredOccupantToLeave() is not Guid occupantId ||
             _world.Units.FindById(occupantId) is not MobileUnit occupant ||
-            !Globals.Game.Armies.CanControl(request.SenderId, container.ArmyId) ||
+            !_armies.CanControl(request.SenderId, container.ArmyId) ||
             !TryFindDisembarkPosition(container, occupant, out Vector3 exitPosition) ||
             !_world.Units.DisembarkUnit(containerId, occupantId, exitPosition))
         {
@@ -1283,19 +1311,19 @@ public sealed class NetworkHost
     /// Keeps explicit team changes for known players. A joining player receives
     /// the first free positive team number, so everyone begins as an opponent.
     /// </summary>
-    private static int ConfirmTeamId(NetworkMessage request)
+    private int ConfirmTeamId(NetworkMessage request)
     {
         Guid playerId = request.PlayerId ?? request.SenderId;
-        if (Globals.Game.Players.Any(player => player.Id == playerId))
+        if (_players().Any(player => player.Id == playerId))
             return request.TeamId > 0 ? request.TeamId : Globals.Game.GetNextAvailableTeamId();
         return Globals.Game.GetNextAvailableTeamId();
     }
 
     /// <summary>Grants the requested skin unless another player already owns it.</summary>
-    private static PlayerSkin ConfirmPlayerSkin(NetworkMessage request)
+    private PlayerSkin ConfirmPlayerSkin(NetworkMessage request)
     {
         Guid playerId = request.PlayerId ?? request.SenderId;
-        Player[] otherPlayers = Globals.Game.Players.Where(player => player.Id != playerId).ToArray();
+        Player[] otherPlayers = _players().Where(player => player.Id != playerId).ToArray();
         PlayerSkin requested = (PlayerSkin)(request.PlayerSkin ?? (int)PlayerSkin.Green);
         bool IsValid(PlayerSkin skin) => Enum.IsDefined(skin);
         bool IsTaken(PlayerSkin skin) => otherPlayers.Any(player => player.Skin == skin);
@@ -1329,7 +1357,7 @@ public sealed class NetworkHost
 
             _earthworks.Update((float)HostSimulationInterval);
             UpdateProduction(GameplayPacing.ScaleWork(
-                (float)HostSimulationInterval, Globals.Game.IsMatchStarted));
+                (float)HostSimulationInterval, _isMatchStarted()));
             UpdateContainerEntries();
             _combat.Update(_hostTime, (float)HostSimulationInterval, command => _requestQueue.Enqueue(command));
 
@@ -1373,14 +1401,14 @@ public sealed class NetworkHost
             if (building is TiberiumRefinery refinery && refinery.IsCompleted && !refinery.IncludedUnitGranted)
             {
                 Guid ownerPlayerId = refinery.ArmyId is Guid armyId
-                    ? Globals.Game.Armies.Find(armyId)?.OwnerPlayerIds.OrderBy(id => id).FirstOrDefault() ?? Guid.Empty
+                    ? _armies.Find(armyId)?.OwnerPlayerIds.OrderBy(id => id).FirstOrDefault() ?? Guid.Empty
                     : refinery.CreatorPlayerId;
                 refinery.TryQueueIncludedHarvester(ownerPlayerId);
             }
             if (building is Helipad includedPad && includedPad.IsCompleted && !includedPad.IncludedUnitGranted)
             {
                 Guid ownerPlayerId = includedPad.ArmyId is Guid armyId
-                    ? Globals.Game.Armies.Find(armyId)?.OwnerPlayerIds.OrderBy(id => id).FirstOrDefault() ?? Guid.Empty
+                    ? _armies.Find(armyId)?.OwnerPlayerIds.OrderBy(id => id).FirstOrDefault() ?? Guid.Empty
                     : includedPad.CreatorPlayerId;
                 includedPad.TryQueueIncludedHelicopter(ownerPlayerId);
             }
@@ -1392,7 +1420,7 @@ public sealed class NetworkHost
 
             if (ResearchProjects.TryGetGrantedPerk(completedOrder.UnitTypeId, out PerkType researchPerk) &&
                 building.ArmyId is Guid researchArmyId &&
-                Globals.Game.Armies.Find(researchArmyId) is Army researchArmy)
+                _armies.Find(researchArmyId) is Army researchArmy)
             {
                 researchArmy.Perks.GrantPermanent(researchPerk, completedOrder.OrderId);
                 NetworkMessage researchCompleted = NetworkCommands.CreateResearchCompletedCommand(

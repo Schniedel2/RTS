@@ -27,9 +27,12 @@ public sealed class PlayerCommandService
         UnitRoute[]? routes = null, CancellationToken cancellationToken = default,
         float? formationFacingDegrees = null)
     {
-        if (!IsFinite(target))
+        if (!IsFinite(target) || (formationFacingDegrees.HasValue && !float.IsFinite(formationFacingDegrees.Value)))
             return Task.CompletedTask;
-        return SendAsync(NetworkCommands.CreateGotoRequest(PlayerId, unitIds.ToArray(),
+        Guid[] recipients = unitIds.Where(id => id != Guid.Empty).Distinct().ToArray();
+        if (recipients.Length == 0)
+            return Task.CompletedTask;
+        return SendAsync(NetworkCommands.CreateGotoRequest(PlayerId, recipients,
             target.X, target.Y, target.Z, appendToQueue, routes, formationFacingDegrees), cancellationToken);
     }
 
@@ -71,8 +74,8 @@ public sealed class PlayerCommandService
             return Guid.Empty;
         Guid id = buildingId ?? Guid.NewGuid();
         NetworkMessage request = NetworkCommands.CreateBuildRequest(PlayerId, buildingTypeName,
-            target.X, target.Y, target.Z, rotationDegrees, id);
-        await SendAsync(request with { UnitIds = workerIds.Distinct().ToArray() }, cancellationToken);
+            target.X, target.Y, target.Z, rotationDegrees, id, workerIds.Distinct().ToArray());
+        await SendAsync(request, cancellationToken);
         return id;
     }
 

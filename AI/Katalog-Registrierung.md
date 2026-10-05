@@ -1,6 +1,8 @@
 # Katalog und Produktregistrierung
 
-Stand: 01.10.2026, Architektur-Aufgabe 08.
+Stand: 05.10.2026, Architektur-Aufgabe 14; Produktvalidierung siehe Architektur-Aufgabe 08.
+
+Der praktische Ablauf für neue Inhalte ist in [Erweiterungsleitfaden.md](Erweiterungsleitfaden.md) zusammengefasst.
 
 ## Zuständigkeiten und Erweiterung
 

@@ -27,6 +27,14 @@ public abstract class Unit : WorldObject
     public List<int> MemberOfSelectionGroups { get; } = new List<int>(); //  groups a build/selected via keyboard shortcuts
     protected UnitActionState _currentUnitState = UnitActionState.Idle;    
     public Guid UnitId { get; }
+    private GameWorld? _simulationWorld;
+    protected GameWorld SimulationWorld => _simulationWorld ?? Globals.World;
+    internal void BindWorld(GameWorld world)
+    {
+        if (_simulationWorld is not null && !ReferenceEquals(_simulationWorld, world))
+            throw new InvalidOperationException("A Unit cannot belong to two worlds.");
+        _simulationWorld = world;
+    }
     public virtual bool SupportsRallyPoint => false;
     public Vector3? RallyPoint { get; private set; }
     public uint RallyPointRevision { get; private set; }
@@ -222,7 +230,7 @@ public abstract class Unit : WorldObject
             right = Vector3.Right;
         else
             right.Normalize();
-        position = Position + right * (Width * Globals.World.GameGrid.CellSize * 0.5f + 1.0f);
+        position = Position + right * (Width * SimulationWorld.GameGrid.CellSize * 0.5f + 1.0f);
         return false;
     }
 
@@ -436,8 +444,8 @@ public abstract class Unit : WorldObject
     {
         float tolerance = maximumTerrainHeightDifference ??
             (this is Building building ? building.MaximumTerrainHeightDifference : 2.0f);
-        return BuildingPlacement.Evaluate(Globals.World, this, position, rotationDegrees, tolerance).IsAllowed &&
-            Globals.World.GameGrid.CanPlace(this, position, rotationDegrees);
+        return BuildingPlacement.Evaluate(SimulationWorld, this, position, rotationDegrees, tolerance).IsAllowed &&
+            SimulationWorld.GameGrid.CanPlace(this, position, rotationDegrees);
     }
 
     public virtual void ClearCommand()
@@ -589,7 +597,7 @@ public abstract class Unit : WorldObject
     /// </summary>
     public virtual bool SetFollowUnit(Guid targetId)
     {
-        Unit? target = Globals.World.Units.FindById(targetId);
+        Unit? target = SimulationWorld.Units.FindById(targetId);
         if (target is null || target == this)
             return false;
 
@@ -623,14 +631,14 @@ public abstract class Unit : WorldObject
 
     public void SetTargetTerrainCell(Point targetCell)
     {
-        Vector3 target = Globals.World.GameGrid.ToWorldPosition(targetCell, 0.0f);
-        target.Y = Globals.World.Terrain.GetHeight(targetCell.X, targetCell.Y);
+        Vector3 target = SimulationWorld.GameGrid.ToWorldPosition(targetCell, 0.0f);
+        target.Y = SimulationWorld.Terrain.GetHeight(targetCell.X, targetCell.Y);
         SetTargetTerrain(target, targetCell);
     }
 
     public void SetTargetTerrain(Vector3 target)
     {
-        SetTargetTerrain(target, Globals.World.GameGrid.ToCell(target));
+        SetTargetTerrain(target, SimulationWorld.GameGrid.ToCell(target));
     }
 
     public void ClearTarget()
@@ -684,6 +692,8 @@ public abstract class Unit : WorldObject
         if (armyId == otherArmyId)
             return false;
 
+        if (_simulationWorld is not null)
+            return !_simulationWorld.AreArmiesAllied(armyId, otherArmyId);
         Army? army = Globals.Game.Armies.Find(armyId);
         Army? otherArmy = Globals.Game.Armies.Find(otherArmyId);
         Player? owner = army is null
@@ -719,6 +729,8 @@ public abstract class Unit : WorldObject
         if (armyId == otherArmyId)
             return true;
 
+        if (_simulationWorld is not null)
+            return _simulationWorld.AreArmiesAllied(armyId, otherArmyId);
         Army? army = Globals.Game.Armies.Find(armyId);
         Army? otherArmy = Globals.Game.Armies.Find(otherArmyId);
         Player? owner = army is null
@@ -863,7 +875,7 @@ public abstract class Unit : WorldObject
     {
         if (TargetUnitId is Guid targetUnitId)
         {
-            Unit? targetUnit = Globals.World.Units.FindById(targetUnitId);
+            Unit? targetUnit = SimulationWorld.Units.FindById(targetUnitId);
             if (targetUnit is not null)
                 return targetUnit.Position;
 
@@ -873,7 +885,7 @@ public abstract class Unit : WorldObject
 
         if (TemporaryTargetUnitId is Guid temporaryTargetId)
         {
-            Unit? temporaryTarget = Globals.World.Units.FindById(temporaryTargetId);
+            Unit? temporaryTarget = SimulationWorld.Units.FindById(temporaryTargetId);
             if (temporaryTarget is not null)
                 return temporaryTarget.Position;
 
@@ -978,7 +990,7 @@ public abstract class Unit : WorldObject
         }
 
         Guid? targetId = AttackTargetId ?? TemporaryTargetUnitId;
-        target = targetId is Guid id ? Globals.World.Units.FindById(id) : null;
+        target = targetId is Guid id ? SimulationWorld.Units.FindById(id) : null;
         if (target is null || !CanAttackTarget(target))
         {
             if (AttackTargetId is not null)
@@ -1098,6 +1110,7 @@ public abstract class Unit : WorldObject
 
     private void UpdateVehicleWreckSmoke(float seconds)
     {
+        if (!SimulationWorld.GraphicsEnabled) return;
         _damageSmokePivotPaths ??= CreateDamageSmokePivotOrder();
         const float emissionInterval = 0.12f;
         _wreckSmokeElapsed += seconds;
@@ -1121,7 +1134,7 @@ public abstract class Unit : WorldObject
             {
                 smokePosition = GetVisualWorldMatrix().Translation + Vector3.Up * Math.Max(0.5f, Height * 0.55f);
             }
-            Globals.World.Particles.EmitSmoke(smokePosition, Vector3.Up, settings);
+            SimulationWorld.Particles.EmitSmoke(smokePosition, Vector3.Up, settings);
         }
     }
 
@@ -1144,12 +1157,12 @@ public abstract class Unit : WorldObject
 
         _exhaustElapsed %= emissionIntervalSeconds;
         if (_meshSet.TryGetExhaustWorldPosition(GetVisualWorldMatrix(), out Vector3 exhaustPosition))
-            Globals.World.Particles.EmitSmoke(
+            SimulationWorld.Particles.EmitSmoke(
                 exhaustPosition,
                 Vector3.Up,
                 settings ?? SmokeEmissionPresets.VehicleExhaust());
         if (_meshSet.TryGetExhaust2WorldPosition(GetVisualWorldMatrix(), out Vector3 exhaustPosition2))
-            Globals.World.Particles.EmitSmoke(
+            SimulationWorld.Particles.EmitSmoke(
                 exhaustPosition2,
                 Vector3.Up,
                 settings ?? SmokeEmissionPresets.VehicleExhaust());
@@ -1193,7 +1206,7 @@ public abstract class Unit : WorldObject
         {
             int pivotIndex = _nextDamageSmokePivot++ % activePivotCount;
             if (TryGetAnimatedPivotWorldTransform(_damageSmokePivotPaths[pivotIndex], out Matrix pivotWorld))
-                Globals.World.Particles.EmitSmoke(pivotWorld.Translation, Vector3.Up, settings);
+                SimulationWorld.Particles.EmitSmoke(pivotWorld.Translation, Vector3.Up, settings);
         }
     }
 
@@ -1259,7 +1272,7 @@ public abstract class Unit : WorldObject
             string seatName = occupant.Role == OccupantRole.Driver ? "pivot:seat-driver" : "pivot:seat-passenger";
             MeshSet.MeshSetPivot? seat = _meshSet.Pivots.FirstOrDefault(pivot =>
                 pivot.Name.Equals(seatName, StringComparison.OrdinalIgnoreCase));
-            if (seat is null || Globals.World.Units.FindById(occupant.UnitId) is not Soldier soldier ||
+            if (seat is null || SimulationWorld.Units.FindById(occupant.UnitId) is not Soldier soldier ||
                 !soldier.IsEmbarked || soldier.ContainerUnitId != UnitId ||
                 !TryGetAnimatedPivotWorldTransform(seat.Path, out Matrix seatWorld)) continue;
             effect.Parameters["UnitTextureUVOffset"]?.SetValue(soldier.UnitTextureUVOffset);

@@ -30,6 +30,12 @@ public class GDIBulldozer : Car
         EarthworkSequence = 0;
     }
 
+    internal void RestoreEarthwork(EarthworkOrder order, int sequence)
+    {
+        BeginEarthwork(order);
+        EarthworkSequence = Math.Max(0, sequence);
+    }
+
     public void EndEarthwork()
     {
         if (EarthworkOrder is null) return;
@@ -117,7 +123,7 @@ public class GDIBulldozer : Car
     public GDIBulldozer(
         Vector3 position,
         Guid unitId,        
-        IMovementProfile? movementProfile = null
+        IMovementProfile? movementProfile = null, bool loadModel = true
         ) : base(
             position,
             unitId,
@@ -145,7 +151,7 @@ public class GDIBulldozer : Car
         Width = 3;
         Height = 1.5f;
 
-        SetMesh("bulldozer-1");
+        if (loadModel) SetMesh("bulldozer-1");
     }
 
     public override void Draw(Effect effect)

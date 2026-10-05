@@ -4,17 +4,33 @@ using System.Linq;
 
 namespace RTS.Network;
 
-public sealed class NetworkInput
+public sealed class NetworkInput : IDisposable
 {
-    public NetworkInput(NetworkHandler networkHandler)
+    private readonly NetworkHandler _network;
+    private readonly GameWorld? _world;
+    private readonly ArmyHandler? _armies;
+    private readonly SessionStateService? _sessionState;
+    private GameWorld World => _world ?? Globals.World;
+    private ArmyHandler Armies => _armies ?? Globals.Game.Armies;
+    public NetworkInput(NetworkHandler networkHandler, GameWorld? world = null, ArmyHandler? armies = null,
+        SessionStateService? sessionState = null)
     {
+        _network = networkHandler;
+        _world = world;
+        _armies = armies;
+        _sessionState = sessionState;
+        if (world is { GraphicsEnabled: false } && armies is not null)
+            world.ConfigureSimulation(armies, networkHandler);
         networkHandler.MessageReceived += OnMessageReceived;
     }
+
+    public void Dispose() => _network.MessageReceived -= OnMessageReceived;
 
     public event Action<NetworkMessage>? MessageReceived;
 
     private void OnMessageReceived(NetworkMessage message)
     {
+        if (!ComplexCommandPayloads.TryValidate(message, out _)) return;
         if (Globals.Debug_ShowNetworkMessages)
             Globals.Console.Print(FormatDebugMessage(message));
 
@@ -45,8 +61,11 @@ public sealed class NetworkInput
 
         if (message.Type == NetworkMessageType.JoinAccepted)
         {
-            Globals.Console.Print($"Joined session as {Globals.Game.Network.DisplayName}.");
-            _ = Globals.Game.Players[0].RequestUpdateAsync(Globals.Game.NetworkClient);
+            if (World.GraphicsEnabled)
+            {
+                Globals.Console.Print($"Joined session as {_network.DisplayName}.");
+                _ = Globals.Game.Players[0].RequestUpdateAsync(Globals.Game.NetworkClient);
+            }
             return;
         }
 
@@ -64,14 +83,15 @@ public sealed class NetworkInput
 
         if (message.Type == NetworkMessageType.MemberLeft)
         {
-            Globals.Game.RemovePlayer(message.SenderId);
+            if (World.GraphicsEnabled) Globals.Game.RemovePlayer(message.SenderId);
             return;
         }
 
         if (message.Type == NetworkMessageType.SessionSnapshot &&
             message.SessionSnapshot is SessionSnapshot snapshot)
         {
-            Globals.Game.ApplySessionSnapshot(snapshot);
+            if (World.GraphicsEnabled) Globals.Game.ApplySessionSnapshot(snapshot);
+            else (_sessionState ?? new SessionStateService(World, Armies)).Apply(snapshot);
             return;
         }
 
@@ -80,14 +100,14 @@ public sealed class NetworkInput
 
         if (message.Type == NetworkMessageType.ExploredVisibilityCommand)
         {
-            if (!Globals.Game.Network.IsHost)
-                Globals.World.Visibility.ApplyAuthoritativeExplored(message.ExploredVisibility);
+            if (!_network.IsHost)
+                World.Visibility.ApplyAuthoritativeExplored(message.ExploredVisibility);
             return;
         }
 
         if (message.Type == NetworkMessageType.NotifyUnitsSelected && message.PlayerId is Guid selectedPlayerId)
         {
-            if (selectedPlayerId != Globals.Game.Network.LocalPeerId)
+            if (selectedPlayerId != _network.LocalPeerId)
                 Globals.Game.RemoteSelections.SetSelection(selectedPlayerId, message.UnitIds ?? Array.Empty<Guid>());
             return;
         }
@@ -102,11 +122,11 @@ public sealed class NetworkInput
         {
             if (message.UnitId is Guid unitId && message.ArmyId is Guid armyId && armyId != Guid.Empty)
             {
-                Unit? transferredUnit = Globals.World.Units.FindById(unitId);
+                Unit? transferredUnit = World.Units.FindById(unitId);
                 transferredUnit?.SetArmy(armyId);
                 if (transferredUnit?.Occupancy is OccupancyComponent occupancy)
                     foreach (OccupantAssignment occupant in occupancy.Occupants)
-                        Globals.World.Units.FindById(occupant.UnitId)?.SetArmy(armyId);
+                        World.Units.FindById(occupant.UnitId)?.SetArmy(armyId);
             }
             return;
         }
@@ -119,14 +139,14 @@ public sealed class NetworkInput
 
         if (message.Type == NetworkMessageType.WorldData && message.WorldData is not null)
         {
-            Globals.World.ApplyWorldData(message.WorldData);
+            World.ApplyWorldData(message.WorldData);
             return;
         }
 
         if (message.Type == NetworkMessageType.TextMessage)
         {
             if (message.TargetId is not null &&
-                message.TargetId != Globals.Game.Network.LocalPeerId)
+                message.TargetId != _network.LocalPeerId)
                 return;
 
             if (!string.IsNullOrWhiteSpace(message.Text))
@@ -173,15 +193,15 @@ public sealed class NetworkInput
 
         if (message.Type is NetworkMessageType.EarthworkStartCommand or NetworkMessageType.EarthworkCellCommand or NetworkMessageType.EarthworkEndCommand)
         {
-            if (Globals.Game.Network.IsHost && message.SenderId != Globals.Game.Network.LocalPeerId) return;
-            if (message.UnitId is not Guid id || Globals.World.Units.FindById(id) is not GDIBulldozer worker) return;
+            if (_network.IsHost && message.SenderId != _network.LocalPeerId) return;
+            if (message.UnitId is not Guid id || World.Units.FindById(id) is not GDIBulldozer worker) return;
             if (message.Type == NetworkMessageType.EarthworkStartCommand && message.EarthworkOrder is EarthworkOrder order)
                 worker.BeginEarthwork(order);
             else if (message.Type == NetworkMessageType.EarthworkCellCommand && message.EarthworkOrderId is Guid orderId)
             {
                 if (message.EarthworkCells is int[] cells)
-                    worker.ApplyEarthworkDrive(Globals.World, orderId, message.EarthworkSequence, cells, new(message.X, message.Z));
-                else worker.ApplyEarthworkCell(Globals.World, orderId, message.EarthworkSequence, new(message.CellX, message.CellZ));
+                    worker.ApplyEarthworkDrive(World, orderId, message.EarthworkSequence, cells, new(message.X, message.Z));
+                else worker.ApplyEarthworkCell(World, orderId, message.EarthworkSequence, new(message.CellX, message.CellZ));
             }
             else if (message.Type == NetworkMessageType.EarthworkEndCommand && worker.EarthworkOrder?.Id == message.EarthworkOrderId)
                 worker.EndEarthwork();
@@ -191,13 +211,13 @@ public sealed class NetworkInput
         if (message.Type == NetworkMessageType.TiberiumSeedCommand)
         {
             if (message.TiberiumSeed is TiberiumSeedState state)
-                Globals.World.Tiberium.ApplySeed(state);
+                World.Tiberium.ApplySeed(state);
             return;
         }
 
         if (message.Type == NetworkMessageType.TiberiumHarvestCommand)
         {
-            Globals.World.Tiberium.ApplyHarvest(new Point(message.CellX, message.CellZ),
+            World.Tiberium.ApplyHarvest(new Point(message.CellX, message.CellZ),
                 message.TiberiumAmount, message.ServerTime);
             return;
         }
@@ -205,7 +225,7 @@ public sealed class NetworkInput
         if (message.Type == NetworkMessageType.HarvestCommand)
         {
             if (message.UnitId is Guid harvesterId &&
-                Globals.World.Units.FindById(harvesterId) is Harvester harvester &&
+                World.Units.FindById(harvesterId) is Harvester harvester &&
                 message.HarvestPhase is HarvestPhase phase)
                 harvester.ApplyHarvestState(phase, message.CargoAmount);
             return;
@@ -213,56 +233,44 @@ public sealed class NetworkInput
 
         if (message.Type == NetworkMessageType.ArmyResourcesCommand)
         {
-            if (message.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
+            if (message.ArmyId is Guid armyId && Armies.Find(armyId) is Army army)
                 army.Resources = message.ResourceAmount;
             return;
         }
 
         if (message.Type == NetworkMessageType.SellBuildingCommand)
         {
-            if (message.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
+            if (message.ArmyId is Guid armyId && Armies.Find(armyId) is Army army)
                 army.Resources = message.ResourceAmount;
             if (message.UnitId is Guid buildingId)
-                Globals.World.Units.SellBuilding(buildingId);
+                World.Units.SellBuilding(buildingId);
             return;
         }
 
         if (message.Type == NetworkMessageType.StartMultiplayerGameCommand)
         {
-            Globals.Game.MarkMatchStarted();
-            Globals.World.PathfindingManager.Reset();
-            Globals.World.Units.ClearForMatchStart();
-            Globals.Game.Armies.ClearPerks();
-            Globals.Game.PrepareAIPlayersForMatch(message.MatchStartAssignments ?? []);
-            Vector3? localStartPosition = null;
-            foreach (MatchStartAssignment assignment in message.MatchStartAssignments ?? [])
+            if (World.GraphicsEnabled)
             {
-                if (Globals.Game.Armies.Find(assignment.ArmyId) is Army army)
-                    army.Resources = message.ResourceAmount;
-                Unit? bulldozer = Globals.World.Units.SpawnUnit(
-                    "gdi-bulldozer",
-                    new Vector3(assignment.X, assignment.Y, assignment.Z),
-                    assignment.RotationDegrees,
-                    assignment.BulldozerId,
-                    assignment.PlayerId,
-                    assignment.DriverUnitId);
-                bulldozer?.SetArmy(assignment.ArmyId);
-                if (assignment.PlayerId == Globals.Game.Network.LocalPeerId)
-                    localStartPosition = bulldozer?.Position ??
-                        new Vector3(assignment.X, assignment.Y, assignment.Z);
+                Globals.Game.MarkMatchStarted();
+                Globals.Game.PrepareAIPlayersForMatch(message.MatchStartAssignments ?? []);
             }
-            Globals.Game.ResetMatchPresentation(localStartPosition);
-            Globals.Console.Print($"Multiplayer game started with {message.MatchStartAssignments?.Length ?? 0} player(s).");
+            SessionStateService state = _sessionState ?? new SessionStateService(World, Armies);
+            Vector3? localStartPosition = state.ApplyMatchStart(message, _network.LocalPeerId);
+            if (World.GraphicsEnabled)
+            {
+                Globals.Game.ResetMatchPresentation(localStartPosition);
+                Globals.Console.Print($"Multiplayer game started with {message.MatchStartAssignments?.Length ?? 0} player(s).");
+            }
             return;
         }
 
         if (message.Type == NetworkMessageType.SetRallyPointCommand)
         {
             // A client may request a change, but may not inject its own confirmation on the host.
-            if (Globals.Game.Network.IsHost && message.SenderId != Globals.Game.Network.LocalPeerId)
+            if (_network.IsHost && message.SenderId != _network.LocalPeerId)
                 return;
             if (message.UnitId is Guid rallyUnitId && message.RallyPoint is RallyPointState rallyPoint &&
-                Globals.World.Units.FindById(rallyUnitId) is Unit rallyUnit)
+                World.Units.FindById(rallyUnitId) is Unit rallyUnit)
             {
                 rallyUnit.ApplyRallyPointState(rallyPoint);
                 UnitActionContext context = rallyPoint.HasPosition
@@ -281,7 +289,7 @@ public sealed class NetworkInput
                 message.ProductionOrderId is Guid orderId &&
                 message.PlayerId is Guid playerId &&
                 message.UnitTypeId is not null &&
-                Globals.World.Units.FindById(buildingId) is Building building)
+                World.Units.FindById(buildingId) is Building building)
             {
                 building.TryQueueProduction(
                     orderId,
@@ -289,7 +297,7 @@ public sealed class NetworkInput
                     playerId,
                     message.ProductionSeconds);
             }
-            if (message.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
+            if (message.ArmyId is Guid armyId && Armies.Find(armyId) is Army army)
                 army.Resources = message.ResourceAmount;
             return;
         }
@@ -300,12 +308,12 @@ public sealed class NetworkInput
                 message.ProductionOrderId is Guid orderId &&
                 message.PlayerId is Guid playerId &&
                 message.UnitTypeId is not null &&
-                Globals.World.Units.FindById(buildingId) is Building building)
+                World.Units.FindById(buildingId) is Building building)
             {
                 building.TryQueueProduction(orderId, message.UnitTypeId, playerId,
                     message.ProductionSeconds);
             }
-            if (message.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
+            if (message.ArmyId is Guid armyId && Armies.Find(armyId) is Army army)
                 army.Resources = message.ResourceAmount;
             return;
         }
@@ -316,7 +324,7 @@ public sealed class NetworkInput
                 message.ProductionOrderId is Guid researchId &&
                 message.UnitTypeId is string projectId &&
                 ResearchProjects.TryGetGrantedPerk(projectId, out PerkType perk) &&
-                Globals.Game.Armies.Find(armyId) is Army army)
+                Armies.Find(armyId) is Army army)
             {
                 army.Perks.GrantPermanent(perk, researchId);
             }
@@ -325,10 +333,10 @@ public sealed class NetworkInput
 
         if (message.Type == NetworkMessageType.CancelConstructionCommand)
         {
-            if (message.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
+            if (message.ArmyId is Guid armyId && Armies.Find(armyId) is Army army)
                 army.Resources = message.ResourceAmount;
             if (message.UnitId is Guid buildingId)
-                Globals.World.Units.SellBuilding(buildingId);
+                World.Units.SellBuilding(buildingId);
             return;
         }
 
@@ -338,7 +346,7 @@ public sealed class NetworkInput
             if (message.PlayerId is Guid playerId && message.UnitTypeId is not null)
                 SpawnBuildingLocally(message.UnitTypeId, playerId, unitId, message.X, message.Y, message.Z,
                     message.TargetAngleY, message.PurchasePrice);
-            if (message.ArmyId is Guid armyId && Globals.Game.Armies.Find(armyId) is Army army)
+            if (message.ArmyId is Guid armyId && Armies.Find(armyId) is Army army)
                 army.Resources = message.ResourceAmount;
 
             if (message.UnitIds is { Length: > 0 })
@@ -356,7 +364,7 @@ public sealed class NetworkInput
         if (message.Type == NetworkMessageType.StopCommand)
         {
             foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
-                Globals.World.Units.FindById(unitId)?.OnHostAction(
+                World.Units.FindById(unitId)?.OnHostAction(
                     UnitActionType.Stop, UnitActionContext.Empty);
             return;
         }
@@ -366,7 +374,7 @@ public sealed class NetworkInput
         {
             UnitActionContext context = message.UnitActionContext ?? UnitActionContext.Empty;
             foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
-                Globals.World.Units.FindById(unitId)?.OnHostAction(actionType, context);
+                World.Units.FindById(unitId)?.OnHostAction(actionType, context);
             return;
         }
 
@@ -421,7 +429,7 @@ public sealed class NetworkInput
         if (message.Type == NetworkMessageType.EmbarkUnitCommand)
         {
             if (message.UnitId is Guid occupantId && message.TargetId is Guid containerId)
-                Globals.World.Units.EmbarkUnit(occupantId, containerId, message.OccupantRole);
+                World.Units.EmbarkUnit(occupantId, containerId, message.OccupantRole);
             return;
         }
 
@@ -429,7 +437,7 @@ public sealed class NetworkInput
         {
             if (message.UnitId is Guid containerId && message.TargetId is Guid occupantId)
             {
-                Globals.World.Units.DisembarkUnit(
+                World.Units.DisembarkUnit(
                     containerId,
                     occupantId,
                     new Vector3(message.X, message.Y, message.Z));
@@ -485,7 +493,7 @@ public sealed class NetworkInput
         Guid? driverUnitId)
     {
         Vector3 target = new(x, y, z);
-        Unit? spawned = Globals.World.Units.SpawnUnit(
+        Unit? spawned = World.Units.SpawnUnit(
             unitTypeId,
             target,
             targetAngleY,
@@ -497,7 +505,7 @@ public sealed class NetworkInput
         if (spawned is Building building)
             building.AdvanceConstruction(building.RemainingBuildingPoints);
 
-        string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);
+        string playerName = _network.GetPeerDisplayName(playerId);
         Globals.Console.Print($"Spawned {unitTypeId} for player {playerName}.");
     }
 
@@ -513,7 +521,7 @@ public sealed class NetworkInput
         Guid? driverUnitId,
         RallyPointState? rallyPoint)
     {
-        MobileUnit? unit = Globals.World.Units.SpawnUnitFromBuilding(
+        MobileUnit? unit = World.Units.SpawnUnitFromBuilding(
             unitTypeId,
             spawnPosition,
             exitPosition,
@@ -527,16 +535,16 @@ public sealed class NetworkInput
             return;
 
         unit.SetProductionRallyPoint(rallyPoint);
-        string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);
+        string playerName = _network.GetPeerDisplayName(playerId);
         Globals.Console.Print($"Produced {unitTypeId} for player {playerName}.");
     }
 
-    private static void ExecuteEnterUnit(NetworkMessage message)
+    private void ExecuteEnterUnit(NetworkMessage message)
     {
         if (message.UnitId is not Guid occupantId ||
             message.TargetId is not Guid containerId ||
-            Globals.World.Units.FindById(occupantId) is not MobileUnit occupant ||
-            Globals.World.Units.FindById(containerId) is not Unit container ||
+            World.Units.FindById(occupantId) is not MobileUnit occupant ||
+            World.Units.FindById(containerId) is not Unit container ||
             container.Occupancy is not OccupancyComponent occupancy)
         {
             return;
@@ -545,7 +553,7 @@ public sealed class NetworkInput
         if (!occupancy.TryReserve(occupant, message.OccupantRole, out _))
             return;
 
-        if (!occupant.TryReceiveEnterUnitCommand(Globals.World, container))
+        if (!occupant.TryReceiveEnterUnitCommand(World, container))
             occupancy.ClearReservation(occupant.UnitId);
     }
 
@@ -553,14 +561,14 @@ public sealed class NetworkInput
         float z, float targetAngleY, int purchasePrice)
     {
         // Host placement already reserves the site; repeated confirmations are idempotent.
-        if (Globals.World.Units.FindById(unitId) is not null)
+        if (World.Units.FindById(unitId) is not null)
             return;
         Vector3 target = new(x, y, z);
-        if (Globals.World.Units.SpawnBuilding(buildingTypeId, target, targetAngleY, unitId, playerId,
+        if (World.Units.SpawnBuilding(buildingTypeId, target, targetAngleY, unitId, playerId,
             purchasePrice) is null)
             return;
 
-        string playerName = Globals.Game.Network.GetPeerDisplayName(playerId);
+        string playerName = _network.GetPeerDisplayName(playerId);
         Globals.Console.Print($"Spawned {buildingTypeId} for player {playerName}.");
     }
 
@@ -568,44 +576,44 @@ public sealed class NetworkInput
     {
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
         {
-            MobileUnit? unit = Globals.World.Units.FindMobileUnitById(unitId);
+            MobileUnit? unit = World.Units.FindMobileUnitById(unitId);
             if (message.EarthworkOrderId is Guid orderId &&
                 (unit is not GDIBulldozer worker || worker.EarthworkOrder?.Id != orderId)) continue;
             // The host already issued its own work movement before broadcasting it.
-            if (message.EarthworkOrderId is not null && Globals.Game.Network.IsHost) continue;
+            if (message.EarthworkOrderId is not null && _network.IsHost) continue;
             unit?.ClearFollowUnit();
             UnitRoute? assignedRoute = message.Routes?.FirstOrDefault(candidate => candidate.UnitId == unitId);
             Point[] route = assignedRoute?.Cells ?? [];
             GotoCommand command = new(new Vector2(
                 assignedRoute?.TargetX ?? message.X,
                 assignedRoute?.TargetZ ?? message.Z));
-            unit?.TryReceiveGotoCommand(Globals.World, command, message.AppendToQueue, route);
+            unit?.TryReceiveGotoCommand(World, command, message.AppendToQueue, route);
         }
 
         if (message.EarthworkOrderId is null)
-            Globals.Game.World.Markers.ShowGotoMarker(new Vector3(message.X, message.Y, message.Z));
+            World.Markers.ShowGotoMarker(new Vector3(message.X, message.Y, message.Z));
     }
 
-    private static void ApplyArmyControl(NetworkMessage message, bool grant)
+    private void ApplyArmyControl(NetworkMessage message, bool grant)
     {
         if (message.ArmyId is not Guid armyId || message.PlayerId is not Guid ownerId || message.TargetId is not Guid recipientId)
             return;
         if (grant)
-            Globals.Game.Armies.GrantCommandUnits(armyId, ownerId, recipientId);
+            Armies.GrantCommandUnits(armyId, ownerId, recipientId);
         else
-            Globals.Game.Armies.RevokeCommandUnits(armyId, ownerId, recipientId);
+            Armies.RevokeCommandUnits(armyId, ownerId, recipientId);
     }
 
-    private static void ApplyArmyMerge(NetworkMessage message)
+    private void ApplyArmyMerge(NetworkMessage message)
     {
         if (message.ArmyId is not Guid firstArmyId || message.SecondaryArmyId is not Guid secondArmyId || message.TargetId is not Guid mergedArmyId)
             return;
-        Army? merged = Globals.Game.Armies.Merge(firstArmyId, secondArmyId, mergedArmyId);
+        Army? merged = Armies.Merge(firstArmyId, secondArmyId, mergedArmyId);
         if (merged is null)
             return;
         foreach (Player player in Globals.Game.Players.Where(player => player.ArmyId is var armyId && (armyId == firstArmyId || armyId == secondArmyId)))
             player.SetArmy(merged.Id);
-        foreach (Unit unit in Globals.World.Units.Units.Where(unit => unit.ArmyId == firstArmyId || unit.ArmyId == secondArmyId))
+        foreach (Unit unit in World.Units.Units.Where(unit => unit.ArmyId == firstArmyId || unit.ArmyId == secondArmyId))
             unit.SetArmy(merged.Id);
     }
 
@@ -614,7 +622,7 @@ public sealed class NetworkInput
         Vector3 target = new(message.X, message.Y, message.Z);
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
         {
-            if (Globals.World.Units.FindById(unitId) is not Unit attacker)
+            if (World.Units.FindById(unitId) is not Unit attacker)
                 continue;
 
             // The exact launch pitch of a rocket is contained in the
@@ -632,7 +640,7 @@ public sealed class NetworkInput
             Vector3 start = launchTransform.Translation;
             if (start == Vector3.Zero)
                 start = attacker.Position + Vector3.Up * (attacker.Height * 0.75f);
-            Globals.World.Projectiles.Fire(
+            World.Projectiles.Fire(
                 start,
                 target,
                 attacker.ProjectileKind,
@@ -640,12 +648,13 @@ public sealed class NetworkInput
         }
     }
 
-    private static void ExecuteBulletImpact(NetworkMessage message)
+    private void ExecuteBulletImpact(NetworkMessage message)
     {
-        Globals.World.Particles.EmitBulletImpact(new Vector3(message.X, message.Y, message.Z));
+        if (!World.GraphicsEnabled) return;
+        World.Particles.EmitBulletImpact(new Vector3(message.X, message.Y, message.Z));
     }
 
-    private static void ExecuteProjectileSpawn(NetworkMessage message)
+    private void ExecuteProjectileSpawn(NetworkMessage message)
     {
         if (message.ProjectileId is not Guid projectileId ||
             message.ProjectileKind is not ProjectileKind kind)
@@ -660,25 +669,25 @@ public sealed class NetworkInput
         // any ballistic elevation correction. Make its pitch available to the
         // firing unit before this frame is drawn.
         if (message.UnitId is Guid attackerId &&
-            Globals.World.Units.FindById(attackerId) is Unit attacker)
+            World.Units.FindById(attackerId) is Unit attacker)
         {
             attacker.SetProjectileLaunchVelocity(velocity);
             if (kind == ProjectileKind.Rocket)
                 attacker.PlayShotEffects();
         }
 
-        Globals.World.Projectiles.SpawnReplicated(
+        World.Projectiles.SpawnReplicated(
             projectileId,
             new Vector3(message.X, message.Y, message.Z),
             velocity,
             kind);
     }
 
-    private static void ExecuteProjectileImpact(NetworkMessage message)
+    private void ExecuteProjectileImpact(NetworkMessage message)
     {
         if (message.ProjectileId is not Guid projectileId)
             return;
-        Globals.World.Projectiles.ApplyAuthoritativeImpact(
+        World.Projectiles.ApplyAuthoritativeImpact(
             projectileId,
             new Vector3(message.X, message.Y, message.Z));
     }
@@ -688,7 +697,7 @@ public sealed class NetworkInput
         if (message.TargetId is not Guid targetId)
             return;
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
-            if (Globals.World.Units.FindById(unitId) is Unit unit)
+            if (World.Units.FindById(unitId) is Unit unit)
                 unit.SetAttackTarget(targetId);
     }
 
@@ -696,7 +705,7 @@ public sealed class NetworkInput
     {
         Vector3 target = new(message.X, message.Y, message.Z);
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
-            if (Globals.World.Units.FindById(unitId) is Unit unit)
+            if (World.Units.FindById(unitId) is Unit unit)
                 unit.SetAttackGroundTarget(target);
     }
 
@@ -705,7 +714,7 @@ public sealed class NetworkInput
         if (message.TargetId is not Guid targetId)
             return;
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
-            if (Globals.World.Units.FindById(unitId) is Unit unit)
+            if (World.Units.FindById(unitId) is Unit unit)
                 unit.SetFollowUnit(targetId);
     }
 
@@ -713,7 +722,7 @@ public sealed class NetworkInput
     {
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
         {
-            Unit? unit = Globals.World.Units.FindById(unitId);
+            Unit? unit = World.Units.FindById(unitId);
             if (unit is null)
                 continue;
 
@@ -727,7 +736,7 @@ public sealed class NetworkInput
     private void ApplyHit(NetworkMessage message)
     {
         if (message.UnitId is not Guid unitId ||
-            Globals.World.Units.FindById(unitId) is not Unit unit)
+            World.Units.FindById(unitId) is not Unit unit)
             return;
 
         unit.ApplyHitPoints(message.HitPoints);
@@ -736,39 +745,39 @@ public sealed class NetworkInput
     private void DestroyUnit(NetworkMessage message)
     {
         if (message.UnitId is not Guid unitId ||
-            Globals.World.Units.FindById(unitId) is not Unit unit)
+            World.Units.FindById(unitId) is not Unit unit)
             return;
 
-        if (unit is Building destroyedBuilding && unit.HasDeathExplosion)
-            Globals.World.Decals.AddBuildingRubble(destroyedBuilding);
+        if (World.GraphicsEnabled && unit is Building destroyedBuilding && unit.HasDeathExplosion)
+            World.Decals.AddBuildingRubble(destroyedBuilding);
 
-        if (unit.HasDeathExplosion)
+        if (World.GraphicsEnabled && unit.HasDeathExplosion)
         {
             if (unit is not Building)
             {
                 Vector3 pos = unit.Position + Vector3.Up * Math.Max(1.0f, unit.Height * 0.5f);
-                Globals.World.Particles.EmitExplosion(
+                World.Particles.EmitExplosion(
                     pos,
                     unit.UsesVehicleDeathSequence
                         ? ExplosionEmissionPresets.VehicleDestruction()
                         : ExplosionEmissionPresets.TankShell());
             }
         }
-        Globals.World.Units.Destroy(unitId);
+        World.Units.Destroy(unitId);
     }
 
     private void ExecuteBuildConstruction(NetworkMessage message)
     {
         if (message.ConstructionSiteId is not Guid constructionSiteId ||
-            Globals.World.Units.FindById(constructionSiteId) is not Building constructionSite)
+            World.Units.FindById(constructionSiteId) is not Building constructionSite)
             return;
 
         foreach (Guid unitId in message.UnitIds ?? Array.Empty<Guid>())
         {
-            Unit? unit = Globals.World.Units.FindById(unitId);
+            Unit? unit = World.Units.FindById(unitId);
             unit?.ClearFollowUnit();
             Unit? genericUnit = unit as Unit;
-            (genericUnit as MobileUnit)?.TryReceiveBuildConstructionCommand(Globals.World, constructionSite);
+            (genericUnit as MobileUnit)?.TryReceiveBuildConstructionCommand(World, constructionSite);
         }
     }
 
@@ -777,10 +786,10 @@ public sealed class NetworkInput
         if (message.UnitState is not { } state)
             return;
 
-        Unit? unit = Globals.World.Units.FindById(state.UnitId);
+        Unit? unit = World.Units.FindById(state.UnitId);
         // The host owns movement simulation. Its own broadcast must never
         // rewind a unit after the host has already advanced another frame.
-        if (unit is MobileUnit && Globals.Game.Network.IsHost) return;
+        if (unit is MobileUnit && _network.IsHost) return;
         unit?.ApplyState(state);
     }
 
@@ -793,32 +802,32 @@ public sealed class NetworkInput
         {
             case UnitActionType.RaiseTerrain:
                 // Handle RaiseTerrain action
-                TerrainHelper.RaiseTerrain(Globals.World.Terrain, message.X, message.Z, message.ToolShape ?? ToolShape.Circle, message.ToolSize, 0.5f);
+                TerrainHelper.RaiseTerrain(World.Terrain, message.X, message.Z, message.ToolShape ?? ToolShape.Circle, message.ToolSize, 0.5f);
                 break;
             case UnitActionType.FlattenTerrain:
-                TerrainHelper.FlattenTerrain(Globals.World.Terrain, message.X, message.Z, message.Y, message.ToolShape ?? ToolShape.Circle, message.ToolSize, 0.5f);
+                TerrainHelper.FlattenTerrain(World.Terrain, message.X, message.Z, message.Y, message.ToolShape ?? ToolShape.Circle, message.ToolSize, 0.5f);
                 // Handle FlattenTerrain action
                 break;
             case UnitActionType.SharpenTerrain:
-                TerrainHelper.SharpenTerrain(Globals.World.Terrain, message.X, message.Z, message.Y, message.ToolShape ?? ToolShape.Circle, message.ToolSize, 0.02f);
+                TerrainHelper.SharpenTerrain(World.Terrain, message.X, message.Z, message.Y, message.ToolShape ?? ToolShape.Circle, message.ToolSize, 0.02f);
                 // Handle SharpenTerrain action
                 break;
             case UnitActionType.SmoothTerrain:
                 // Handle SmoothTerrain action
-                TerrainHelper.SmoothTerrain(Globals.World.Terrain, message.X, message.Z, message.ToolShape ?? ToolShape.Circle, message.ToolSize, 0.5f);
+                TerrainHelper.SmoothTerrain(World.Terrain, message.X, message.Z, message.ToolShape ?? ToolShape.Circle, message.ToolSize, 0.5f);
                 break;
             case UnitActionType.LowerTerrain:
-                TerrainHelper.RaiseTerrain(Globals.World.Terrain, message.X, message.Z, message.ToolShape ?? ToolShape.Circle, message.ToolSize, -0.5f);
+                TerrainHelper.RaiseTerrain(World.Terrain, message.X, message.Z, message.ToolShape ?? ToolShape.Circle, message.ToolSize, -0.5f);
                 break;
             case UnitActionType.SetTerrainTile:
                 if (message.TerrainTile is not { } tile)
                     break;
-                TerrainHelper.SetTile(Globals.World.Terrain, message.X, message.Z, message.ToolShape ?? ToolShape.Circle, message.ToolSize, tile);
+                TerrainHelper.SetTile(World.Terrain, message.X, message.Z, message.ToolShape ?? ToolShape.Circle, message.ToolSize, tile);
                 break;
             case UnitActionType.FillTile:
                 if (message.TerrainTile is not { } fillTile)
                     break;
-                TerrainHelper.FillTile(Globals.World.Terrain, message.X, message.Z, fillTile);
+                TerrainHelper.FillTile(World.Terrain, message.X, message.Z, fillTile);
                 break;
             default:
                 // Handle other actions or do nothing
