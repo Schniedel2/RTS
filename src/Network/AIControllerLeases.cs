@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -34,6 +34,7 @@ public sealed partial class NetworkHandler
     internal Task SendAIHeartbeatAsync(AIControllerAssignment assignment, long sequence)
     {
         if (IsHost || !CanRunAI(assignment.ArmyId) || AIControllers.Find(assignment.ArmyId) != assignment) return Task.CompletedTask;
+        RunDiagnostics?.Heartbeat(assignment.ArmyId, assignment.Generation, sequence);
         return SendToHostAsync(new(NetworkMessageType.AIControllerHeartbeat, LocalPeerId)
         {
             AIControllerArmyId = assignment.ArmyId, AIControllerActorId = assignment.ActorId,
@@ -49,6 +50,9 @@ public sealed partial class NetworkHandler
         double now = AIRealTime;
         lease.HasHeartbeat = true; lease.Heartbeat = now;
         if (bound.AIUpdateSequence > lease.Sequence) { lease.Sequence = bound.AIUpdateSequence; lease.Progress = now; }
+        if (RunDiagnostics is not null && _members.TryGetValue(transportPeer, out var peer))
+            _ = SendAsync(peer.Client, new(NetworkMessageType.AIControllerHeartbeat, LocalPeerId)
+            { AIControllerArmyId = army, AIControllerGeneration = bound.AIControllerGeneration, AIUpdateSequence = bound.AIUpdateSequence, TargetId = transportPeer });
     }
     private void UpdateAIControllerLeases()
     {

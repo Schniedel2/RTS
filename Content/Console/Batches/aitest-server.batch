@@ -1,0 +1,7 @@
+# Dedicated test session. Default: map test, two server-side AIs, one human slot.
+# call aitest-server [map-name] [AI-count] [human-slots] [port]
+# Example: call aitest-server test1 3
+# The server starts the match automatically after this window connects.
+# The map needs one PlayerStart per human slot plus AI slot.
+server-test-start %1 %2 %3 %4
+# Stop with server-stop. To outsource an AI afterwards: server-bot-start AI1

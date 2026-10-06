@@ -1,0 +1,2533 @@
+{
+  "schemaVersion": 1,
+  "cpu": {
+    "Name": "Intel(R) Xeon(R) W-2145 CPU @ 3.70GHz",
+    "NumberOfCores": 8,
+    "NumberOfLogicalProcessors": 16
+  },
+  "measuredAt": "2026-10-06T18:41:17.1806167Z",
+  "rawDirectory": "C:\\Users\\Hp\\AppData\\Local\\Temp\\RTS-ai-benchmark-90182effdc96438eb4e56f04c5f8c110\\final",
+  "runs": [
+    {
+      "result": {
+        "mode": "host",
+        "seconds": 75,
+        "profile": {
+          "Type": 0,
+          "DisplayName": "Balanced Assault",
+          "RequiredGunners": 3,
+          "RequiredRakZero": 1,
+          "RequiredTanks": 1,
+          "RetreatHealthFraction": 0.45,
+          "AttackReadinessSeconds": 5,
+          "DefenseRadiusInCells": 36,
+          "AssaultStallTimeoutSeconds": 60,
+          "Seed": 1829856032,
+          "DecisionIntervalSeconds": 1,
+          "ResourceReserve": 800,
+          "ScoutReconsiderSeconds": 8
+        },
+        "requests": {
+          "BuildRequest": 7,
+          "HarvestRequest": 2,
+          "SetRallyPointRequest": 2,
+          "TrainUnitRequest": 20,
+          "GotoRequest": 32,
+          "EnterUnitRequest": 4,
+          "UnitActionRequest": 2,
+          "AttackTargetRequest": 16,
+          "FollowRequest": 2,
+          "StopRequest": 1
+        },
+        "phaseRequests": [
+          88,
+          0,
+          0
+        ],
+        "phaseBuilds": [
+          7,
+          0,
+          0
+        ],
+        "maxUnits": 49,
+        "maxCargo": 0,
+        "rejections": 0,
+        "completedOrders": 22,
+        "disconnects": 0,
+        "lateJoins": 0,
+        "resets": 0,
+        "removedReactor": false,
+        "removedPerk": false,
+        "controllers": [
+          {
+            "ArmyId": "a030a67e-e93e-435b-814a-34734830baec",
+            "ActorId": "5908caaf-cf35-4ad1-8cf5-9d84bef45066",
+            "ControllerPeerId": "5908caaf-cf35-4ad1-8cf5-9d84bef45066",
+            "Generation": 1,
+            "Profile": {
+              "Type": 0,
+              "DisplayName": "Balanced Assault",
+              "RequiredGunners": 3,
+              "RequiredRakZero": 1,
+              "RequiredTanks": 1,
+              "RetreatHealthFraction": 0.45,
+              "AttackReadinessSeconds": 5,
+              "DefenseRadiusInCells": 36,
+              "AssaultStallTimeoutSeconds": 60,
+              "Seed": 1829856032,
+              "DecisionIntervalSeconds": 1,
+              "ResourceReserve": 800,
+              "ScoutReconsiderSeconds": 8
+            },
+            "ProfileVersion": 1,
+            "ProfileFingerprint": "533CA0144580C99942E1A70DAF924EF2EEEF8189235E57379228B54373B61F43"
+          },
+          {
+            "ArmyId": "b030a67e-e93e-435b-814a-34734830baec",
+            "ActorId": "c030a67e-e93e-435b-814a-34734830baec",
+            "ControllerPeerId": "5908caaf-cf35-4ad1-8cf5-9d84bef45066",
+            "Generation": 1,
+            "Profile": {
+              "Type": 0,
+              "DisplayName": "Balanced Assault",
+              "RequiredGunners": 3,
+              "RequiredRakZero": 1,
+              "RequiredTanks": 1,
+              "RetreatHealthFraction": 0.45,
+              "AttackReadinessSeconds": 5,
+              "DefenseRadiusInCells": 36,
+              "AssaultStallTimeoutSeconds": 60,
+              "Seed": 1829856032,
+              "DecisionIntervalSeconds": 1,
+              "ResourceReserve": 800,
+              "ScoutReconsiderSeconds": 8
+            },
+            "ProfileVersion": 1,
+            "ProfileFingerprint": "533CA0144580C99942E1A70DAF924EF2EEEF8189235E57379228B54373B61F43"
+          }
+        ],
+        "units": {
+          "gdi-base": 2,
+          "tiberium-refinery": 2,
+          "gdi-barracks": 2,
+          "gdi-bulldozer": 2,
+          "": 10,
+          "harvester": 4,
+          "reaktor": 4,
+          "gunner": 10,
+          "vehicle-factory": 2,
+          "squad-leader": 2,
+          "medic": 2,
+          "engineer": 2,
+          "tank": 2,
+          "gepard": 2,
+          "communicationstower": 1
+        },
+        "completedBuildings": 11,
+        "pendingPlanning": 0
+      },
+      "host": {
+        "cpuSeconds": 14.0625,
+        "workingSetBytes": 94228480,
+        "metrics": {
+          "frameWorkMs": {
+            "Count": 2268,
+            "Mean": 3.8371940917107623,
+            "P95": 6.4464,
+            "P99": 11.7548,
+            "Maximum": 60.513,
+            "SampleCount": 2268
+          },
+          "frameIntervalMs": {
+            "Count": 2268,
+            "Mean": 30.853319135802455,
+            "P95": 31.981300000001767,
+            "P99": 32.2060000000004,
+            "Maximum": 60.52010000000152,
+            "SampleCount": 2268
+          },
+          "decisionsMs": {
+            "Count": 2428,
+            "Mean": 0.5397081548599667,
+            "P95": 0.6719,
+            "P99": 4.8046,
+            "Maximum": 99.7713,
+            "SampleCount": 2428
+          },
+          "requestReplyMs": {
+            "Count": 88,
+            "Mean": 1014.0127784090905,
+            "P95": 5048.3269,
+            "P99": 9093.7847,
+            "Maximum": 9093.7847,
+            "SampleCount": 88
+          },
+          "MaximumInbox": 4,
+          "MaximumControllers": 2,
+          "Snapshots": 0,
+          "MatchStarts": 0,
+          "Rejections": 0,
+          "RequestCount": 88,
+          "sentBytes": 0,
+          "receivedBytes": 0,
+          "scopes": [
+            {
+              "Name": "AI.ArmoredSupport",
+              "Calls": 3818,
+              "TotalMilliseconds": 92.39649999999851,
+              "MaximumMilliseconds": 48.7061,
+              "AllocatedBytes": 16291392
+            },
+            {
+              "Name": "AI.ArmyGoals",
+              "Calls": 4856,
+              "TotalMilliseconds": 137.0963000000009,
+              "MaximumMilliseconds": 71.2083,
+              "AllocatedBytes": 3148280
+            },
+            {
+              "Name": "AI.BaseDefense",
+              "Calls": 3818,
+              "TotalMilliseconds": 35.663599999999875,
+              "MaximumMilliseconds": 19.6668,
+              "AllocatedBytes": 734632
+            },
+            {
+              "Name": "AI.BuildSiteSearch",
+              "Calls": 7,
+              "TotalMilliseconds": 78.70089999999999,
+              "MaximumMilliseconds": 39.2792,
+              "AllocatedBytes": 21896376
+            },
+            {
+              "Name": "AI.DefensePlanner",
+              "Calls": 2974,
+              "TotalMilliseconds": 4.682899999999956,
+              "MaximumMilliseconds": 0.2829,
+              "AllocatedBytes": 0
+            },
+            {
+              "Name": "AI.Infrastructure",
+              "Calls": 2974,
+              "TotalMilliseconds": 170.77949999999936,
+              "MaximumMilliseconds": 29.9763,
+              "AllocatedBytes": 10332120
+            },
+            {
+              "Name": "AI.OrderProgress",
+              "Calls": 4856,
+              "TotalMilliseconds": 40.70349999999971,
+              "MaximumMilliseconds": 22.2145,
+              "AllocatedBytes": 268808
+            },
+            {
+              "Name": "AI.Player",
+              "Calls": 4856,
+              "TotalMilliseconds": 1301.3494999999978,
+              "MaximumMilliseconds": 96.3603,
+              "AllocatedBytes": 64077432
+            },
+            {
+              "Name": "AI.ProductionPlan",
+              "Calls": 5958,
+              "TotalMilliseconds": 90.25050000000014,
+              "MaximumMilliseconds": 19.4388,
+              "AllocatedBytes": 7937872
+            },
+            {
+              "Name": "AI.Scouting",
+              "Calls": 3818,
+              "TotalMilliseconds": 133.9463,
+              "MaximumMilliseconds": 8.7324,
+              "AllocatedBytes": 7077304
+            },
+            {
+              "Name": "AI.ScoutSearch",
+              "Calls": 13687,
+              "TotalMilliseconds": 248.5119000000017,
+              "MaximumMilliseconds": 9.1922,
+              "AllocatedBytes": 4369384
+            },
+            {
+              "Name": "AI.SquadAssault",
+              "Calls": 1098,
+              "TotalMilliseconds": 44.8128000000005,
+              "MaximumMilliseconds": 15.6231,
+              "AllocatedBytes": 474200
+            },
+            {
+              "Name": "AI.SquadPreparation",
+              "Calls": 1882,
+              "TotalMilliseconds": 36.28750000000042,
+              "MaximumMilliseconds": 6.7317,
+              "AllocatedBytes": 2256960
+            },
+            {
+              "Name": "AI.ThreatAssessment",
+              "Calls": 3818,
+              "TotalMilliseconds": 19.630899999999784,
+              "MaximumMilliseconds": 3.606,
+              "AllocatedBytes": 201512
+            },
+            {
+              "Name": "Host.GotoPlanningSlice",
+              "Calls": 2237,
+              "TotalMilliseconds": 425.97999999999973,
+              "MaximumMilliseconds": 7.3332,
+              "AllocatedBytes": 41917488
+            },
+            {
+              "Name": "Host.GotoPublish",
+              "Calls": 32,
+              "TotalMilliseconds": 24.357799999999997,
+              "MaximumMilliseconds": 13.8604,
+              "AllocatedBytes": 894112
+            },
+            {
+              "Name": "Host.Request.AttackRequest",
+              "Calls": 7,
+              "TotalMilliseconds": 0.0624,
+              "MaximumMilliseconds": 0.0099,
+              "AllocatedBytes": 1120
+            },
+            {
+              "Name": "Host.Request.AttackTargetRequest",
+              "Calls": 16,
+              "TotalMilliseconds": 3.080099999999999,
+              "MaximumMilliseconds": 1.5225,
+              "AllocatedBytes": 254104
+            },
+            {
+              "Name": "Host.Request.BuildRequest",
+              "Calls": 7,
+              "TotalMilliseconds": 43.4773,
+              "MaximumMilliseconds": 16.4967,
+              "AllocatedBytes": 5894328
+            },
+            {
+              "Name": "Host.Request.EnterUnitRequest",
+              "Calls": 4,
+              "TotalMilliseconds": 8.969800000000001,
+              "MaximumMilliseconds": 8.2199,
+              "AllocatedBytes": 50272
+            },
+            {
+              "Name": "Host.Request.FollowRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 1.6828,
+              "MaximumMilliseconds": 1.6162,
+              "AllocatedBytes": 25968
+            },
+            {
+              "Name": "Host.Request.GotoRequest",
+              "Calls": 32,
+              "TotalMilliseconds": 15.864299999999997,
+              "MaximumMilliseconds": 10.3796,
+              "AllocatedBytes": 420280
+            },
+            {
+              "Name": "Host.Request.HarvestRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 9.0187,
+              "MaximumMilliseconds": 8.8834,
+              "AllocatedBytes": 91224
+            },
+            {
+              "Name": "Host.Request.SetRallyPointRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 3.2255,
+              "MaximumMilliseconds": 3.1711,
+              "AllocatedBytes": 23160
+            },
+            {
+              "Name": "Host.Request.StopRequest",
+              "Calls": 1,
+              "TotalMilliseconds": 0.0995,
+              "MaximumMilliseconds": 0.0995,
+              "AllocatedBytes": 14504
+            },
+            {
+              "Name": "Host.Request.TrainUnitRequest",
+              "Calls": 20,
+              "TotalMilliseconds": 5.1355,
+              "MaximumMilliseconds": 1.6606,
+              "AllocatedBytes": 279896
+            },
+            {
+              "Name": "Host.Request.UnitActionRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 15.818700000000002,
+              "MaximumMilliseconds": 15.5492,
+              "AllocatedBytes": 31904
+            },
+            {
+              "Name": "Path.JobSlice",
+              "Calls": 2136,
+              "TotalMilliseconds": 311.78520000000054,
+              "MaximumMilliseconds": 14.7704,
+              "AllocatedBytes": 86266912
+            },
+            {
+              "Name": "Path.PlanningUpdate",
+              "Calls": 2428,
+              "TotalMilliseconds": 1051.415400000007,
+              "MaximumMilliseconds": 14.7885,
+              "AllocatedBytes": 134459920
+            }
+          ]
+        }
+      },
+      "mode": "host",
+      "bots": []
+    },
+    {
+      "result": {
+        "mode": "one",
+        "seconds": 75,
+        "profile": {
+          "Type": 0,
+          "DisplayName": "Balanced Assault",
+          "RequiredGunners": 3,
+          "RequiredRakZero": 1,
+          "RequiredTanks": 1,
+          "RetreatHealthFraction": 0.45,
+          "AttackReadinessSeconds": 5,
+          "DefenseRadiusInCells": 36,
+          "AssaultStallTimeoutSeconds": 60,
+          "Seed": 1829856032,
+          "DecisionIntervalSeconds": 1,
+          "ResourceReserve": 800,
+          "ScoutReconsiderSeconds": 8
+        },
+        "requests": {
+          "BuildRequest": 9,
+          "HarvestRequest": 2,
+          "SetRallyPointRequest": 2,
+          "TrainUnitRequest": 33,
+          "GotoRequest": 26,
+          "EnterUnitRequest": 3,
+          "UnitActionRequest": 2,
+          "ResearchRequest": 3,
+          "AttackTargetRequest": 15,
+          "FollowRequest": 1,
+          "StopRequest": 2
+        },
+        "phaseRequests": [
+          98,
+          0,
+          0
+        ],
+        "phaseBuilds": [
+          7,
+          0,
+          0
+        ],
+        "maxUnits": 49,
+        "maxCargo": 0,
+        "rejections": 0,
+        "completedOrders": 23,
+        "disconnects": 0,
+        "lateJoins": 0,
+        "resets": 0,
+        "removedReactor": false,
+        "removedPerk": false,
+        "controllers": [
+          {
+            "ArmyId": "a030a67e-e93e-435b-814a-34734830baec",
+            "ActorId": "00fbb09f-fa40-48e4-aca4-3846f1152604",
+            "ControllerPeerId": "359fff2f-bbf2-4424-8ff9-c75b34c5463a",
+            "Generation": 2,
+            "Profile": {
+              "Type": 0,
+              "DisplayName": "Balanced Assault",
+              "RequiredGunners": 3,
+              "RequiredRakZero": 1,
+              "RequiredTanks": 1,
+              "RetreatHealthFraction": 0.45,
+              "AttackReadinessSeconds": 5,
+              "DefenseRadiusInCells": 36,
+              "AssaultStallTimeoutSeconds": 60,
+              "Seed": 1829856032,
+              "DecisionIntervalSeconds": 1,
+              "ResourceReserve": 800,
+              "ScoutReconsiderSeconds": 8
+            },
+            "ProfileVersion": 1,
+            "ProfileFingerprint": "533CA0144580C99942E1A70DAF924EF2EEEF8189235E57379228B54373B61F43"
+          },
+          {
+            "ArmyId": "b030a67e-e93e-435b-814a-34734830baec",
+            "ActorId": "c030a67e-e93e-435b-814a-34734830baec",
+            "ControllerPeerId": "00fbb09f-fa40-48e4-aca4-3846f1152604",
+            "Generation": 1,
+            "Profile": {
+              "Type": 0,
+              "DisplayName": "Balanced Assault",
+              "RequiredGunners": 3,
+              "RequiredRakZero": 1,
+              "RequiredTanks": 1,
+              "RetreatHealthFraction": 0.45,
+              "AttackReadinessSeconds": 5,
+              "DefenseRadiusInCells": 36,
+              "AssaultStallTimeoutSeconds": 60,
+              "Seed": 1829856032,
+              "DecisionIntervalSeconds": 1,
+              "ResourceReserve": 800,
+              "ScoutReconsiderSeconds": 8
+            },
+            "ProfileVersion": 1,
+            "ProfileFingerprint": "533CA0144580C99942E1A70DAF924EF2EEEF8189235E57379228B54373B61F43"
+          }
+        ],
+        "units": {
+          "gdi-base": 2,
+          "tiberium-refinery": 2,
+          "gdi-barracks": 2,
+          "gdi-bulldozer": 2,
+          "": 10,
+          "harvester": 4,
+          "reaktor": 4,
+          "gunner": 10,
+          "vehicle-factory": 2,
+          "squad-leader": 2,
+          "medic": 2,
+          "engineer": 2,
+          "tank": 2,
+          "gepard": 2,
+          "communicationstower": 1
+        },
+        "completedBuildings": 12,
+        "pendingPlanning": 0
+      },
+      "host": {
+        "cpuSeconds": 15,
+        "workingSetBytes": 97673216,
+        "metrics": {
+          "frameWorkMs": {
+            "Count": 2265,
+            "Mean": 3.8281872847682124,
+            "P95": 6.7025,
+            "P99": 11.6703,
+            "Maximum": 43.6488,
+            "SampleCount": 2265
+          },
+          "frameIntervalMs": {
+            "Count": 2265,
+            "Mean": 30.9043575717439,
+            "P95": 31.972899999999527,
+            "P99": 32.222999999994784,
+            "Maximum": 62.8466999999997,
+            "SampleCount": 2265
+          },
+          "decisionsMs": {
+            "Count": 2426,
+            "Mean": 0.38861240725473994,
+            "P95": 0.4588,
+            "P99": 2.6949,
+            "Maximum": 67.3141,
+            "SampleCount": 2426
+          },
+          "requestReplyMs": {
+            "Count": 47,
+            "Mean": 575.9629595744681,
+            "P95": 3838.1626,
+            "P99": 9064.4808,
+            "Maximum": 9064.4808,
+            "SampleCount": 47
+          },
+          "MaximumInbox": 3,
+          "MaximumControllers": 1,
+          "Snapshots": 0,
+          "MatchStarts": 0,
+          "Rejections": 0,
+          "RequestCount": 47,
+          "sentBytes": 27239145,
+          "receivedBytes": 215554,
+          "scopes": [
+            {
+              "Name": "AI.ArmoredSupport",
+              "Calls": 1907,
+              "TotalMilliseconds": 54.228099999999436,
+              "MaximumMilliseconds": 25.3605,
+              "AllocatedBytes": 4065888
+            },
+            {
+              "Name": "AI.ArmyGoals",
+              "Calls": 2426,
+              "TotalMilliseconds": 91.36360000000283,
+              "MaximumMilliseconds": 43.8471,
+              "AllocatedBytes": 1585312
+            },
+            {
+              "Name": "AI.BaseDefense",
+              "Calls": 1907,
+              "TotalMilliseconds": 44.782400000000095,
+              "MaximumMilliseconds": 21.9715,
+              "AllocatedBytes": 395128
+            },
+            {
+              "Name": "AI.BuildSiteSearch",
+              "Calls": 3,
+              "TotalMilliseconds": 44.89490000000001,
+              "MaximumMilliseconds": 24.3501,
+              "AllocatedBytes": 6786136
+            },
+            {
+              "Name": "AI.DefensePlanner",
+              "Calls": 1476,
+              "TotalMilliseconds": 2.6474000000000055,
+              "MaximumMilliseconds": 0.189,
+              "AllocatedBytes": 0
+            },
+            {
+              "Name": "AI.Infrastructure",
+              "Calls": 1476,
+              "TotalMilliseconds": 119.59100000000007,
+              "MaximumMilliseconds": 33.3373,
+              "AllocatedBytes": 5033336
+            },
+            {
+              "Name": "AI.OrderProgress",
+              "Calls": 2426,
+              "TotalMilliseconds": 30.879900000001953,
+              "MaximumMilliseconds": 12.9846,
+              "AllocatedBytes": 128232
+            },
+            {
+              "Name": "AI.Player",
+              "Calls": 4852,
+              "TotalMilliseconds": 932.5318999999992,
+              "MaximumMilliseconds": 55.7635,
+              "AllocatedBytes": 28413608
+            },
+            {
+              "Name": "AI.ProductionPlan",
+              "Calls": 2958,
+              "TotalMilliseconds": 66.40179999999931,
+              "MaximumMilliseconds": 29.3655,
+              "AllocatedBytes": 3891848
+            },
+            {
+              "Name": "AI.Scouting",
+              "Calls": 1907,
+              "TotalMilliseconds": 95.07260000000005,
+              "MaximumMilliseconds": 11.0747,
+              "AllocatedBytes": 3504872
+            },
+            {
+              "Name": "AI.ScoutSearch",
+              "Calls": 6359,
+              "TotalMilliseconds": 123.13739999999983,
+              "MaximumMilliseconds": 11.0592,
+              "AllocatedBytes": 2424456
+            },
+            {
+              "Name": "AI.SquadAssault",
+              "Calls": 469,
+              "TotalMilliseconds": 12.489200000000121,
+              "MaximumMilliseconds": 6.1226,
+              "AllocatedBytes": 137880
+            },
+            {
+              "Name": "AI.SquadPreparation",
+              "Calls": 939,
+              "TotalMilliseconds": 33.62260000000006,
+              "MaximumMilliseconds": 10.6462,
+              "AllocatedBytes": 1122680
+            },
+            {
+              "Name": "AI.ThreatAssessment",
+              "Calls": 1907,
+              "TotalMilliseconds": 13.395499999999972,
+              "MaximumMilliseconds": 3.2519,
+              "AllocatedBytes": 91776
+            },
+            {
+              "Name": "Host.GotoPlanningSlice",
+              "Calls": 885,
+              "TotalMilliseconds": 182.9447000000001,
+              "MaximumMilliseconds": 8.861,
+              "AllocatedBytes": 19083200
+            },
+            {
+              "Name": "Host.GotoPublish",
+              "Calls": 26,
+              "TotalMilliseconds": 21.755799999999997,
+              "MaximumMilliseconds": 15.0766,
+              "AllocatedBytes": 753640
+            },
+            {
+              "Name": "Host.Request.AttackRequest",
+              "Calls": 107,
+              "TotalMilliseconds": 0.8193000000000001,
+              "MaximumMilliseconds": 0.1237,
+              "AllocatedBytes": 39008
+            },
+            {
+              "Name": "Host.Request.AttackTargetRequest",
+              "Calls": 15,
+              "TotalMilliseconds": 6.1248000000000005,
+              "MaximumMilliseconds": 4.2481,
+              "AllocatedBytes": 251944
+            },
+            {
+              "Name": "Host.Request.BuildRequest",
+              "Calls": 7,
+              "TotalMilliseconds": 47.172599999999996,
+              "MaximumMilliseconds": 15.5494,
+              "AllocatedBytes": 5896864
+            },
+            {
+              "Name": "Host.Request.EnterUnitRequest",
+              "Calls": 3,
+              "TotalMilliseconds": 9.9518,
+              "MaximumMilliseconds": 9.364,
+              "AllocatedBytes": 38296
+            },
+            {
+              "Name": "Host.Request.FollowRequest",
+              "Calls": 1,
+              "TotalMilliseconds": 2.6853,
+              "MaximumMilliseconds": 2.6853,
+              "AllocatedBytes": 13128
+            },
+            {
+              "Name": "Host.Request.GotoRequest",
+              "Calls": 26,
+              "TotalMilliseconds": 15.551,
+              "MaximumMilliseconds": 10.4345,
+              "AllocatedBytes": 348072
+            },
+            {
+              "Name": "Host.Request.HarvestRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 5.7003,
+              "MaximumMilliseconds": 5.4943,
+              "AllocatedBytes": 91544
+            },
+            {
+              "Name": "Host.Request.ResearchRequest",
+              "Calls": 1,
+              "TotalMilliseconds": 3.0304,
+              "MaximumMilliseconds": 3.0304,
+              "AllocatedBytes": 15160
+            },
+            {
+              "Name": "Host.Request.SetRallyPointRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 2.4850000000000003,
+              "MaximumMilliseconds": 2.2511,
+              "AllocatedBytes": 23392
+            },
+            {
+              "Name": "Host.Request.StopRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 0.2831,
+              "MaximumMilliseconds": 0.1416,
+              "AllocatedBytes": 29360
+            },
+            {
+              "Name": "Host.Request.TrainUnitRequest",
+              "Calls": 20,
+              "TotalMilliseconds": 5.0918,
+              "MaximumMilliseconds": 1.9046,
+              "AllocatedBytes": 288432
+            },
+            {
+              "Name": "Host.Request.UnitActionRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 11.992899999999999,
+              "MaximumMilliseconds": 11.7365,
+              "AllocatedBytes": 32352
+            },
+            {
+              "Name": "Path.JobSlice",
+              "Calls": 2440,
+              "TotalMilliseconds": 351.52689999999956,
+              "MaximumMilliseconds": 13.5744,
+              "AllocatedBytes": 92393984
+            },
+            {
+              "Name": "Path.PlanningUpdate",
+              "Calls": 2426,
+              "TotalMilliseconds": 698.3703000000006,
+              "MaximumMilliseconds": 13.5927,
+              "AllocatedBytes": 114834016
+            }
+          ]
+        }
+      },
+      "mode": "one",
+      "bots": [
+        {
+          "name": "BenchBot0-metrics",
+          "report": {
+            "cpuSeconds": 14.671875,
+            "workingSetBytes": 91156480,
+            "metrics": {
+              "frameWorkMs": {
+                "Count": 2401,
+                "Mean": 3.490201207830069,
+                "P95": 5.7532,
+                "P99": 11.169,
+                "Maximum": 158.1079,
+                "SampleCount": 2401
+              },
+              "frameIntervalMs": {
+                "Count": 2401,
+                "Mean": 31.435561391087063,
+                "P95": 32.01460000000367,
+                "P99": 46.00459999998918,
+                "Maximum": 285.3848,
+                "SampleCount": 2401
+              },
+              "decisionsMs": {
+                "Count": 2395,
+                "Mean": 0.714935448851775,
+                "P95": 1.2077,
+                "P99": 6.7538,
+                "Maximum": 81.7319,
+                "SampleCount": 2395
+              },
+              "requestReplyMs": {
+                "Count": 34,
+                "Mean": 176.5551088235294,
+                "P95": 2014.5579,
+                "P99": 2016.0369,
+                "Maximum": 2016.0369,
+                "SampleCount": 34
+              },
+              "MaximumInbox": 19,
+              "MaximumControllers": 1,
+              "Snapshots": 1,
+              "MatchStarts": 0,
+              "Rejections": 0,
+              "RequestCount": 34,
+              "sentBytes": 215554,
+              "receivedBytes": 27239145,
+              "scopes": [
+                {
+                  "Name": "AI.ArmoredSupport",
+                  "Calls": 1856,
+                  "TotalMilliseconds": 38.36310000000037,
+                  "MaximumMilliseconds": 8.1762,
+                  "AllocatedBytes": 1511768
+                },
+                {
+                  "Name": "AI.ArmyGoals",
+                  "Calls": 2393,
+                  "TotalMilliseconds": 145.43910000000503,
+                  "MaximumMilliseconds": 48.6461,
+                  "AllocatedBytes": 1078248
+                },
+                {
+                  "Name": "AI.BaseDefense",
+                  "Calls": 1856,
+                  "TotalMilliseconds": 11.09850000000048,
+                  "MaximumMilliseconds": 6.8698,
+                  "AllocatedBytes": 245608
+                },
+                {
+                  "Name": "AI.BuildSiteSlice",
+                  "Calls": 280,
+                  "TotalMilliseconds": 158.7444,
+                  "MaximumMilliseconds": 4.8533,
+                  "AllocatedBytes": 26204976
+                },
+                {
+                  "Name": "AI.DefensePlanner",
+                  "Calls": 1323,
+                  "TotalMilliseconds": 3.7421999999999955,
+                  "MaximumMilliseconds": 0.287,
+                  "AllocatedBytes": 0
+                },
+                {
+                  "Name": "AI.Infrastructure",
+                  "Calls": 1323,
+                  "TotalMilliseconds": 172.36369999999985,
+                  "MaximumMilliseconds": 26.8479,
+                  "AllocatedBytes": 4615216
+                },
+                {
+                  "Name": "AI.OrderProgress",
+                  "Calls": 2393,
+                  "TotalMilliseconds": 43.92959999999895,
+                  "MaximumMilliseconds": 17.6188,
+                  "AllocatedBytes": 151768
+                },
+                {
+                  "Name": "AI.Player",
+                  "Calls": 2393,
+                  "TotalMilliseconds": 1577.1430000000034,
+                  "MaximumMilliseconds": 70.6897,
+                  "AllocatedBytes": 55275624
+                },
+                {
+                  "Name": "AI.ProductionPlan",
+                  "Calls": 2651,
+                  "TotalMilliseconds": 86.01779999999977,
+                  "MaximumMilliseconds": 9.1305,
+                  "AllocatedBytes": 1700288
+                },
+                {
+                  "Name": "AI.Scouting",
+                  "Calls": 1856,
+                  "TotalMilliseconds": 663.7808999999997,
+                  "MaximumMilliseconds": 13.3596,
+                  "AllocatedBytes": 33215568
+                },
+                {
+                  "Name": "AI.ScoutSearch",
+                  "Calls": 21295,
+                  "TotalMilliseconds": 365.4257999999971,
+                  "MaximumMilliseconds": 13.2726,
+                  "AllocatedBytes": 1660352
+                },
+                {
+                  "Name": "AI.SquadAssault",
+                  "Calls": 927,
+                  "TotalMilliseconds": 50.63180000000003,
+                  "MaximumMilliseconds": 27.7145,
+                  "AllocatedBytes": 576648
+                },
+                {
+                  "Name": "AI.SquadPreparation",
+                  "Calls": 930,
+                  "TotalMilliseconds": 42.59820000000017,
+                  "MaximumMilliseconds": 14.1968,
+                  "AllocatedBytes": 1117056
+                },
+                {
+                  "Name": "AI.ThreatAssessment",
+                  "Calls": 1856,
+                  "TotalMilliseconds": 12.725599999999936,
+                  "MaximumMilliseconds": 3.5294,
+                  "AllocatedBytes": 91184
+                },
+                {
+                  "Name": "Path.PlanningUpdate",
+                  "Calls": 2393,
+                  "TotalMilliseconds": 588.442800000001,
+                  "MaximumMilliseconds": 13.2891,
+                  "AllocatedBytes": 30558256
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "result": {
+        "mode": "shared",
+        "seconds": 75,
+        "profile": {
+          "Type": 0,
+          "DisplayName": "Balanced Assault",
+          "RequiredGunners": 3,
+          "RequiredRakZero": 1,
+          "RequiredTanks": 1,
+          "RetreatHealthFraction": 0.45,
+          "AttackReadinessSeconds": 5,
+          "DefenseRadiusInCells": 36,
+          "AssaultStallTimeoutSeconds": 60,
+          "Seed": 1829856032,
+          "DecisionIntervalSeconds": 1,
+          "ResourceReserve": 800,
+          "ScoutReconsiderSeconds": 8
+        },
+        "requests": {
+          "BuildRequest": 10,
+          "HarvestRequest": 2,
+          "SetRallyPointRequest": 2,
+          "TrainUnitRequest": 46,
+          "GotoRequest": 19,
+          "EnterUnitRequest": 4,
+          "UnitActionRequest": 2,
+          "AttackTargetRequest": 13,
+          "FollowRequest": 1,
+          "StopRequest": 1
+        },
+        "phaseRequests": [
+          100,
+          0,
+          0
+        ],
+        "phaseBuilds": [
+          6,
+          0,
+          0
+        ],
+        "maxUnits": 48,
+        "maxCargo": 0,
+        "rejections": 0,
+        "completedOrders": 22,
+        "disconnects": 0,
+        "lateJoins": 0,
+        "resets": 0,
+        "removedReactor": false,
+        "removedPerk": false,
+        "controllers": [
+          {
+            "ArmyId": "a030a67e-e93e-435b-814a-34734830baec",
+            "ActorId": "ff9154a5-b274-4f6a-8af2-abe6dc35c3ed",
+            "ControllerPeerId": "331de949-76c4-4f3f-9ed6-53e5ee5effed",
+            "Generation": 2,
+            "Profile": {
+              "Type": 0,
+              "DisplayName": "Balanced Assault",
+              "RequiredGunners": 3,
+              "RequiredRakZero": 1,
+              "RequiredTanks": 1,
+              "RetreatHealthFraction": 0.45,
+              "AttackReadinessSeconds": 5,
+              "DefenseRadiusInCells": 36,
+              "AssaultStallTimeoutSeconds": 60,
+              "Seed": 1829856032,
+              "DecisionIntervalSeconds": 1,
+              "ResourceReserve": 800,
+              "ScoutReconsiderSeconds": 8
+            },
+            "ProfileVersion": 1,
+            "ProfileFingerprint": "533CA0144580C99942E1A70DAF924EF2EEEF8189235E57379228B54373B61F43"
+          },
+          {
+            "ArmyId": "b030a67e-e93e-435b-814a-34734830baec",
+            "ActorId": "c030a67e-e93e-435b-814a-34734830baec",
+            "ControllerPeerId": "331de949-76c4-4f3f-9ed6-53e5ee5effed",
+            "Generation": 2,
+            "Profile": {
+              "Type": 0,
+              "DisplayName": "Balanced Assault",
+              "RequiredGunners": 3,
+              "RequiredRakZero": 1,
+              "RequiredTanks": 1,
+              "RetreatHealthFraction": 0.45,
+              "AttackReadinessSeconds": 5,
+              "DefenseRadiusInCells": 36,
+              "AssaultStallTimeoutSeconds": 60,
+              "Seed": 1829856032,
+              "DecisionIntervalSeconds": 1,
+              "ResourceReserve": 800,
+              "ScoutReconsiderSeconds": 8
+            },
+            "ProfileVersion": 1,
+            "ProfileFingerprint": "533CA0144580C99942E1A70DAF924EF2EEEF8189235E57379228B54373B61F43"
+          }
+        ],
+        "units": {
+          "gdi-base": 2,
+          "tiberium-refinery": 2,
+          "gdi-barracks": 2,
+          "gdi-bulldozer": 2,
+          "": 10,
+          "harvester": 4,
+          "reaktor": 3,
+          "gunner": 10,
+          "vehicle-factory": 2,
+          "squad-leader": 2,
+          "medic": 2,
+          "engineer": 2,
+          "tank": 2,
+          "gepard": 2,
+          "communicationstower": 1
+        },
+        "completedBuildings": 11,
+        "pendingPlanning": 8
+      },
+      "host": {
+        "cpuSeconds": 12.375,
+        "workingSetBytes": 100737024,
+        "metrics": {
+          "frameWorkMs": {
+            "Count": 2267,
+            "Mean": 3.418850507278342,
+            "P95": 6.2363,
+            "P99": 8.5325,
+            "Maximum": 36.521,
+            "SampleCount": 2267
+          },
+          "frameIntervalMs": {
+            "Count": 2267,
+            "Mean": 30.88491001323333,
+            "P95": 31.959000000000515,
+            "P99": 32.21500000000077,
+            "Maximum": 72.36059999999966,
+            "SampleCount": 2267
+          },
+          "decisionsMs": {
+            "Count": 2428,
+            "Mean": 0.025953871499176284,
+            "P95": 0.0266,
+            "P99": 0.0327,
+            "Maximum": 11.8145,
+            "SampleCount": 2428
+          },
+          "requestReplyMs": {
+            "Count": 0,
+            "Mean": 0,
+            "P95": 0,
+            "P99": 0,
+            "Maximum": 0,
+            "SampleCount": 0
+          },
+          "MaximumInbox": 3,
+          "MaximumControllers": 0,
+          "Snapshots": 0,
+          "MatchStarts": 0,
+          "Rejections": 0,
+          "RequestCount": 0,
+          "sentBytes": 26781274,
+          "receivedBytes": 420781,
+          "scopes": [
+            {
+              "Name": "AI.Player",
+              "Calls": 4856,
+              "TotalMilliseconds": 53.639299999999615,
+              "MaximumMilliseconds": 11.5324,
+              "AllocatedBytes": 1641768
+            },
+            {
+              "Name": "Host.GotoPlanningSlice",
+              "Calls": 2467,
+              "TotalMilliseconds": 398.6476000000014,
+              "MaximumMilliseconds": 10.8099,
+              "AllocatedBytes": 41222744
+            },
+            {
+              "Name": "Host.GotoPublish",
+              "Calls": 17,
+              "TotalMilliseconds": 20.340199999999996,
+              "MaximumMilliseconds": 14.2683,
+              "AllocatedBytes": 495640
+            },
+            {
+              "Name": "Host.Request.AttackRequest",
+              "Calls": 59,
+              "TotalMilliseconds": 0.4542,
+              "MaximumMilliseconds": 0.089,
+              "AllocatedBytes": 16736
+            },
+            {
+              "Name": "Host.Request.AttackTargetRequest",
+              "Calls": 11,
+              "TotalMilliseconds": 6.785999999999999,
+              "MaximumMilliseconds": 5.731,
+              "AllocatedBytes": 175408
+            },
+            {
+              "Name": "Host.Request.BuildRequest",
+              "Calls": 6,
+              "TotalMilliseconds": 76.7806,
+              "MaximumMilliseconds": 31.8429,
+              "AllocatedBytes": 5425392
+            },
+            {
+              "Name": "Host.Request.EnterUnitRequest",
+              "Calls": 4,
+              "TotalMilliseconds": 7.532000000000001,
+              "MaximumMilliseconds": 6.9499,
+              "AllocatedBytes": 50720
+            },
+            {
+              "Name": "Host.Request.FollowRequest",
+              "Calls": 1,
+              "TotalMilliseconds": 2.836,
+              "MaximumMilliseconds": 2.836,
+              "AllocatedBytes": 13064
+            },
+            {
+              "Name": "Host.Request.GotoRequest",
+              "Calls": 17,
+              "TotalMilliseconds": 15.022599999999999,
+              "MaximumMilliseconds": 11.3059,
+              "AllocatedBytes": 223808
+            },
+            {
+              "Name": "Host.Request.HarvestRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 13.0589,
+              "MaximumMilliseconds": 12.7961,
+              "AllocatedBytes": 86288
+            },
+            {
+              "Name": "Host.Request.SetRallyPointRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 4.4187,
+              "MaximumMilliseconds": 4.2994,
+              "AllocatedBytes": 23296
+            },
+            {
+              "Name": "Host.Request.StopRequest",
+              "Calls": 1,
+              "TotalMilliseconds": 0.1033,
+              "MaximumMilliseconds": 0.1033,
+              "AllocatedBytes": 14552
+            },
+            {
+              "Name": "Host.Request.TrainUnitRequest",
+              "Calls": 20,
+              "TotalMilliseconds": 8.2431,
+              "MaximumMilliseconds": 5.6465,
+              "AllocatedBytes": 280776
+            },
+            {
+              "Name": "Host.Request.UnitActionRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 16.348699999999997,
+              "MaximumMilliseconds": 16.0477,
+              "AllocatedBytes": 32280
+            },
+            {
+              "Name": "Path.JobSlice",
+              "Calls": 2338,
+              "TotalMilliseconds": 362.2078999999999,
+              "MaximumMilliseconds": 13.8777,
+              "AllocatedBytes": 90302752
+            },
+            {
+              "Name": "Path.PlanningUpdate",
+              "Calls": 2428,
+              "TotalMilliseconds": 781.7912000000015,
+              "MaximumMilliseconds": 13.8945,
+              "AllocatedBytes": 131531208
+            }
+          ]
+        }
+      },
+      "mode": "shared",
+      "bots": [
+        {
+          "name": "BenchBot0-metrics",
+          "report": {
+            "cpuSeconds": 13.4375,
+            "workingSetBytes": 91971584,
+            "metrics": {
+              "frameWorkMs": {
+                "Count": 2400,
+                "Mean": 3.5603046249999997,
+                "P95": 5.8302,
+                "P99": 11.8267,
+                "Maximum": 145.3152,
+                "SampleCount": 2400
+              },
+              "frameIntervalMs": {
+                "Count": 2400,
+                "Mean": 31.434097999999928,
+                "P95": 32.01400000000021,
+                "P99": 45.99919999999713,
+                "Maximum": 262.3047,
+                "SampleCount": 2400
+              },
+              "decisionsMs": {
+                "Count": 2394,
+                "Mean": 0.8992460735171284,
+                "P95": 1.4635,
+                "P99": 8.2642,
+                "Maximum": 64.3516,
+                "SampleCount": 2394
+              },
+              "requestReplyMs": {
+                "Count": 66,
+                "Mean": 615.7875878787877,
+                "P95": 5304.4044,
+                "P99": 5553.2822,
+                "Maximum": 5553.2822,
+                "SampleCount": 66
+              },
+              "MaximumInbox": 23,
+              "MaximumControllers": 2,
+              "Snapshots": 1,
+              "MatchStarts": 0,
+              "Rejections": 0,
+              "RequestCount": 66,
+              "sentBytes": 420781,
+              "receivedBytes": 26781274,
+              "scopes": [
+                {
+                  "Name": "AI.ArmoredSupport",
+                  "Calls": 3714,
+                  "TotalMilliseconds": 53.607800000000985,
+                  "MaximumMilliseconds": 9.9303,
+                  "AllocatedBytes": 2887576
+                },
+                {
+                  "Name": "AI.ArmyGoals",
+                  "Calls": 4784,
+                  "TotalMilliseconds": 151.48960000000213,
+                  "MaximumMilliseconds": 35.7318,
+                  "AllocatedBytes": 2017208
+                },
+                {
+                  "Name": "AI.BaseDefense",
+                  "Calls": 3714,
+                  "TotalMilliseconds": 44.582500000000955,
+                  "MaximumMilliseconds": 23.5204,
+                  "AllocatedBytes": 667608
+                },
+                {
+                  "Name": "AI.BuildSiteSlice",
+                  "Calls": 222,
+                  "TotalMilliseconds": 141.50360000000006,
+                  "MaximumMilliseconds": 13.2485,
+                  "AllocatedBytes": 20214000
+                },
+                {
+                  "Name": "AI.DefensePlanner",
+                  "Calls": 2724,
+                  "TotalMilliseconds": 4.4052999999999685,
+                  "MaximumMilliseconds": 0.1834,
+                  "AllocatedBytes": 0
+                },
+                {
+                  "Name": "AI.Infrastructure",
+                  "Calls": 2724,
+                  "TotalMilliseconds": 150.15899999999993,
+                  "MaximumMilliseconds": 24.6654,
+                  "AllocatedBytes": 3459984
+                },
+                {
+                  "Name": "AI.OrderProgress",
+                  "Calls": 4784,
+                  "TotalMilliseconds": 52.68439999999905,
+                  "MaximumMilliseconds": 19.6201,
+                  "AllocatedBytes": 285008
+                },
+                {
+                  "Name": "AI.Player",
+                  "Calls": 4784,
+                  "TotalMilliseconds": 2028.1883999999973,
+                  "MaximumMilliseconds": 62.8135,
+                  "AllocatedBytes": 68519408
+                },
+                {
+                  "Name": "AI.ProductionPlan",
+                  "Calls": 5455,
+                  "TotalMilliseconds": 77.3202999999995,
+                  "MaximumMilliseconds": 7.6515,
+                  "AllocatedBytes": 1271432
+                },
+                {
+                  "Name": "AI.Scouting",
+                  "Calls": 3714,
+                  "TotalMilliseconds": 928.912699999999,
+                  "MaximumMilliseconds": 14.3325,
+                  "AllocatedBytes": 32759448
+                },
+                {
+                  "Name": "AI.ScoutSearch",
+                  "Calls": 36424,
+                  "TotalMilliseconds": 576.1687999999965,
+                  "MaximumMilliseconds": 13.8814,
+                  "AllocatedBytes": 2658376
+                },
+                {
+                  "Name": "AI.SquadAssault",
+                  "Calls": 1299,
+                  "TotalMilliseconds": 49.39409999999977,
+                  "MaximumMilliseconds": 15.4624,
+                  "AllocatedBytes": 540176
+                },
+                {
+                  "Name": "AI.SquadPreparation",
+                  "Calls": 1858,
+                  "TotalMilliseconds": 51.118200000000044,
+                  "MaximumMilliseconds": 16.7917,
+                  "AllocatedBytes": 2242640
+                },
+                {
+                  "Name": "AI.ThreatAssessment",
+                  "Calls": 3714,
+                  "TotalMilliseconds": 19.365699999999965,
+                  "MaximumMilliseconds": 3.5684,
+                  "AllocatedBytes": 180032
+                },
+                {
+                  "Name": "Path.PlanningUpdate",
+                  "Calls": 2392,
+                  "TotalMilliseconds": 819.6653000000026,
+                  "MaximumMilliseconds": 13.8918,
+                  "AllocatedBytes": 27484728
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "result": {
+        "mode": "split",
+        "seconds": 75,
+        "profile": {
+          "Type": 0,
+          "DisplayName": "Balanced Assault",
+          "RequiredGunners": 3,
+          "RequiredRakZero": 1,
+          "RequiredTanks": 1,
+          "RetreatHealthFraction": 0.45,
+          "AttackReadinessSeconds": 5,
+          "DefenseRadiusInCells": 36,
+          "AssaultStallTimeoutSeconds": 60,
+          "Seed": 1829856032,
+          "DecisionIntervalSeconds": 1,
+          "ResourceReserve": 800,
+          "ScoutReconsiderSeconds": 8
+        },
+        "requests": {
+          "BuildRequest": 11,
+          "HarvestRequest": 2,
+          "SetRallyPointRequest": 2,
+          "TrainUnitRequest": 45,
+          "GotoRequest": 24,
+          "AttackTargetRequest": 23,
+          "EnterUnitRequest": 4,
+          "StopRequest": 3,
+          "UnitActionRequest": 2,
+          "FollowRequest": 1,
+          "ResearchRequest": 1
+        },
+        "phaseRequests": [
+          118,
+          0,
+          0
+        ],
+        "phaseBuilds": [
+          7,
+          0,
+          0
+        ],
+        "maxUnits": 49,
+        "maxCargo": 0,
+        "rejections": 0,
+        "completedOrders": 22,
+        "disconnects": 0,
+        "lateJoins": 0,
+        "resets": 0,
+        "removedReactor": false,
+        "removedPerk": false,
+        "controllers": [
+          {
+            "ArmyId": "a030a67e-e93e-435b-814a-34734830baec",
+            "ActorId": "ea057511-7932-4866-b8ac-98d999019364",
+            "ControllerPeerId": "5ff061f9-0b30-4d03-9e6c-eece609ce440",
+            "Generation": 2,
+            "Profile": {
+              "Type": 0,
+              "DisplayName": "Balanced Assault",
+              "RequiredGunners": 3,
+              "RequiredRakZero": 1,
+              "RequiredTanks": 1,
+              "RetreatHealthFraction": 0.45,
+              "AttackReadinessSeconds": 5,
+              "DefenseRadiusInCells": 36,
+              "AssaultStallTimeoutSeconds": 60,
+              "Seed": 1829856032,
+              "DecisionIntervalSeconds": 1,
+              "ResourceReserve": 800,
+              "ScoutReconsiderSeconds": 8
+            },
+            "ProfileVersion": 1,
+            "ProfileFingerprint": "533CA0144580C99942E1A70DAF924EF2EEEF8189235E57379228B54373B61F43"
+          },
+          {
+            "ArmyId": "b030a67e-e93e-435b-814a-34734830baec",
+            "ActorId": "c030a67e-e93e-435b-814a-34734830baec",
+            "ControllerPeerId": "ba48e3a0-daf9-4df6-98a5-1a8c0c65f56d",
+            "Generation": 2,
+            "Profile": {
+              "Type": 0,
+              "DisplayName": "Balanced Assault",
+              "RequiredGunners": 3,
+              "RequiredRakZero": 1,
+              "RequiredTanks": 1,
+              "RetreatHealthFraction": 0.45,
+              "AttackReadinessSeconds": 5,
+              "DefenseRadiusInCells": 36,
+              "AssaultStallTimeoutSeconds": 60,
+              "Seed": 1829856032,
+              "DecisionIntervalSeconds": 1,
+              "ResourceReserve": 800,
+              "ScoutReconsiderSeconds": 8
+            },
+            "ProfileVersion": 1,
+            "ProfileFingerprint": "533CA0144580C99942E1A70DAF924EF2EEEF8189235E57379228B54373B61F43"
+          }
+        ],
+        "units": {
+          "gdi-base": 2,
+          "tiberium-refinery": 2,
+          "gdi-barracks": 2,
+          "gdi-bulldozer": 2,
+          "": 10,
+          "harvester": 4,
+          "reaktor": 4,
+          "gunner": 10,
+          "vehicle-factory": 2,
+          "squad-leader": 2,
+          "medic": 2,
+          "engineer": 2,
+          "tank": 2,
+          "gepard": 2,
+          "communicationstower": 1
+        },
+        "completedBuildings": 12,
+        "pendingPlanning": 0
+      },
+      "host": {
+        "cpuSeconds": 15.046875,
+        "workingSetBytes": 97411072,
+        "metrics": {
+          "frameWorkMs": {
+            "Count": 2265,
+            "Mean": 3.461078940397358,
+            "P95": 6.2114,
+            "P99": 9.1825,
+            "Maximum": 35.4053,
+            "SampleCount": 2265
+          },
+          "frameIntervalMs": {
+            "Count": 2265,
+            "Mean": 30.906635849889668,
+            "P95": 31.962400000001168,
+            "P99": 32.12429999999955,
+            "Maximum": 35.417000000002474,
+            "SampleCount": 2265
+          },
+          "decisionsMs": {
+            "Count": 2427,
+            "Mean": 0.023963906056860336,
+            "P95": 0.0266,
+            "P99": 0.0326,
+            "Maximum": 11.8126,
+            "SampleCount": 2427
+          },
+          "requestReplyMs": {
+            "Count": 0,
+            "Mean": 0,
+            "P95": 0,
+            "P99": 0,
+            "Maximum": 0,
+            "SampleCount": 0
+          },
+          "MaximumInbox": 3,
+          "MaximumControllers": 0,
+          "Snapshots": 0,
+          "MatchStarts": 0,
+          "Rejections": 0,
+          "RequestCount": 0,
+          "sentBytes": 53790616,
+          "receivedBytes": 448764,
+          "scopes": [
+            {
+              "Name": "AI.Player",
+              "Calls": 4854,
+              "TotalMilliseconds": 48.43900000000026,
+              "MaximumMilliseconds": 11.5674,
+              "AllocatedBytes": 1641096
+            },
+            {
+              "Name": "Host.GotoPlanningSlice",
+              "Calls": 1078,
+              "TotalMilliseconds": 155.73820000000003,
+              "MaximumMilliseconds": 8.2154,
+              "AllocatedBytes": 20455224
+            },
+            {
+              "Name": "Host.GotoPublish",
+              "Calls": 24,
+              "TotalMilliseconds": 20.405400000000007,
+              "MaximumMilliseconds": 12.4892,
+              "AllocatedBytes": 665632
+            },
+            {
+              "Name": "Host.Request.AttackRequest",
+              "Calls": 308,
+              "TotalMilliseconds": 2.3463999999999956,
+              "MaximumMilliseconds": 0.18,
+              "AllocatedBytes": 107648
+            },
+            {
+              "Name": "Host.Request.AttackTargetRequest",
+              "Calls": 23,
+              "TotalMilliseconds": 6.2681000000000004,
+              "MaximumMilliseconds": 3.0182,
+              "AllocatedBytes": 373440
+            },
+            {
+              "Name": "Host.Request.BuildRequest",
+              "Calls": 7,
+              "TotalMilliseconds": 81.2217,
+              "MaximumMilliseconds": 32.6603,
+              "AllocatedBytes": 6159128
+            },
+            {
+              "Name": "Host.Request.EnterUnitRequest",
+              "Calls": 4,
+              "TotalMilliseconds": 7.7999,
+              "MaximumMilliseconds": 7.1447,
+              "AllocatedBytes": 50784
+            },
+            {
+              "Name": "Host.Request.FollowRequest",
+              "Calls": 1,
+              "TotalMilliseconds": 2.8809,
+              "MaximumMilliseconds": 2.8809,
+              "AllocatedBytes": 13080
+            },
+            {
+              "Name": "Host.Request.GotoRequest",
+              "Calls": 24,
+              "TotalMilliseconds": 14.858099999999997,
+              "MaximumMilliseconds": 10.298,
+              "AllocatedBytes": 309880
+            },
+            {
+              "Name": "Host.Request.HarvestRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 14.939699999999998,
+              "MaximumMilliseconds": 14.7336,
+              "AllocatedBytes": 86320
+            },
+            {
+              "Name": "Host.Request.ResearchRequest",
+              "Calls": 1,
+              "TotalMilliseconds": 4.2319,
+              "MaximumMilliseconds": 4.2319,
+              "AllocatedBytes": 15112
+            },
+            {
+              "Name": "Host.Request.SetRallyPointRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 4.5816,
+              "MaximumMilliseconds": 4.453,
+              "AllocatedBytes": 23328
+            },
+            {
+              "Name": "Host.Request.StopRequest",
+              "Calls": 3,
+              "TotalMilliseconds": 0.3811,
+              "MaximumMilliseconds": 0.1826,
+              "AllocatedBytes": 43704
+            },
+            {
+              "Name": "Host.Request.TrainUnitRequest",
+              "Calls": 20,
+              "TotalMilliseconds": 10.005700000000003,
+              "MaximumMilliseconds": 6.3357,
+              "AllocatedBytes": 281440
+            },
+            {
+              "Name": "Host.Request.UnitActionRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 15.5093,
+              "MaximumMilliseconds": 15.3349,
+              "AllocatedBytes": 32312
+            },
+            {
+              "Name": "Path.JobSlice",
+              "Calls": 2501,
+              "TotalMilliseconds": 400.7950000000009,
+              "MaximumMilliseconds": 13.7605,
+              "AllocatedBytes": 90628600
+            },
+            {
+              "Name": "Path.PlanningUpdate",
+              "Calls": 2427,
+              "TotalMilliseconds": 574.9305000000006,
+              "MaximumMilliseconds": 13.7819,
+              "AllocatedBytes": 111092304
+            }
+          ]
+        }
+      },
+      "mode": "split",
+      "bots": [
+        {
+          "name": "BenchBot0-metrics",
+          "report": {
+            "cpuSeconds": 13.90625,
+            "workingSetBytes": 92049408,
+            "metrics": {
+              "frameWorkMs": {
+                "Count": 2403,
+                "Mean": 3.43020590928006,
+                "P95": 5.5552,
+                "P99": 11.3136,
+                "Maximum": 148.2724,
+                "SampleCount": 2403
+              },
+              "frameIntervalMs": {
+                "Count": 2403,
+                "Mean": 31.433435830212186,
+                "P95": 32.01949999999698,
+                "P99": 45.81489999999988,
+                "Maximum": 290.7861,
+                "SampleCount": 2403
+              },
+              "decisionsMs": {
+                "Count": 2396,
+                "Mean": 0.6664828046744572,
+                "P95": 1.0829,
+                "P99": 5.873,
+                "Maximum": 73.4575,
+                "SampleCount": 2396
+              },
+              "requestReplyMs": {
+                "Count": 40,
+                "Mean": 69.8430325,
+                "P95": 92.6254,
+                "P99": 365.7379,
+                "Maximum": 365.7379,
+                "SampleCount": 40
+              },
+              "MaximumInbox": 24,
+              "MaximumControllers": 1,
+              "Snapshots": 1,
+              "MatchStarts": 0,
+              "Rejections": 0,
+              "RequestCount": 40,
+              "sentBytes": 216720,
+              "receivedBytes": 26874966,
+              "scopes": [
+                {
+                  "Name": "AI.ArmoredSupport",
+                  "Calls": 1857,
+                  "TotalMilliseconds": 38.36130000000029,
+                  "MaximumMilliseconds": 9.6559,
+                  "AllocatedBytes": 1460224
+                },
+                {
+                  "Name": "AI.ArmyGoals",
+                  "Calls": 2394,
+                  "TotalMilliseconds": 137.40540000000482,
+                  "MaximumMilliseconds": 40.6545,
+                  "AllocatedBytes": 1027136
+                },
+                {
+                  "Name": "AI.BaseDefense",
+                  "Calls": 1857,
+                  "TotalMilliseconds": 38.61150000000042,
+                  "MaximumMilliseconds": 22.6123,
+                  "AllocatedBytes": 461168
+                },
+                {
+                  "Name": "AI.BuildSiteSlice",
+                  "Calls": 144,
+                  "TotalMilliseconds": 85.25559999999997,
+                  "MaximumMilliseconds": 5.0199,
+                  "AllocatedBytes": 16507464
+                },
+                {
+                  "Name": "AI.DefensePlanner",
+                  "Calls": 1328,
+                  "TotalMilliseconds": 2.545699999999994,
+                  "MaximumMilliseconds": 0.1516,
+                  "AllocatedBytes": 0
+                },
+                {
+                  "Name": "AI.Infrastructure",
+                  "Calls": 1328,
+                  "TotalMilliseconds": 103.82250000000003,
+                  "MaximumMilliseconds": 22.9865,
+                  "AllocatedBytes": 1465536
+                },
+                {
+                  "Name": "AI.OrderProgress",
+                  "Calls": 2394,
+                  "TotalMilliseconds": 47.16739999999918,
+                  "MaximumMilliseconds": 17.6099,
+                  "AllocatedBytes": 139952
+                },
+                {
+                  "Name": "AI.Player",
+                  "Calls": 2394,
+                  "TotalMilliseconds": 1489.1001000000008,
+                  "MaximumMilliseconds": 67.7179,
+                  "AllocatedBytes": 41980640
+                },
+                {
+                  "Name": "AI.ProductionPlan",
+                  "Calls": 2659,
+                  "TotalMilliseconds": 48.81659999999936,
+                  "MaximumMilliseconds": 6.922,
+                  "AllocatedBytes": 473176
+                },
+                {
+                  "Name": "AI.Scouting",
+                  "Calls": 1857,
+                  "TotalMilliseconds": 638.3239999999993,
+                  "MaximumMilliseconds": 13.874,
+                  "AllocatedBytes": 24357240
+                },
+                {
+                  "Name": "AI.ScoutSearch",
+                  "Calls": 25525,
+                  "TotalMilliseconds": 406.36549999998533,
+                  "MaximumMilliseconds": 13.8014,
+                  "AllocatedBytes": 1939336
+                },
+                {
+                  "Name": "AI.SquadAssault",
+                  "Calls": 249,
+                  "TotalMilliseconds": 12.293700000000026,
+                  "MaximumMilliseconds": 6.2491,
+                  "AllocatedBytes": 66672
+                },
+                {
+                  "Name": "AI.SquadPreparation",
+                  "Calls": 929,
+                  "TotalMilliseconds": 34.52920000000016,
+                  "MaximumMilliseconds": 11.4805,
+                  "AllocatedBytes": 1118120
+                },
+                {
+                  "Name": "AI.ThreatAssessment",
+                  "Calls": 1857,
+                  "TotalMilliseconds": 14.602399999999838,
+                  "MaximumMilliseconds": 3.9212,
+                  "AllocatedBytes": 92032
+                },
+                {
+                  "Name": "Path.PlanningUpdate",
+                  "Calls": 2394,
+                  "TotalMilliseconds": 562.1921999999987,
+                  "MaximumMilliseconds": 13.8106,
+                  "AllocatedBytes": 21676464
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "BenchBot1-metrics",
+          "report": {
+            "cpuSeconds": 13.9375,
+            "workingSetBytes": 92221440,
+            "metrics": {
+              "frameWorkMs": {
+                "Count": 2403,
+                "Mean": 3.4660764877236794,
+                "P95": 5.6852,
+                "P99": 11.6205,
+                "Maximum": 142.5023,
+                "SampleCount": 2403
+              },
+              "frameIntervalMs": {
+                "Count": 2403,
+                "Mean": 31.417202746566772,
+                "P95": 32.01769999999726,
+                "P99": 45.98709999999784,
+                "Maximum": 251.60319999999996,
+                "SampleCount": 2403
+              },
+              "decisionsMs": {
+                "Count": 2397,
+                "Mean": 0.6922096787651233,
+                "P95": 1.2288,
+                "P99": 6.6525,
+                "Maximum": 84.2411,
+                "SampleCount": 2397
+              },
+              "requestReplyMs": {
+                "Count": 49,
+                "Mean": 165.68987551020408,
+                "P95": 1508.0885,
+                "P99": 1819.568,
+                "Maximum": 1819.568,
+                "SampleCount": 49
+              },
+              "MaximumInbox": 18,
+              "MaximumControllers": 1,
+              "Snapshots": 1,
+              "MatchStarts": 0,
+              "Rejections": 0,
+              "RequestCount": 49,
+              "sentBytes": 232044,
+              "receivedBytes": 26915650,
+              "scopes": [
+                {
+                  "Name": "AI.ArmoredSupport",
+                  "Calls": 1858,
+                  "TotalMilliseconds": 36.651700000000616,
+                  "MaximumMilliseconds": 9.8758,
+                  "AllocatedBytes": 1426208
+                },
+                {
+                  "Name": "AI.ArmyGoals",
+                  "Calls": 2395,
+                  "TotalMilliseconds": 142.91760000000633,
+                  "MaximumMilliseconds": 33.6987,
+                  "AllocatedBytes": 1052712
+                },
+                {
+                  "Name": "AI.BaseDefense",
+                  "Calls": 1858,
+                  "TotalMilliseconds": 46.60880000000046,
+                  "MaximumMilliseconds": 26.0582,
+                  "AllocatedBytes": 439776
+                },
+                {
+                  "Name": "AI.BuildSiteSlice",
+                  "Calls": 113,
+                  "TotalMilliseconds": 83.37659999999995,
+                  "MaximumMilliseconds": 4.804,
+                  "AllocatedBytes": 5876376
+                },
+                {
+                  "Name": "AI.DefensePlanner",
+                  "Calls": 1407,
+                  "TotalMilliseconds": 3.0817000000000005,
+                  "MaximumMilliseconds": 0.1981,
+                  "AllocatedBytes": 0
+                },
+                {
+                  "Name": "AI.Infrastructure",
+                  "Calls": 1407,
+                  "TotalMilliseconds": 152.71200000000005,
+                  "MaximumMilliseconds": 22.6016,
+                  "AllocatedBytes": 3154024
+                },
+                {
+                  "Name": "AI.OrderProgress",
+                  "Calls": 2395,
+                  "TotalMilliseconds": 36.337099999999985,
+                  "MaximumMilliseconds": 17.5893,
+                  "AllocatedBytes": 146088
+                },
+                {
+                  "Name": "AI.Player",
+                  "Calls": 2395,
+                  "TotalMilliseconds": 1537.8583000000012,
+                  "MaximumMilliseconds": 69.3239,
+                  "AllocatedBytes": 33506968
+                },
+                {
+                  "Name": "AI.ProductionPlan",
+                  "Calls": 2819,
+                  "TotalMilliseconds": 81.8928999999997,
+                  "MaximumMilliseconds": 6.7183,
+                  "AllocatedBytes": 1416496
+                },
+                {
+                  "Name": "AI.Scouting",
+                  "Calls": 1858,
+                  "TotalMilliseconds": 603.1980999999994,
+                  "MaximumMilliseconds": 13.7841,
+                  "AllocatedBytes": 13703352
+                },
+                {
+                  "Name": "AI.ScoutSearch",
+                  "Calls": 22367,
+                  "TotalMilliseconds": 372.5294999999974,
+                  "MaximumMilliseconds": 13.3901,
+                  "AllocatedBytes": 2306008
+                },
+                {
+                  "Name": "AI.SquadAssault",
+                  "Calls": 626,
+                  "TotalMilliseconds": 41.1267,
+                  "MaximumMilliseconds": 13.2846,
+                  "AllocatedBytes": 434304
+                },
+                {
+                  "Name": "AI.SquadPreparation",
+                  "Calls": 929,
+                  "TotalMilliseconds": 40.832500000000074,
+                  "MaximumMilliseconds": 14.2671,
+                  "AllocatedBytes": 1117624
+                },
+                {
+                  "Name": "AI.ThreatAssessment",
+                  "Calls": 1858,
+                  "TotalMilliseconds": 17.64869999999983,
+                  "MaximumMilliseconds": 4.8295,
+                  "AllocatedBytes": 123568
+                },
+                {
+                  "Name": "Path.PlanningUpdate",
+                  "Calls": 2395,
+                  "TotalMilliseconds": 523.9203000000007,
+                  "MaximumMilliseconds": 13.4004,
+                  "AllocatedBytes": 11054944
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "result": {
+        "mode": "stress",
+        "seconds": 300,
+        "profile": {
+          "Type": 0,
+          "DisplayName": "Balanced Assault",
+          "RequiredGunners": 3,
+          "RequiredRakZero": 1,
+          "RequiredTanks": 1,
+          "RetreatHealthFraction": 0.45,
+          "AttackReadinessSeconds": 5,
+          "DefenseRadiusInCells": 36,
+          "AssaultStallTimeoutSeconds": 60,
+          "Seed": 1829856032,
+          "DecisionIntervalSeconds": 1,
+          "ResourceReserve": 800,
+          "ScoutReconsiderSeconds": 8
+        },
+        "requests": {
+          "BuildRequest": 57,
+          "HarvestRequest": 6,
+          "SetRallyPointRequest": 6,
+          "TrainUnitRequest": 90,
+          "GotoRequest": 63,
+          "StopRequest": 5,
+          "EnterUnitRequest": 8,
+          "UnitActionRequest": 3,
+          "AttackTargetRequest": 68,
+          "FollowRequest": 13
+        },
+        "phaseRequests": [
+          77,
+          36,
+          206
+        ],
+        "phaseBuilds": [
+          6,
+          8,
+          10
+        ],
+        "maxUnits": 47,
+        "maxCargo": 0,
+        "rejections": 0,
+        "completedOrders": 50,
+        "disconnects": 1,
+        "lateJoins": 1,
+        "resets": 2,
+        "removedReactor": true,
+        "removedPerk": true,
+        "controllers": [
+          {
+            "ArmyId": "a030a67e-e93e-435b-814a-34734830baec",
+            "ActorId": "7ca014c0-7d52-434b-b949-84d6213fdf7f",
+            "ControllerPeerId": "28ecd020-1b97-4d62-9277-0c3c9db7143a",
+            "Generation": 8,
+            "Profile": {
+              "Type": 0,
+              "DisplayName": "Balanced Assault",
+              "RequiredGunners": 3,
+              "RequiredRakZero": 1,
+              "RequiredTanks": 1,
+              "RetreatHealthFraction": 0.45,
+              "AttackReadinessSeconds": 5,
+              "DefenseRadiusInCells": 36,
+              "AssaultStallTimeoutSeconds": 60,
+              "Seed": 1829856032,
+              "DecisionIntervalSeconds": 1,
+              "ResourceReserve": 800,
+              "ScoutReconsiderSeconds": 8
+            },
+            "ProfileVersion": 1,
+            "ProfileFingerprint": "533CA0144580C99942E1A70DAF924EF2EEEF8189235E57379228B54373B61F43"
+          },
+          {
+            "ArmyId": "b030a67e-e93e-435b-814a-34734830baec",
+            "ActorId": "c030a67e-e93e-435b-814a-34734830baec",
+            "ControllerPeerId": "28ecd020-1b97-4d62-9277-0c3c9db7143a",
+            "Generation": 8,
+            "Profile": {
+              "Type": 0,
+              "DisplayName": "Balanced Assault",
+              "RequiredGunners": 3,
+              "RequiredRakZero": 1,
+              "RequiredTanks": 1,
+              "RetreatHealthFraction": 0.45,
+              "AttackReadinessSeconds": 5,
+              "DefenseRadiusInCells": 36,
+              "AssaultStallTimeoutSeconds": 60,
+              "Seed": 1829856032,
+              "DecisionIntervalSeconds": 1,
+              "ResourceReserve": 800,
+              "ScoutReconsiderSeconds": 8
+            },
+            "ProfileVersion": 1,
+            "ProfileFingerprint": "533CA0144580C99942E1A70DAF924EF2EEEF8189235E57379228B54373B61F43"
+          }
+        ],
+        "units": {
+          "gdi-bulldozer": 2,
+          "": 8,
+          "gdi-base": 2,
+          "reaktor": 2,
+          "tiberium-refinery": 2,
+          "harvester": 2,
+          "gdi-barracks": 2,
+          "gunner": 10,
+          "vehicle-factory": 2,
+          "squad-leader": 2,
+          "medic": 2,
+          "engineer": 2,
+          "tank": 2,
+          "gepard": 2
+        },
+        "completedBuildings": 10,
+        "pendingPlanning": 1
+      },
+      "host": {
+        "cpuSeconds": 37.21875,
+        "workingSetBytes": 111484928,
+        "metrics": {
+          "frameWorkMs": {
+            "Count": 9550,
+            "Mean": 2.5869803350785348,
+            "P95": 5.412,
+            "P99": 7.0742,
+            "Maximum": 117.8179,
+            "SampleCount": 9550
+          },
+          "frameIntervalMs": {
+            "Count": 9550,
+            "Mean": 30.88851727748695,
+            "P95": 31.92510000000226,
+            "P99": 32.13400000001343,
+            "Maximum": 117.82659999999723,
+            "SampleCount": 9550
+          },
+          "decisionsMs": {
+            "Count": 9711,
+            "Mean": 0.052014138605704606,
+            "P95": 0.028,
+            "P99": 0.3425,
+            "Maximum": 113.0056,
+            "SampleCount": 9711
+          },
+          "requestReplyMs": {
+            "Count": 11,
+            "Mean": 301.64578181818183,
+            "P95": 2646.7233,
+            "P99": 2646.7233,
+            "Maximum": 2646.7233,
+            "SampleCount": 11
+          },
+          "MaximumInbox": 4,
+          "MaximumControllers": 2,
+          "Snapshots": 0,
+          "MatchStarts": 0,
+          "Rejections": 1,
+          "RequestCount": 15,
+          "sentBytes": 146007937,
+          "receivedBytes": 1482016,
+          "scopes": [
+            {
+              "Name": "AI.ArmoredSupport",
+              "Calls": 514,
+              "TotalMilliseconds": 14.207399999999895,
+              "MaximumMilliseconds": 5.5202,
+              "AllocatedBytes": 417592
+            },
+            {
+              "Name": "AI.ArmyGoals",
+              "Calls": 514,
+              "TotalMilliseconds": 49.00590000000007,
+              "MaximumMilliseconds": 45.4013,
+              "AllocatedBytes": 198664
+            },
+            {
+              "Name": "AI.BaseDefense",
+              "Calls": 514,
+              "TotalMilliseconds": 4.900000000000052,
+              "MaximumMilliseconds": 4.1672,
+              "AllocatedBytes": 56032
+            },
+            {
+              "Name": "AI.DefensePlanner",
+              "Calls": 338,
+              "TotalMilliseconds": 0.7635000000000023,
+              "MaximumMilliseconds": 0.2745,
+              "AllocatedBytes": 0
+            },
+            {
+              "Name": "AI.Infrastructure",
+              "Calls": 338,
+              "TotalMilliseconds": 37.867400000000025,
+              "MaximumMilliseconds": 26.9044,
+              "AllocatedBytes": 174184
+            },
+            {
+              "Name": "AI.OrderProgress",
+              "Calls": 514,
+              "TotalMilliseconds": 24.408100000000022,
+              "MaximumMilliseconds": 20.6889,
+              "AllocatedBytes": 27712
+            },
+            {
+              "Name": "AI.Player",
+              "Calls": 19422,
+              "TotalMilliseconds": 469.19209999998475,
+              "MaximumMilliseconds": 112.4157,
+              "AllocatedBytes": 12646720
+            },
+            {
+              "Name": "AI.ProductionPlan",
+              "Calls": 680,
+              "TotalMilliseconds": 9.868599999999931,
+              "MaximumMilliseconds": 9.2804,
+              "AllocatedBytes": 35808
+            },
+            {
+              "Name": "AI.Scouting",
+              "Calls": 514,
+              "TotalMilliseconds": 31.772399999999976,
+              "MaximumMilliseconds": 13.0762,
+              "AllocatedBytes": 954632
+            },
+            {
+              "Name": "AI.ScoutSearch",
+              "Calls": 2989,
+              "TotalMilliseconds": 70.30480000000006,
+              "MaximumMilliseconds": 6.4791,
+              "AllocatedBytes": 861256
+            },
+            {
+              "Name": "AI.SquadPreparation",
+              "Calls": 514,
+              "TotalMilliseconds": 17.738900000000022,
+              "MaximumMilliseconds": 8.8942,
+              "AllocatedBytes": 689480
+            },
+            {
+              "Name": "AI.ThreatAssessment",
+              "Calls": 514,
+              "TotalMilliseconds": 2.537099999999993,
+              "MaximumMilliseconds": 1.3384,
+              "AllocatedBytes": 17536
+            },
+            {
+              "Name": "Host.GotoPlanningSlice",
+              "Calls": 2518,
+              "TotalMilliseconds": 344.36409999999984,
+              "MaximumMilliseconds": 6.3657,
+              "AllocatedBytes": 44370312
+            },
+            {
+              "Name": "Host.GotoPublish",
+              "Calls": 63,
+              "TotalMilliseconds": 32.09780000000001,
+              "MaximumMilliseconds": 13.0191,
+              "AllocatedBytes": 1620352
+            },
+            {
+              "Name": "Host.Request.AttackRequest",
+              "Calls": 774,
+              "TotalMilliseconds": 6.371599999999989,
+              "MaximumMilliseconds": 0.1832,
+              "AllocatedBytes": 306240
+            },
+            {
+              "Name": "Host.Request.AttackTargetRequest",
+              "Calls": 68,
+              "TotalMilliseconds": 13.524199999999999,
+              "MaximumMilliseconds": 4.2731,
+              "AllocatedBytes": 1119616
+            },
+            {
+              "Name": "Host.Request.BuildRequest",
+              "Calls": 26,
+              "TotalMilliseconds": 169.20290000000003,
+              "MaximumMilliseconds": 28.0831,
+              "AllocatedBytes": 19970264
+            },
+            {
+              "Name": "Host.Request.EnterUnitRequest",
+              "Calls": 8,
+              "TotalMilliseconds": 8.766,
+              "MaximumMilliseconds": 7.0381,
+              "AllocatedBytes": 101752
+            },
+            {
+              "Name": "Host.Request.FollowRequest",
+              "Calls": 13,
+              "TotalMilliseconds": 4.05,
+              "MaximumMilliseconds": 2.6788,
+              "AllocatedBytes": 171552
+            },
+            {
+              "Name": "Host.Request.GotoRequest",
+              "Calls": 63,
+              "TotalMilliseconds": 18.930199999999992,
+              "MaximumMilliseconds": 10.3215,
+              "AllocatedBytes": 863464
+            },
+            {
+              "Name": "Host.Request.HarvestRequest",
+              "Calls": 6,
+              "TotalMilliseconds": 14.775599999999999,
+              "MaximumMilliseconds": 13.9175,
+              "AllocatedBytes": 183504
+            },
+            {
+              "Name": "Host.Request.SetRallyPointRequest",
+              "Calls": 6,
+              "TotalMilliseconds": 5.633699999999999,
+              "MaximumMilliseconds": 5.2337,
+              "AllocatedBytes": 69952
+            },
+            {
+              "Name": "Host.Request.StopRequest",
+              "Calls": 4,
+              "TotalMilliseconds": 0.38339999999999996,
+              "MaximumMilliseconds": 0.1777,
+              "AllocatedBytes": 58176
+            },
+            {
+              "Name": "Host.Request.TrainUnitRequest",
+              "Calls": 46,
+              "TotalMilliseconds": 12.355100000000002,
+              "MaximumMilliseconds": 5.6828,
+              "AllocatedBytes": 644664
+            },
+            {
+              "Name": "Host.Request.UnitActionRequest",
+              "Calls": 3,
+              "TotalMilliseconds": 7.0141,
+              "MaximumMilliseconds": 6.6382,
+              "AllocatedBytes": 48128
+            },
+            {
+              "Name": "Path.JobSlice",
+              "Calls": 7359,
+              "TotalMilliseconds": 1005.6643999999991,
+              "MaximumMilliseconds": 14.6363,
+              "AllocatedBytes": 279358960
+            },
+            {
+              "Name": "Path.PlanningUpdate",
+              "Calls": 9711,
+              "TotalMilliseconds": 1486.5886000000282,
+              "MaximumMilliseconds": 14.6531,
+              "AllocatedBytes": 325026552
+            }
+          ]
+        }
+      },
+      "mode": "stress",
+      "bots": [
+        {
+          "name": "BenchBot0-metrics",
+          "report": {
+            "cpuSeconds": 36.375,
+            "workingSetBytes": 99790848,
+            "metrics": {
+              "frameWorkMs": {
+                "Count": 9634,
+                "Mean": 2.6159565808594416,
+                "P95": 4.9987,
+                "P99": 6.5305,
+                "Maximum": 134.3062,
+                "SampleCount": 9634
+              },
+              "frameIntervalMs": {
+                "Count": 9634,
+                "Mean": 31.413050768112807,
+                "P95": 31.992300000002416,
+                "P99": 32.33399999999165,
+                "Maximum": 2074.2136000000073,
+                "SampleCount": 9634
+              },
+              "decisionsMs": {
+                "Count": 9625,
+                "Mean": 0.5107237610389594,
+                "P95": 1.1306,
+                "P99": 2.1832,
+                "Maximum": 59.9228,
+                "SampleCount": 9625
+              },
+              "requestReplyMs": {
+                "Count": 233,
+                "Mean": 148.26122403433482,
+                "P95": 463.7977,
+                "P99": 2758.0017,
+                "Maximum": 2819.065,
+                "SampleCount": 233
+              },
+              "MaximumInbox": 27,
+              "MaximumControllers": 2,
+              "Snapshots": 2,
+              "MatchStarts": 2,
+              "Rejections": 3,
+              "RequestCount": 234,
+              "sentBytes": 1480269,
+              "receivedBytes": 80082631,
+              "scopes": [
+                {
+                  "Name": "AI.ArmoredSupport",
+                  "Calls": 9333,
+                  "TotalMilliseconds": 98.61950000000303,
+                  "MaximumMilliseconds": 9.0664,
+                  "AllocatedBytes": 7683184
+                },
+                {
+                  "Name": "AI.ArmyGoals",
+                  "Calls": 18728,
+                  "TotalMilliseconds": 217.35960000002856,
+                  "MaximumMilliseconds": 29.6906,
+                  "AllocatedBytes": 7222000
+                },
+                {
+                  "Name": "AI.BaseDefense",
+                  "Calls": 9818,
+                  "TotalMilliseconds": 53.33380000000115,
+                  "MaximumMilliseconds": 7.7375,
+                  "AllocatedBytes": 2271368
+                },
+                {
+                  "Name": "AI.BuildSiteSlice",
+                  "Calls": 1074,
+                  "TotalMilliseconds": 675.3052999999993,
+                  "MaximumMilliseconds": 13.0032,
+                  "AllocatedBytes": 84592880
+                },
+                {
+                  "Name": "AI.DefensePlanner",
+                  "Calls": 7470,
+                  "TotalMilliseconds": 10.82339999999971,
+                  "MaximumMilliseconds": 0.2657,
+                  "AllocatedBytes": 0
+                },
+                {
+                  "Name": "AI.Infrastructure",
+                  "Calls": 7471,
+                  "TotalMilliseconds": 269.0781999999993,
+                  "MaximumMilliseconds": 15.3772,
+                  "AllocatedBytes": 7752344
+                },
+                {
+                  "Name": "AI.OrderProgress",
+                  "Calls": 18728,
+                  "TotalMilliseconds": 79.09710000000256,
+                  "MaximumMilliseconds": 17.8632,
+                  "AllocatedBytes": 1022152
+                },
+                {
+                  "Name": "AI.Player",
+                  "Calls": 18728,
+                  "TotalMilliseconds": 4293.479199999976,
+                  "MaximumMilliseconds": 51.0804,
+                  "AllocatedBytes": 200293120
+                },
+                {
+                  "Name": "AI.ProductionPlan",
+                  "Calls": 14952,
+                  "TotalMilliseconds": 134.8121000000369,
+                  "MaximumMilliseconds": 8.4109,
+                  "AllocatedBytes": 2729672
+                },
+                {
+                  "Name": "AI.Scouting",
+                  "Calls": 9818,
+                  "TotalMilliseconds": 1991.1076000000032,
+                  "MaximumMilliseconds": 14.2408,
+                  "AllocatedBytes": 93826208
+                },
+                {
+                  "Name": "AI.ScoutSearch",
+                  "Calls": 77258,
+                  "TotalMilliseconds": 1116.222699999986,
+                  "MaximumMilliseconds": 12.9494,
+                  "AllocatedBytes": 6741120
+                },
+                {
+                  "Name": "AI.SquadAssault",
+                  "Calls": 3127,
+                  "TotalMilliseconds": 67.24110000000158,
+                  "MaximumMilliseconds": 14.3911,
+                  "AllocatedBytes": 1846488
+                },
+                {
+                  "Name": "AI.SquadPreparation",
+                  "Calls": 3967,
+                  "TotalMilliseconds": 79.43209999999874,
+                  "MaximumMilliseconds": 11.842,
+                  "AllocatedBytes": 4267752
+                },
+                {
+                  "Name": "AI.ThreatAssessment",
+                  "Calls": 9818,
+                  "TotalMilliseconds": 35.60029999999967,
+                  "MaximumMilliseconds": 3.7398,
+                  "AllocatedBytes": 625936
+                },
+                {
+                  "Name": "Path.PlanningUpdate",
+                  "Calls": 9615,
+                  "TotalMilliseconds": 1991.3007999999645,
+                  "MaximumMilliseconds": 13.0183,
+                  "AllocatedBytes": 101141632
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "LateObserver-metrics",
+          "report": {
+            "cpuSeconds": 25.46875,
+            "workingSetBytes": 87257088,
+            "metrics": {
+              "frameWorkMs": {
+                "Count": 8166,
+                "Mean": 2.1013974283615027,
+                "P95": 3.9814,
+                "P99": 5.4145,
+                "Maximum": 167.2155,
+                "SampleCount": 8166
+              },
+              "frameIntervalMs": {
+                "Count": 8166,
+                "Mean": 31.178542811658133,
+                "P95": 31.98999999997909,
+                "P99": 32.27390000000696,
+                "Maximum": 309.18780000000004,
+                "SampleCount": 8166
+              },
+              "decisionsMs": {
+                "Count": 8163,
+                "Mean": 0.02074749479358071,
+                "P95": 0.0281,
+                "P99": 0.0401,
+                "Maximum": 5.4265,
+                "SampleCount": 8163
+              },
+              "requestReplyMs": {
+                "Count": 0,
+                "Mean": 0,
+                "P95": 0,
+                "P99": 0,
+                "Maximum": 0,
+                "SampleCount": 0
+              },
+              "MaximumInbox": 59,
+              "MaximumControllers": 0,
+              "Snapshots": 1,
+              "MatchStarts": 2,
+              "Rejections": 0,
+              "RequestCount": 0,
+              "sentBytes": 1747,
+              "receivedBytes": 65925306,
+              "scopes": [
+                {
+                  "Name": "Path.PlanningUpdate",
+                  "Calls": 8161,
+                  "TotalMilliseconds": 10.743500000000004,
+                  "MaximumMilliseconds": 0.1787,
+                  "AllocatedBytes": 0
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

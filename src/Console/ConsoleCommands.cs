@@ -80,6 +80,20 @@ public class ConsoleCommands
         _console.RegisterCommand("disable Unitcommands", _ => EnableFlag("Unitcommands", false));
         _console.RegisterCommand("disable Hide-unexplored", _ => EnableFlag("Hide-unexplored", false));
         _console.RegisterCommand("disable Fogofwar", _ => EnableFlag("Fogofwar", false));
+        _console.RegisterCommand("server-start", args => StartDedicatedServer(args));
+        _console.RegisterCommand("server-test-start", args =>
+        {
+            string[] testArgs = args.Length == 0 ? ["test", "2"] :
+                args.Length == 1 ? [args[0], "2"] : args;
+            StartDedicatedServer(testArgs, autoStart: true);
+        });
+        _console.RegisterAsyncCommand("server-stop", args => _rtsGame.LocalServer.StopAsync());
+        _console.RegisterCommand("server-status", args => ServerAdmin("status"));
+        _console.RegisterCommand("server-bot-start", args =>
+        {
+            if (args.Length != 1) { _console.Print("Usage: server-bot-start <AI-name>"); return; }
+            try { _rtsGame.LocalServer.StartBot(args[0]); } catch (Exception error) { _console.Print(error.Message); }
+        });
         _console.RegisterAsyncCommand(
             "session-host",
             CreateSession);
@@ -384,6 +398,9 @@ public class ConsoleCommands
         for (int index = 0; index < arguments.Length; index++)
             command = command.Replace($"${index + 1}", arguments[index], StringComparison.Ordinal);
 
+        // Console scripts also accept batch-style optional %1..%9 arguments.
+        for (int index = 1; index <= 9; index++)
+            command = command.Replace($"%{index}", index <= arguments.Length ? arguments[index - 1] : "", StringComparison.Ordinal);
         return command;
     }
 
@@ -801,6 +818,43 @@ public class ConsoleCommands
 
         aiPlayer.SetStatus(status);
         _console.Print($"AI '{aiPlayer.Name}' status={status}.");
+    }
+
+    private void ServerAdmin(string command)
+    {
+        if (command == "status" && !_rtsGame.LocalServer.IsRunning)
+        {
+            _console.Print("Local server is not running. Log: " + (_rtsGame.LocalServer.LogPath ?? "none"));
+            return;
+        }
+        try { _rtsGame.LocalServer.Admin(command); } catch (Exception error) { _console.Print(error.Message); }
+    }
+
+    private void StartDedicatedServer(string[] args, bool autoStart = false)
+    {
+        if (args.Length is < 1 or > 4) { _console.Print("Usage: server-start <map-name|config.json> [AI-count=0] [human-slots=2] [port=auto]"); return; }
+        try
+        {
+            DedicatedServerConfig config;
+            if (args[0].EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                if (args.Length != 1) throw new ArgumentException("A config file takes no extra arguments.");
+                config = DedicatedServerConfig.Load(Path.GetFullPath(args[0], AppContext.BaseDirectory));
+            }
+            else
+            {
+                int ai = args.Length > 1 ? int.Parse(args[1]) : 0;
+                int humans = args.Length > 2 ? int.Parse(args[2]) : autoStart ? 1 : 2;
+                int port = args.Length > 3 ? int.Parse(args[3]) : 27000;
+                if (ai < 0 || ai > 32) throw new ArgumentException("AI count must be between 0 and 32.");
+                config = new DedicatedServerConfig(1, Path.GetFullPath(Path.Combine(Globals.MapsDirectory, args[0])),
+                    Port: port, MaximumPlayers: humans, RequiredPlayers: autoStart ? 1 : 0, StartMode: autoStart ? "when-ready" : "manual",
+                    AIPlayers: Enumerable.Range(1, ai).Select(i => new ServerAISlot("AI" + i)).ToArray(), AutoSelectPort: args.Length <= 3);
+            }
+            if (autoStart) config = config with { StartMode = "when-ready", RequiredPlayers = 1 };
+            _rtsGame.LocalServer.Start(config);
+        }
+        catch (Exception error) { _console.Print("Server start failed: " + error.Message); }
     }
 
     private void StartBotClient(string[] args)
@@ -1432,6 +1486,8 @@ public class ConsoleCommands
 
     private async System.Threading.Tasks.Task StartMultiplayerGameAsync(string[] args)
     {
+        if (args.Length == 0 && _rtsGame.LocalServer.IsRunning && !_rtsGame.Network.IsHost)
+        { ServerAdmin("start"); return; }
         if (!_rtsGame.Network.IsHost)
         {
             _console.Print("Only the session host can start the multiplayer game.");
@@ -1709,3 +1765,4 @@ public class ConsoleCommands
         return true;
     }
 }
+        

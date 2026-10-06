@@ -19,7 +19,7 @@ public class Game1 : Game
     public Game1()
     {
         Globals.Graphics = new GraphicsDeviceManager(this);
-        Exiting += (_, _) => _rtsGame?.LocalBots.Dispose();
+        Exiting += (_, _) => { _rtsGame?.LocalBots.Dispose(); _rtsGame?.LocalServer.Dispose(); };
 
         Content.RootDirectory = "Content";
 

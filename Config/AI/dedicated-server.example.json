@@ -1,0 +1,12 @@
+﻿{
+  "schemaVersion": 1,
+  "mapDirectory": "C:/temp/Maps/test1",
+  "port": 27000,
+  "sessionName": "RTS Server",
+  "maximumPlayers": 2,
+  "requiredPlayers": 1,
+  "startMode": "when-ready",
+  "allowLateJoin": true,
+  "matchSeed": 1234,
+  "aiPlayers": [ { "name": "AI1", "profileId": "balanced-assault" } ]
+}

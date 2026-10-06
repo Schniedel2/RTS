@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -66,6 +66,10 @@ public static class PerformanceMeasurements
         Rows.Clear();
         _generation++;
     }
+
+    public sealed record MeasurementSnapshot(string Name, long Calls, double TotalMilliseconds, double MaximumMilliseconds, long AllocatedBytes);
+    public static MeasurementSnapshot[] Snapshot() => Rows.OrderBy(p => p.Key).Select(p => new MeasurementSnapshot(p.Key,
+        p.Value.Calls, p.Value.TotalMilliseconds, p.Value.MaximumMilliseconds, p.Value.AllocatedBytes)).ToArray();
 
     public static string Report()
     {

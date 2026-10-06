@@ -1,4 +1,4 @@
-#pragma warning disable CA1416
+﻿#pragma warning disable CA1416
 
 using System;
 using System.IO;
@@ -16,6 +16,21 @@ namespace RTS;
 
 public static class IOHelper
 {
+    /// <summary>Windows CPU image import; shares the map color/height contract with the graphical loader.</summary>
+    public static (int Width, int Height, XnaColor[] Pixels) LoadPixels(string path)
+    {
+        using DrawingBitmap bitmap = new(path);
+        if (bitmap.Width < 2 || bitmap.Height < 2 || (long)bitmap.Width * bitmap.Height > 4194304)
+            throw new InvalidDataException("Map image dimensions are unsupported.");
+        var pixels = new XnaColor[bitmap.Width * bitmap.Height];
+        for (int y = 0; y < bitmap.Height; y++) for (int x = 0; x < bitmap.Width; x++)
+        {
+            DrawingColor color = bitmap.GetPixel(x, y);
+            pixels[y * bitmap.Width + x] = new XnaColor(color.R, color.G, color.B, color.A);
+        }
+        return (bitmap.Width, bitmap.Height, pixels);
+    }
+
     public static TerrainTile RGBtoTile(XnaColor color)
     {
         if (color == XnaColor.LightGray)

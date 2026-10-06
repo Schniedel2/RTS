@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 namespace RTS.Network;
@@ -96,6 +96,7 @@ public sealed partial class NetworkHandler
             message.TargetId != (receipt.Request.AIControllerActorId.HasValue ? LocalPeerId : feedback.ActorId) || receipt.State == LocalRequestState.Abandoned) return;
         if (receipt.State == LocalRequestState.Rejected || receipt.Result.IsTerminal) return;
         if (receipt.State == LocalRequestState.Accepted && feedback.State != LocalRequestState.Accepted) return;
+        RunDiagnostics?.Reply(feedback.RequestId, feedback.State == LocalRequestState.Rejected);
         receipt.State = feedback.State; receipt.Reason = feedback.Reason;
         // Acceptance never implies completion of a construction or production.
         if (receipt.Result.WasAccepted && feedback.Status == AIOrderStatus.Accepted) return;

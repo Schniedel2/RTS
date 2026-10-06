@@ -10,6 +10,10 @@ if (args.Length > 0 && args[0] == "--remote-ai-peer") { AIReconstructionChecks.R
 
 if (args.Length > 0 && args[0] == "--bot-host") { AIReconstructionChecks.RunBotHost(args[1], args.Length > 2 && args[2] == "reconnect", args.Length > 2 && args[2] == "launch"); return; }
 
+if (args.Length > 0 && args[0] == "--ai-benchmark") { AIReconstructionChecks.RunClientBenchmark(args[1], args[2], int.Parse(args[3])); return; }
+
+if (args.Length > 0 && args[0] == "--dedicated-check") { DedicatedServerChecks.RunProcess(args[1], args.Length > 2 ? int.Parse(args[2]) : 240, args.Length > 3 ? args[3] : null); return; }
+
 // Exercise production navigation without creating a graphics device or loading assets.
 int checks = 0;
 void Check(bool condition, string message)
@@ -3186,6 +3190,8 @@ checks += ComplexCommandChecks.Run();
 checks += SessionLifecycleChecks.Run();
 checks += AIReconstructionChecks.Run();
 checks += AIReconstructionChecks.RunAIContextChecks();
+checks += DedicatedServerChecks.Run();
+checks += ClientDiagnosticsChecks.Run();
 checks += BotClientChecks.Run();
 checks += AIProfileConfigChecks.Run();
 checks += AIRuntimeSettingsChecks.Run();

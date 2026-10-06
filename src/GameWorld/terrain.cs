@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.IO;
@@ -21,8 +21,9 @@ public class Terrain
     private Texture2D _tileMapTexture = null!;
     private readonly bool _graphicsEnabled = true;
 
-    public Terrain(string mapDirectory)
+    public Terrain(string mapDirectory, bool graphicsEnabled = true)
     {
+        _graphicsEnabled = graphicsEnabled;
         LoadTilemap(mapDirectory);
         LoadHeightmap(mapDirectory);
     }
@@ -535,7 +536,16 @@ public class Terrain
     public void LoadTilemap(string mapDirectory)
     {
         string filename = Path.Combine(mapDirectory, "terrain-tilemap.png");
-        Texture2D tilemapTexture = Texture2D.FromFile(Globals.GraphicsDevice, filename);
+        if (!_graphicsEnabled)
+        {
+            var image = IOHelper.LoadPixels(filename);
+            Width = image.Width; Height = image.Height;
+            _tiles = new TerrainTile[Width, Height];
+            for (int z = 0; z < Height; z++) for (int x = 0; x < Width; x++)
+                _tiles[x, z] = IOHelper.RGBtoTile(image.Pixels[z * Width + x]);
+            return;
+        }
+        using Texture2D tilemapTexture = Texture2D.FromFile(Globals.GraphicsDevice, filename);
 
         Width = tilemapTexture.Width;
         Height = tilemapTexture.Height;
@@ -557,7 +567,16 @@ public class Terrain
     public void LoadHeightmap(string mapDirectory)
     {        
         string filename = Path.Combine(mapDirectory, "terrain-heightmap.png");
-        Texture2D heightmapTexture = Texture2D.FromFile(Globals.GraphicsDevice, filename);
+        if (!_graphicsEnabled)
+        {
+            var image = IOHelper.LoadPixels(filename);
+            if (image.Width != Width || image.Height != Height) throw new InvalidDataException("Terrain tile/height dimensions differ.");
+            HeightMap = new float[Width * Height];
+            for (int i = 0; i < HeightMap.Length; i++) HeightMap[i] = image.Pixels[i].R / 255f * HeightScale;
+            BuildTerrainMesh();
+            return;
+        }
+        using Texture2D heightmapTexture = Texture2D.FromFile(Globals.GraphicsDevice, filename);
         Width = heightmapTexture.Width;
         Height = heightmapTexture.Height;
         BuildHeightMap(heightmapTexture);

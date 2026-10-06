@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
@@ -185,7 +185,7 @@ public class GDIBulldozer : Car
                 {
                     float buildPoints = BuildRate * (float)gameTime.ElapsedGameTime.TotalSeconds;
                     building.AdvanceConstruction(GameplayPacing.ScaleWork(
-                        buildPoints, Globals.Game.IsMatchStarted));
+                        buildPoints, SimulationWorld.IsMatchStarted));
                 }
             }
         }

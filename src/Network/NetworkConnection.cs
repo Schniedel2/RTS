@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
@@ -24,13 +24,15 @@ internal sealed class NetworkConnection : IDisposable
     });
     private readonly Action<NetworkMessage> _received;
     private readonly Action<string?> _closed;
+    private readonly Action<bool, int>? _traffic;
     private long _queuedBytes;
     private int _ended;
     public Task Completion { get; }
 
     internal NetworkConnection(TcpClient client, CancellationToken sessionToken,
-        Action<NetworkMessage> received, Action<string?> closed)
+        Action<NetworkMessage> received, Action<string?> closed, Action<bool, int>? traffic = null)
     {
+        _traffic = traffic;
         _client = client;
         _client.NoDelay = true;
         _stop = CancellationTokenSource.CreateLinkedTokenSource(sessionToken);
@@ -67,6 +69,7 @@ internal sealed class NetworkConnection : IDisposable
                 using var writeDeadline = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
                 writeDeadline.CancelAfter(TimeSpan.FromSeconds(15));
                 await stream.WriteAsync(frame, writeDeadline.Token);
+                _traffic?.Invoke(true, frame.Length);
                 Interlocked.Add(ref _queuedBytes, -frame.Length);
             }
             End(null);
@@ -87,6 +90,7 @@ internal sealed class NetworkConnection : IDisposable
             {
                 int count = await stream.ReadAsync(buffer, _stop.Token);
                 if (count == 0) { End("The remote peer closed the connection."); return; }
+                _traffic?.Invoke(false, count);
                 int first = 0;
                 for (int index = 0; index < count; index++)
                 {

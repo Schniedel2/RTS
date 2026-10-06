@@ -1,4 +1,9 @@
-﻿if (args.Length > 0 && args[0] == "--bot-client")
+﻿if (args.Length > 0 && args[0] == "--dedicated-server")
+{
+    if (args.Length != 2) { System.Console.Error.WriteLine("Usage: RTS --dedicated-server <config.json>"); return 1; }
+    return RTS.DedicatedServer.Run(args[1]);
+}
+if (args.Length > 0 && args[0] == "--bot-client")
 {
     if (args.Length != 2) { System.Console.Error.WriteLine("Usage: RTS --bot-client <config.json>"); return 1; }
     return RTS.BotClient.Run(args[1]);

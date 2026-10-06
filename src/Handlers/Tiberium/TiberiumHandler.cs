@@ -78,7 +78,7 @@ public sealed class TiberiumHandler
 
     private readonly GameWorld? _world;
     private GameWorld World => _world ?? Globals.World;
-    private double HostTime => World.SimulationNetwork?.EstimatedHostTime ?? Globals.Game.Network.EstimatedHostTime;
+    private double HostTime => World.SimulationNetwork?.EstimatedHostTime ?? Globals.Game?.Network.EstimatedHostTime ?? 0;
     public TiberiumHandler(GameWorld? world = null) { _world = world; }
 
     private TerrainTile GetTileAt(Point cell)

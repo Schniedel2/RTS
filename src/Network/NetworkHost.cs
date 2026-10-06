@@ -60,6 +60,8 @@ public sealed class NetworkHost
     public double HostTime => _hostTime;
     private readonly CombatSystem _combat;
 
+    private readonly Func<CommandCenter, UnitActionType, bool> _commandCenterGoal;
+    private readonly PricingService _pricing;
     private readonly ArmyHandler _armies;
     private readonly Func<IReadOnlyList<Player>> _players;
     private readonly Func<IReadOnlyCollection<AIPlayer>> _aiPlayers;
@@ -78,14 +80,16 @@ public sealed class NetworkHost
 
     public NetworkHost(NetworkHandler networkHandler, NetworkInput networkInput, GameWorld world,
         ArmyHandler armies, Func<IReadOnlyList<Player>> players,
-        Func<IReadOnlyCollection<AIPlayer>> aiPlayers, Action<Unit, Unit?> notifyCombatLoss, Func<bool>? isMatchStarted = null)
+        Func<IReadOnlyCollection<AIPlayer>> aiPlayers, Action<Unit, Unit?> notifyCombatLoss, Func<bool>? isMatchStarted = null, Func<CommandCenter, UnitActionType, bool>? commandCenterGoal = null)
     {
         _armies = armies;
+        _commandCenterGoal = commandCenterGoal ?? ((center, action) => Globals.Game.ApplyCommandCenterGoal(center, action));
         _isMatchStarted = isMatchStarted ?? (() => Globals.Game.IsMatchStarted);
         _players = players;
         _aiPlayers = aiPlayers;
         _networkHandler = networkHandler;
         _world = world;
+        _pricing = new PricingService(armies, world.Units.FindById);
         _combat = new CombatSystem(world, networkHandler.LocalPeerId, PublishAsync, notifyCombatLoss);
         _harvest = new HarvestSystem(world, _armies, networkHandler.LocalPeerId,
             PublishAsync, QueueHarvestRoute, () => networkHandler.SessionGeneration,
@@ -1000,7 +1004,7 @@ public sealed class NetworkHost
                 .Select(_world.Units.FindById)
                 .OfType<CommandCenter>()
                 .FirstOrDefault();
-            if (commandCenter is null || !Globals.Game.ApplyCommandCenterGoal(commandCenter, actionType))
+            if (commandCenter is null || !_commandCenterGoal(commandCenter, actionType))
                 return null;
             acceptedIds = [commandCenter.UnitId];
         }
@@ -1155,7 +1159,7 @@ public sealed class NetworkHost
             if (armyId is not Guid owner || _armies.Find(owner) is not Army army) return AIOrderFailure.InvalidTarget;
             PurchasableType type = build ? PurchasableType.Building : request.Type == NetworkMessageType.ResearchRequest
                 ? PurchasableType.Research : PurchasableType.Unit;
-            PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new(type, request.UnitTypeId ?? "", owner,
+            PurchaseQuote quote = _pricing.GetQuote(new(type, request.UnitTypeId ?? "", owner,
                 build ? null : producer?.UnitId));
             if (quote.MissingPerks.Count > 0) return AIOrderFailure.Perk;
             if (!quote.IsAvailable) return AIOrderFailure.Validation;
@@ -1181,7 +1185,7 @@ public sealed class NetworkHost
         if (player is null || _armies.Find(player.ArmyId) is not Army army)
             return null;
         Guid armyId = player.ArmyId;
-        PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+        PurchaseQuote quote = _pricing.GetQuote(new PurchaseRequest(
             PurchasableType.Building, request.UnitTypeId, armyId));
         if (!quote.IsAvailable || !quote.CanAfford(army.Resources))
             return null;
@@ -1404,7 +1408,7 @@ public sealed class NetworkHost
 
         if (!building.CanProduceUnit(_world, request.UnitTypeId)) return null;
 
-        PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+        PurchaseQuote quote = _pricing.GetQuote(new PurchaseRequest(
             PurchasableType.Unit, request.UnitTypeId, armyId, building.UnitId));
         if (!quote.IsAvailable || !quote.CanAfford(army.Resources)) return null;
 
@@ -1448,7 +1452,7 @@ public sealed class NetworkHost
             return null;
         }
 
-        PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+        PurchaseQuote quote = _pricing.GetQuote(new PurchaseRequest(
             PurchasableType.Research, request.UnitTypeId, armyId, building.UnitId));
         if (!quote.IsAvailable || !quote.CanAfford(army.Resources)) return null;
 
@@ -1504,12 +1508,19 @@ public sealed class NetworkHost
     /// Keeps explicit team changes for known players. A joining player receives
     /// the first free positive team number, so everyone begins as an opponent.
     /// </summary>
+    private int NextAvailableTeamId()
+    {
+        int team = 1;
+        while (_players().Any(player => player.TeamId == team)) team++;
+        return team;
+    }
+
     private int ConfirmTeamId(NetworkMessage request)
     {
         Guid playerId = request.PlayerId ?? request.SenderId;
         if (_players().Any(player => player.Id == playerId))
-            return request.TeamId > 0 ? request.TeamId : Globals.Game.GetNextAvailableTeamId();
-        return Globals.Game.GetNextAvailableTeamId();
+            return request.TeamId > 0 ? request.TeamId : NextAvailableTeamId();
+        return NextAvailableTeamId();
     }
 
     /// <summary>Grants the requested skin unless another player already owns it.</summary>
@@ -1524,9 +1535,9 @@ public sealed class NetworkHost
         if (IsValid(requested) && !IsTaken(requested))
             return requested;
 
-        foreach (SkinHandler.SkinDefinition definition in Globals.SkinHandler.Skins)
-            if (!IsTaken(definition.Skin))
-                return definition.Skin;
+        foreach (PlayerSkin skin in Enum.GetValues<PlayerSkin>())
+            if (!IsTaken(skin))
+                return skin;
 
         return PlayerSkin.Green;
     }

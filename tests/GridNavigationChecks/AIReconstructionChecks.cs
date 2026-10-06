@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -68,8 +68,9 @@ internal static partial class AIReconstructionChecks
         private readonly MeshHandler _savedMeshes = Globals.MeshHandler;
         private int _id = 1;
         private double _time;
-        public GameWorld World { get; } = new(65, 65, 1, graphicsEnabled: false);
-        public NetworkHandler Network { get; } = new("AI reconstruction checks");
+        public GameWorld World { get; }
+        public List<AIPlayer> AdditionalAI { get; } = [];
+        public NetworkHandler Network { get; }
         public AIPlayer AI { get; }
         public Army Army { get; }
         public List<NetworkMessage> Messages { get; } = [];
@@ -81,8 +82,10 @@ internal static partial class AIReconstructionChecks
         public CatalogBuilding Refinery { get; }
         public CatalogBuilding Barracks { get; }
 
-        public Scenario(bool startReady = true)
+        public Scenario(bool startReady = true, int worldSize = 65, ClientRunDiagnostics? diagnostics = null)
         {
+            Network = new("AI reconstruction checks") { RunDiagnostics = diagnostics };
+            World = new(worldSize, worldSize, 1, graphicsEnabled: false);
             Globals.MeshHandler = new MeshHandler();
             foreach (var mesh in _savedMeshes.Meshes) Globals.MeshHandler.Meshes[mesh.Key] = mesh.Value;
             // Low-resource proposals now inspect building footprints before a purchase is funded.
@@ -110,7 +113,7 @@ internal static partial class AIReconstructionChecks
             Globals.World = World;
             Input = new NetworkInput(Network, World, World.SimulationArmies);
             Host = new NetworkHost(Network, Input, World, World.SimulationArmies,
-                () => new[] { actor }, () => new[] { AI }, (_, _) => { }, () => true);
+                () => new[] { actor }.Concat(AdditionalAI.Select(ai => ai.Player)).ToArray(), () => new[] { AI }.Concat(AdditionalAI).ToArray(), (_, _) => { }, () => true);
             // Initialize the host generation before sending requests.
             Host.Update(new GameTime());
             Network.MessageReceived += Messages.Add;

@@ -59,6 +59,9 @@ public class GameWorld
     public VisibilitySystem Visibility { get; }
     public GameplayMarkerHandler GameplayMarkers { get; }
     public Vector3 Center => new Vector3(_terrain.Width * 0.5f, 0.0f, _terrain.Height * 0.5f);
+    public bool IsMatchStarted => _matchStarted?.Invoke() ?? Globals.Game?.IsMatchStarted ?? false;
+    private Func<bool>? _matchStarted;
+    internal void SetMatchStateProvider(Func<bool> provider) => _matchStarted = provider;
     public bool IsEditorActive => Units.Units.Any(unit => unit is TerrainEditorTool && !unit.IsDying);
 
     /// <summary>Initializes gameplay normally; graphicsEnabled=false omits GPU terrain resources and visual emissions.</summary>
@@ -233,11 +236,25 @@ public class GameWorld
            return GameGrid.CanPlace(unit, new Point(x, y));
     }
 
+    /// <summary>Loads the same map components without requiring GPU resources or a game object.</summary>
+    public static GameWorld LoadHeadlessMap(string directory)
+    {
+        var terrain = new Terrain(directory, graphicsEnabled: false);
+        var world = new GameWorld(terrain.Width, terrain.Height, 1, graphicsEnabled: false);
+        Globals.World = world;
+        world._terrain = terrain;
+        world.GameGrid.BindTerrain(terrain);
+        world.GameplayMarkers.Load(directory);
+        world.LoadMapObjects(directory);
+        world.Tiberium.Load(directory);
+        return world;
+    }
+
     public void Load(string mapName)
     {
         PathfindingManager.Reset();
         string mapDirectory = Path.Combine(Globals.MapsDirectory, mapName);
-        _terrain = new Terrain(mapDirectory);
+        _terrain = new Terrain(mapDirectory, graphicsEnabled: GraphicsEnabled);
         GameGrid.BindTerrain(_terrain);
         Weather.ResizeWindMap(_terrain.Width, _terrain.Height);
         GameplayMarkers.Load(mapDirectory);

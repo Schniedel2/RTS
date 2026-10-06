@@ -80,6 +80,11 @@ public sealed class NetworkInput : IDisposable
                 message.DisplayName,
                 message.TeamId,
                 (PlayerSkin)(message.PlayerSkin ?? (int)PlayerSkin.Green));
+            else
+            {
+                Guid armyId = Armies.Armies.FirstOrDefault(army => army.OwnerPlayerIds.Contains(updatedPlayerId))?.Id ?? updatedPlayerId;
+                Armies.EnsureArmy(armyId, updatedPlayerId, GuidUtility.FromInt(message.TeamId));
+            }
             return;
         }
 
@@ -122,7 +127,8 @@ public sealed class NetworkInput : IDisposable
 
         if (message.Type == NetworkMessageType.NotifyUnitsSelected && message.PlayerId is Guid selectedPlayerId)
         {
-            if (selectedPlayerId != _network.LocalPeerId)
+            // Selection highlights are presentation state; the headless host still relays the notification.
+            if (World.GraphicsEnabled && selectedPlayerId != _network.LocalPeerId)
                 Globals.Game.RemoteSelections.SetSelection(selectedPlayerId, message.UnitIds ?? Array.Empty<Guid>());
             return;
         }

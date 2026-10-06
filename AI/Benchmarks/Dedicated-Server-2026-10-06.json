@@ -1,0 +1,1901 @@
+﻿{
+  "schemaVersion": 1,
+  "runs": [
+    {
+      "rawDirectory": "C:\\Users\\Hp\\AppData\\Local\\Temp\\RTS-dedicated-fead92b9a1e64a8c9217f2e435f2daf7",
+      "result": {
+        "seconds": 240,
+        "starts": 3,
+        "lateStarts": 2,
+        "lateSnapshots": 2,
+        "snapshots": 2,
+        "phaseBuilds": [
+          11,
+          9,
+          11
+        ],
+        "maxUnits": 42,
+        "fallback": true,
+        "resets": 2,
+        "humanBuilds": 3,
+        "foreignRejected": true,
+        "moves": 3
+      },
+      "finalStatus": {
+        "port": 58356,
+        "IsMatchStarted": true,
+        "MatchStarts": 3,
+        "SnapshotsServed": 6,
+        "stopped": true,
+        "players": [
+          {
+            "Id": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "Name": "AI1",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "TeamId": 1,
+            "isAI": true
+          },
+          {
+            "Id": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "Name": "AI2",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "TeamId": 2,
+            "isAI": true
+          },
+          {
+            "Id": "d80c5d74-52fd-4265-8b5e-3c1786b50e59",
+            "Name": "HumanProbe",
+            "ArmyId": "d80c5d74-52fd-4265-8b5e-3c1786b50e59",
+            "TeamId": 4,
+            "isAI": false
+          },
+          {
+            "Id": "2036a029-bb74-4c1a-a974-bf76df92a6c0",
+            "Name": "LateHuman",
+            "ArmyId": "2036a029-bb74-4c1a-a974-bf76df92a6c0",
+            "TeamId": 3,
+            "isAI": false
+          }
+        ],
+        "peers": [
+          {
+            "Id": "eab1a2bc-3225-4970-9bde-62278394e90b",
+            "DisplayName": "RemoteBot",
+            "isBot": true
+          },
+          {
+            "Id": "2036a029-bb74-4c1a-a974-bf76df92a6c0",
+            "DisplayName": "LateHuman",
+            "isBot": false
+          },
+          {
+            "Id": "d80c5d74-52fd-4265-8b5e-3c1786b50e59",
+            "DisplayName": "HumanProbe",
+            "isBot": false
+          }
+        ],
+        "controllers": [
+          {
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "ActorId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "ControllerPeerId": "b480417e-05a5-46f4-8e4e-b54666f38981",
+            "Generation": 5,
+            "Profile": {
+              "Type": 3,
+              "DisplayName": "Fast Recon",
+              "RequiredGunners": 2,
+              "RequiredRakZero": 1,
+              "RequiredTanks": 1,
+              "RetreatHealthFraction": 0.36,
+              "AttackReadinessSeconds": 2,
+              "DefenseRadiusInCells": 30,
+              "AssaultStallTimeoutSeconds": 45,
+              "Seed": 1234,
+              "DecisionIntervalSeconds": 1,
+              "ResourceReserve": 800,
+              "ScoutReconsiderSeconds": 8
+            },
+            "ProfileVersion": 1,
+            "ProfileFingerprint": "665DEB2D597E074413D3AFEC676778C22B7668774C4815E41DD36A84817D60D3"
+          },
+          {
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "ActorId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "ControllerPeerId": "b480417e-05a5-46f4-8e4e-b54666f38981",
+            "Generation": 8,
+            "Profile": {
+              "Type": 0,
+              "DisplayName": "Balanced Assault",
+              "RequiredGunners": 3,
+              "RequiredRakZero": 1,
+              "RequiredTanks": 1,
+              "RetreatHealthFraction": 0.45,
+              "AttackReadinessSeconds": 5,
+              "DefenseRadiusInCells": 36,
+              "AssaultStallTimeoutSeconds": 60,
+              "Seed": 1234,
+              "DecisionIntervalSeconds": 1,
+              "ResourceReserve": 800,
+              "ScoutReconsiderSeconds": 8
+            },
+            "ProfileVersion": 1,
+            "ProfileFingerprint": "77A52B569FADA87F109145FB8D1FD5459DB1F3555D0F114C0E4ABC725A35B961"
+          }
+        ],
+        "armies": [
+          {
+            "Id": "2036a029-bb74-4c1a-a974-bf76df92a6c0",
+            "TeamId": "00000003-0000-0000-0000-000000000000",
+            "Resources": 10000,
+            "Owners": [
+              "2036a029-bb74-4c1a-a974-bf76df92a6c0"
+            ],
+            "Permissions": {},
+            "Intelligence": {
+              "ShareExploredMinimap": false,
+              "ShareVisibleMinimap": false,
+              "ShareWorldVision": false
+            },
+            "Perks": [],
+            "SatelliteRecon": {
+              "Cooldown": 0,
+              "ActiveSeconds": 0
+            }
+          },
+          {
+            "Id": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "TeamId": "00000002-0000-0000-0000-000000000000",
+            "Resources": 1400,
+            "Owners": [
+              "bb76718e-f142-4a4b-85f7-060e68af4cd6"
+            ],
+            "Permissions": {},
+            "Intelligence": {
+              "ShareExploredMinimap": false,
+              "ShareVisibleMinimap": false,
+              "ShareWorldVision": false
+            },
+            "Perks": [
+              {
+                "SourceId": "3cf84e64-29a3-45f1-9aa0-309d88d14e3c",
+                "Grants": [
+                  {
+                    "Perk": 1,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  },
+                  {
+                    "Perk": 2,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  },
+                  {
+                    "Perk": 3,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  }
+                ]
+              }
+            ],
+            "SatelliteRecon": {
+              "Cooldown": 0,
+              "ActiveSeconds": 0
+            }
+          },
+          {
+            "Id": "d80c5d74-52fd-4265-8b5e-3c1786b50e59",
+            "TeamId": "00000004-0000-0000-0000-000000000000",
+            "Resources": 8500,
+            "Owners": [
+              "d80c5d74-52fd-4265-8b5e-3c1786b50e59"
+            ],
+            "Permissions": {},
+            "Intelligence": {
+              "ShareExploredMinimap": false,
+              "ShareVisibleMinimap": false,
+              "ShareWorldVision": false
+            },
+            "Perks": [
+              {
+                "SourceId": "a4f551c7-2123-47a9-ba38-49317f086238",
+                "Grants": [
+                  {
+                    "Perk": 1,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  },
+                  {
+                    "Perk": 3,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  }
+                ]
+              }
+            ],
+            "SatelliteRecon": {
+              "Cooldown": 0,
+              "ActiveSeconds": 0
+            }
+          },
+          {
+            "Id": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "TeamId": "00000001-0000-0000-0000-000000000000",
+            "Resources": 1400,
+            "Owners": [
+              "edfd46e9-ea2b-409b-b04c-a49766ad88b4"
+            ],
+            "Permissions": {},
+            "Intelligence": {
+              "ShareExploredMinimap": false,
+              "ShareVisibleMinimap": false,
+              "ShareWorldVision": false
+            },
+            "Perks": [
+              {
+                "SourceId": "0fda906a-ed08-44ff-ba88-fa9dd5f8c210",
+                "Grants": [
+                  {
+                    "Perk": 1,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  },
+                  {
+                    "Perk": 2,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  },
+                  {
+                    "Perk": 3,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  }
+                ]
+              }
+            ],
+            "SatelliteRecon": {
+              "Cooldown": 0,
+              "ActiveSeconds": 0
+            }
+          }
+        ],
+        "units": [
+          {
+            "UnitId": "18331b47-c55b-40a0-b56d-56148bacedaa",
+            "type": "tiberium-source",
+            "ArmyId": null,
+            "x": 60.5,
+            "y": 0,
+            "z": 60.5,
+            "HitPoints": 300,
+            "completed": true
+          },
+          {
+            "UnitId": "4bc822ec-7c79-4847-a207-66b57a55736b",
+            "type": "gdi-bulldozer",
+            "ArmyId": "2036a029-bb74-4c1a-a974-bf76df92a6c0",
+            "x": 94.5,
+            "y": 0,
+            "z": 94.5,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "db186667-e5ad-48cf-aced-b756a1c4ec1d",
+            "type": "",
+            "ArmyId": "2036a029-bb74-4c1a-a974-bf76df92a6c0",
+            "x": 94.5,
+            "y": 0,
+            "z": 94.5,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "72759afc-6c58-4d49-b042-8ac2a8a63ae5",
+            "type": "gdi-bulldozer",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 20.510098,
+            "y": 0,
+            "z": 97.02341,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "7ded040d-de18-4a74-aaaa-a0dfd46f4612",
+            "type": "",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 20.510098,
+            "y": 0,
+            "z": 97.02341,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "639fa4d1-65c7-4997-bfa0-656e49e8d27b",
+            "type": "gdi-bulldozer",
+            "ArmyId": "d80c5d74-52fd-4265-8b5e-3c1786b50e59",
+            "x": 25.008343,
+            "y": 0,
+            "z": 22.48057,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "ecbc0fd0-9375-47f9-881e-d9ee936c2102",
+            "type": "",
+            "ArmyId": "d80c5d74-52fd-4265-8b5e-3c1786b50e59",
+            "x": 25.008343,
+            "y": 0,
+            "z": 22.48057,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "193f6e2a-eaa2-4983-b704-13241ead52ac",
+            "type": "gdi-bulldozer",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 92.5101,
+            "y": 0,
+            "z": 25.023373,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "a20144a0-94c0-4d1a-9b5a-d5bc483b5ba5",
+            "type": "",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 92.5101,
+            "y": 0,
+            "z": 25.023373,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "0fda906a-ed08-44ff-ba88-fa9dd5f8c210",
+            "type": "gdi-base",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 90.5,
+            "y": 0,
+            "z": 18.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "3cf84e64-29a3-45f1-9aa0-309d88d14e3c",
+            "type": "gdi-base",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 18.5,
+            "y": 0,
+            "z": 90.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "a4f551c7-2123-47a9-ba38-49317f086238",
+            "type": "gdi-base",
+            "ArmyId": "d80c5d74-52fd-4265-8b5e-3c1786b50e59",
+            "x": 31.5,
+            "y": 0,
+            "z": 22.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "b0504811-6924-4830-9e93-30d0f8258e35",
+            "type": "reaktor",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 98.5,
+            "y": 0,
+            "z": 16.5,
+            "HitPoints": 500,
+            "completed": true
+          },
+          {
+            "UnitId": "60a4178d-f70f-47fa-8aa0-d5ac3dd8868d",
+            "type": "reaktor",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 26.5,
+            "y": 0,
+            "z": 88.5,
+            "HitPoints": 500,
+            "completed": true
+          },
+          {
+            "UnitId": "73b03f50-20a0-4f35-81b4-ac57c0dd7de3",
+            "type": "tiberium-refinery",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 90.5,
+            "y": 0,
+            "z": 8.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "0a186412-6a75-478c-9e07-d238461ea820",
+            "type": "tiberium-refinery",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 18.5,
+            "y": 0,
+            "z": 80.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "1dbc73e5-2238-437b-91f9-3f6224755970",
+            "type": "harvester",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 90.5,
+            "y": 0,
+            "z": 4.5,
+            "HitPoints": 900,
+            "completed": false
+          },
+          {
+            "UnitId": "a27618fb-2374-4b83-b352-59ff9dfb3689",
+            "type": "",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 90.5,
+            "y": 0,
+            "z": 4.5,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "a35c31dd-f2fd-4961-9261-ee9bf9df0425",
+            "type": "harvester",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 18.5,
+            "y": 0,
+            "z": 76.5,
+            "HitPoints": 900,
+            "completed": false
+          },
+          {
+            "UnitId": "7f3700e5-975e-4ddb-9133-8e42fa7de2f2",
+            "type": "",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 18.5,
+            "y": 0,
+            "z": 76.5,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "e21aa393-21c3-4de1-befb-8d03756f78e4",
+            "type": "gdi-barracks",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 87.5,
+            "y": 0,
+            "z": 27.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "16305531-37fe-45e1-ae3a-a367786b642e",
+            "type": "gdi-barracks",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 15.5,
+            "y": 0,
+            "z": 99.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "0667f06e-5b3a-4597-bda0-f6fc24def6e4",
+            "type": "gunner",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 38.179245,
+            "y": 0,
+            "z": 35.498497,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "4a043646-87f8-492d-a7b0-6f00bf7d3541",
+            "type": "gunner",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 49.465435,
+            "y": 0,
+            "z": 60.819084,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "6fecb353-611d-4a23-b14f-50d8cc25b727",
+            "type": "gunner",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 83.35338,
+            "y": 0,
+            "z": 23.569645,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "6a47ad05-00c6-47c9-bafc-2524da9dbf1b",
+            "type": "gunner",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 11.399238,
+            "y": 0,
+            "z": 95.54659,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "d2755c35-97ad-4e2c-b6b4-406b3f8703d4",
+            "type": "gunner",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 82.41371,
+            "y": 0,
+            "z": 22.634598,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "52cf7699-595f-488a-8efd-7687b5f4d259",
+            "type": "gunner",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 10.50002,
+            "y": 0,
+            "z": 94.64421,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "f8b43883-36b4-438d-a24d-117c5fbfd756",
+            "type": "vehicle-factory",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 101.5,
+            "y": 0,
+            "z": 29.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "a44fac9e-2a32-4897-a1c9-e82fe2ab9f3d",
+            "type": "vehicle-factory",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 29.5,
+            "y": 0,
+            "z": 101.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "cafcc412-81c9-43f9-9f08-b88e3d100d0b",
+            "type": "squad-leader",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 83.42925,
+            "y": 0,
+            "z": 22.339115,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "353304fa-ea0f-403f-a6e3-d102163b3b6e",
+            "type": "squad-leader",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 11.500071,
+            "y": 0,
+            "z": 97.66437,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "03a0075d-e3d1-42ca-a1cb-0528f22a75b5",
+            "type": "medic",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 84.43675,
+            "y": 0,
+            "z": 22.362062,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "f13cf57e-3e5f-4d65-836e-08f541186488",
+            "type": "medic",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 11.42251,
+            "y": 0,
+            "z": 94.34309,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "884f11dc-61f3-4077-a1cb-f2e3687d6118",
+            "type": "engineer",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 87.5,
+            "y": 0,
+            "z": 33.5,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "026caebf-d998-4da5-b59c-1cbc275edc35",
+            "type": "engineer",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 15.5,
+            "y": 0,
+            "z": 105.5,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "ccbd805a-d88f-4c2f-b4f9-4cfee6406980",
+            "type": "tank",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 99.9,
+            "y": 0,
+            "z": 38.3,
+            "HitPoints": 500,
+            "completed": false
+          },
+          {
+            "UnitId": "ddd747a6-c1e2-4006-8531-75c9b099f572",
+            "type": "",
+            "ArmyId": "edfd46e9-ea2b-409b-b04c-a49766ad88b4",
+            "x": 99.9,
+            "y": 0,
+            "z": 38.3,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "bd66bd5d-ed27-4a39-b401-a6edcd227050",
+            "type": "tank",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 27.9,
+            "y": 0,
+            "z": 110.3,
+            "HitPoints": 500,
+            "completed": false
+          },
+          {
+            "UnitId": "55ed2322-0762-4138-8622-70fe69289b6f",
+            "type": "",
+            "ArmyId": "bb76718e-f142-4a4b-85f7-060e68af4cd6",
+            "x": 27.9,
+            "y": 0,
+            "z": 110.3,
+            "HitPoints": 100,
+            "completed": false
+          }
+        ],
+        "hostTime": 240.46467980000548
+      },
+      "hostMetrics": {
+        "cpuSeconds": 17.078125,
+        "workingSetBytes": 99487744,
+        "metrics": {
+          "frameWorkMs": {
+            "Count": 8714,
+            "Mean": 2.2076832568280924,
+            "P95": 4.6863,
+            "P99": 6.7373,
+            "Maximum": 269.2101,
+            "SampleCount": 8714
+          },
+          "frameIntervalMs": {
+            "Count": 8714,
+            "Mean": 27.59521227909112,
+            "P95": 33.5086,
+            "P99": 41.4006,
+            "Maximum": 100,
+            "SampleCount": 8714
+          },
+          "decisionsMs": {
+            "Count": 8714,
+            "Mean": 0.23392870094101537,
+            "P95": 0.4124,
+            "P99": 1.1489,
+            "Maximum": 71.4407,
+            "SampleCount": 8714
+          },
+          "requestReplyMs": {
+            "Count": 104,
+            "Mean": 297.39405288461546,
+            "P95": 3097.9988,
+            "P99": 3232.3967,
+            "Maximum": 3261.0719,
+            "SampleCount": 104
+          },
+          "heartbeatRoundTripMs": {
+            "Count": 0,
+            "Mean": 0,
+            "P95": 0,
+            "P99": 0,
+            "Maximum": 0,
+            "SampleCount": 0
+          },
+          "MaximumInbox": 4,
+          "MaximumControllers": 2,
+          "Snapshots": 0,
+          "MatchStarts": 0,
+          "Rejections": 0,
+          "RequestCount": 113,
+          "sentBytes": 142029205,
+          "receivedBytes": 135738,
+          "scopes": [
+            {
+              "Name": "AI.ArmoredSupport",
+              "Calls": 4794,
+              "TotalMilliseconds": 107.54400000000024,
+              "MaximumMilliseconds": 25.8379,
+              "AllocatedBytes": 36377248
+            },
+            {
+              "Name": "AI.ArmyGoals",
+              "Calls": 15596,
+              "TotalMilliseconds": 381.6178000000105,
+              "MaximumMilliseconds": 56.4358,
+              "AllocatedBytes": 38443816
+            },
+            {
+              "Name": "AI.BaseDefense",
+              "Calls": 4794,
+              "TotalMilliseconds": 10.096100000000177,
+              "MaximumMilliseconds": 3.044,
+              "AllocatedBytes": 571584
+            },
+            {
+              "Name": "AI.BuildSiteSearch",
+              "Calls": 26,
+              "TotalMilliseconds": 279.4078,
+              "MaximumMilliseconds": 49.8153,
+              "AllocatedBytes": 66588976
+            },
+            {
+              "Name": "AI.DefensePlanner",
+              "Calls": 3375,
+              "TotalMilliseconds": 4.569699999999985,
+              "MaximumMilliseconds": 0.1928,
+              "AllocatedBytes": 0
+            },
+            {
+              "Name": "AI.Infrastructure",
+              "Calls": 3375,
+              "TotalMilliseconds": 92.42520000000015,
+              "MaximumMilliseconds": 16.9856,
+              "AllocatedBytes": 2250240
+            },
+            {
+              "Name": "AI.OrderProgress",
+              "Calls": 15596,
+              "TotalMilliseconds": 48.90290000000153,
+              "MaximumMilliseconds": 18.1819,
+              "AllocatedBytes": 585696
+            },
+            {
+              "Name": "AI.Player",
+              "Calls": 17428,
+              "TotalMilliseconds": 2004.4253000000076,
+              "MaximumMilliseconds": 70.7255,
+              "AllocatedBytes": 144617312
+            },
+            {
+              "Name": "AI.ProductionPlan",
+              "Calls": 6764,
+              "TotalMilliseconds": 37.135699999998764,
+              "MaximumMilliseconds": 6.0517,
+              "AllocatedBytes": 236024
+            },
+            {
+              "Name": "AI.Scouting",
+              "Calls": 4794,
+              "TotalMilliseconds": 160.48630000000014,
+              "MaximumMilliseconds": 12.7658,
+              "AllocatedBytes": 8906872
+            },
+            {
+              "Name": "AI.ScoutSearch",
+              "Calls": 13631,
+              "TotalMilliseconds": 239.97800000000004,
+              "MaximumMilliseconds": 6.4387,
+              "AllocatedBytes": 6314040
+            },
+            {
+              "Name": "AI.SquadPreparation",
+              "Calls": 4794,
+              "TotalMilliseconds": 55.61790000000085,
+              "MaximumMilliseconds": 3.579,
+              "AllocatedBytes": 5988408
+            },
+            {
+              "Name": "AI.ThreatAssessment",
+              "Calls": 4794,
+              "TotalMilliseconds": 16.229100000000336,
+              "MaximumMilliseconds": 2.8459,
+              "AllocatedBytes": 158080
+            },
+            {
+              "Name": "Host.GotoPlanningSlice",
+              "Calls": 370,
+              "TotalMilliseconds": 88.3697,
+              "MaximumMilliseconds": 9.0318,
+              "AllocatedBytes": 8940256
+            },
+            {
+              "Name": "Host.GotoPublish",
+              "Calls": 38,
+              "TotalMilliseconds": 27.945700000000002,
+              "MaximumMilliseconds": 15.0651,
+              "AllocatedBytes": 938688
+            },
+            {
+              "Name": "Host.Request.AttackRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 0.023,
+              "MaximumMilliseconds": 0.0145,
+              "AllocatedBytes": 944
+            },
+            {
+              "Name": "Host.Request.BuildRequest",
+              "Calls": 31,
+              "TotalMilliseconds": 221.4167,
+              "MaximumMilliseconds": 30.3755,
+              "AllocatedBytes": 27511112
+            },
+            {
+              "Name": "Host.Request.EnterUnitRequest",
+              "Calls": 7,
+              "TotalMilliseconds": 8.8748,
+              "MaximumMilliseconds": 7.0102,
+              "AllocatedBytes": 89624
+            },
+            {
+              "Name": "Host.Request.GotoRequest",
+              "Calls": 39,
+              "TotalMilliseconds": 17.251199999999997,
+              "MaximumMilliseconds": 10.6116,
+              "AllocatedBytes": 490848
+            },
+            {
+              "Name": "Host.Request.HarvestRequest",
+              "Calls": 6,
+              "TotalMilliseconds": 17.6691,
+              "MaximumMilliseconds": 16.7185,
+              "AllocatedBytes": 189016
+            },
+            {
+              "Name": "Host.Request.RequestPlayerUpdate",
+              "Calls": 1,
+              "TotalMilliseconds": 2.6868,
+              "MaximumMilliseconds": 2.6868,
+              "AllocatedBytes": 6664
+            },
+            {
+              "Name": "Host.Request.SetRallyPointRequest",
+              "Calls": 6,
+              "TotalMilliseconds": 5.482,
+              "MaximumMilliseconds": 4.7628,
+              "AllocatedBytes": 70680
+            },
+            {
+              "Name": "Host.Request.TrainUnitRequest",
+              "Calls": 33,
+              "TotalMilliseconds": 9.8586,
+              "MaximumMilliseconds": 3.9075,
+              "AllocatedBytes": 464304
+            },
+            {
+              "Name": "Host.Request.UnitActionRequest",
+              "Calls": 1,
+              "TotalMilliseconds": 15.3966,
+              "MaximumMilliseconds": 15.3966,
+              "AllocatedBytes": 16112
+            },
+            {
+              "Name": "Path.JobSlice",
+              "Calls": 4241,
+              "TotalMilliseconds": 512.1984000000004,
+              "MaximumMilliseconds": 13.4251,
+              "AllocatedBytes": 171807056
+            },
+            {
+              "Name": "Path.PlanningUpdate",
+              "Calls": 8714,
+              "TotalMilliseconds": 910.9495000000147,
+              "MaximumMilliseconds": 13.435,
+              "AllocatedBytes": 189092200
+            }
+          ]
+        }
+      }
+    },
+    {
+      "rawDirectory": "C:\\Users\\Hp\\AppData\\Local\\Temp\\RTS-dedicated-626731acaefb4512a0f05ff15f7f5153",
+      "result": {
+        "seconds": 300,
+        "starts": 3,
+        "lateStarts": 2,
+        "lateSnapshots": 2,
+        "snapshots": 2,
+        "phaseBuilds": [
+          11,
+          9,
+          13
+        ],
+        "maxUnits": 44,
+        "fallback": true,
+        "resets": 2,
+        "humanBuilds": 3,
+        "foreignRejected": true,
+        "moves": 3,
+        "remoteObserved": true,
+        "overflowRejected": true,
+        "lateArmyKnown": true
+      },
+      "finalStatus": {
+        "port": 59456,
+        "IsMatchStarted": true,
+        "MatchStarts": 3,
+        "SnapshotsServed": 6,
+        "stopped": true,
+        "players": [
+          {
+            "Id": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "Name": "AI1",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "TeamId": 1,
+            "isAI": true
+          },
+          {
+            "Id": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "Name": "AI2",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "TeamId": 2,
+            "isAI": true
+          },
+          {
+            "Id": "528839e6-bc9f-4c1a-a085-8c97e4c449e8",
+            "Name": "HumanProbe",
+            "ArmyId": "528839e6-bc9f-4c1a-a085-8c97e4c449e8",
+            "TeamId": 4,
+            "isAI": false
+          },
+          {
+            "Id": "9d00354f-6143-4cff-84fc-8bc46beb5f0c",
+            "Name": "LateHuman",
+            "ArmyId": "9d00354f-6143-4cff-84fc-8bc46beb5f0c",
+            "TeamId": 3,
+            "isAI": false
+          }
+        ],
+        "peers": [
+          {
+            "Id": "528839e6-bc9f-4c1a-a085-8c97e4c449e8",
+            "DisplayName": "HumanProbe",
+            "isBot": false
+          },
+          {
+            "Id": "062f154e-944a-4ae3-ab53-ddf4b39f68cd",
+            "DisplayName": "RemoteBot",
+            "isBot": true
+          },
+          {
+            "Id": "9d00354f-6143-4cff-84fc-8bc46beb5f0c",
+            "DisplayName": "LateHuman",
+            "isBot": false
+          }
+        ],
+        "controllers": [
+          {
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "ActorId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "ControllerPeerId": "a5ae7302-b7b9-47c2-a048-3c40b5b64b52",
+            "Generation": 5,
+            "Profile": {
+              "Type": 3,
+              "DisplayName": "Fast Recon",
+              "RequiredGunners": 2,
+              "RequiredRakZero": 1,
+              "RequiredTanks": 1,
+              "RetreatHealthFraction": 0.36,
+              "AttackReadinessSeconds": 2,
+              "DefenseRadiusInCells": 30,
+              "AssaultStallTimeoutSeconds": 45,
+              "Seed": 1234,
+              "DecisionIntervalSeconds": 1,
+              "ResourceReserve": 800,
+              "ScoutReconsiderSeconds": 8
+            },
+            "ProfileVersion": 1,
+            "ProfileFingerprint": "665DEB2D597E074413D3AFEC676778C22B7668774C4815E41DD36A84817D60D3"
+          },
+          {
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "ActorId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "ControllerPeerId": "a5ae7302-b7b9-47c2-a048-3c40b5b64b52",
+            "Generation": 8,
+            "Profile": {
+              "Type": 0,
+              "DisplayName": "Balanced Assault",
+              "RequiredGunners": 3,
+              "RequiredRakZero": 1,
+              "RequiredTanks": 1,
+              "RetreatHealthFraction": 0.45,
+              "AttackReadinessSeconds": 5,
+              "DefenseRadiusInCells": 36,
+              "AssaultStallTimeoutSeconds": 60,
+              "Seed": 1234,
+              "DecisionIntervalSeconds": 1,
+              "ResourceReserve": 800,
+              "ScoutReconsiderSeconds": 8
+            },
+            "ProfileVersion": 1,
+            "ProfileFingerprint": "77A52B569FADA87F109145FB8D1FD5459DB1F3555D0F114C0E4ABC725A35B961"
+          }
+        ],
+        "armies": [
+          {
+            "Id": "528839e6-bc9f-4c1a-a085-8c97e4c449e8",
+            "TeamId": "00000004-0000-0000-0000-000000000000",
+            "Resources": 8500,
+            "Owners": [
+              "528839e6-bc9f-4c1a-a085-8c97e4c449e8"
+            ],
+            "Permissions": {},
+            "Intelligence": {
+              "ShareExploredMinimap": false,
+              "ShareVisibleMinimap": false,
+              "ShareWorldVision": false
+            },
+            "Perks": [
+              {
+                "SourceId": "8df6ddbf-790e-40bc-8536-5257a4fbf80e",
+                "Grants": [
+                  {
+                    "Perk": 1,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  },
+                  {
+                    "Perk": 3,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  }
+                ]
+              }
+            ],
+            "SatelliteRecon": {
+              "Cooldown": 0,
+              "ActiveSeconds": 0
+            }
+          },
+          {
+            "Id": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "TeamId": "00000002-0000-0000-0000-000000000000",
+            "Resources": 800,
+            "Owners": [
+              "52fb5e6e-b859-4580-a47a-e0d2746ecff0"
+            ],
+            "Permissions": {},
+            "Intelligence": {
+              "ShareExploredMinimap": false,
+              "ShareVisibleMinimap": false,
+              "ShareWorldVision": false
+            },
+            "Perks": [
+              {
+                "SourceId": "a8ca1b5a-1465-4dea-ad68-9096e6201079",
+                "Grants": [
+                  {
+                    "Perk": 1,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  },
+                  {
+                    "Perk": 2,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  },
+                  {
+                    "Perk": 3,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  }
+                ]
+              }
+            ],
+            "SatelliteRecon": {
+              "Cooldown": 0,
+              "ActiveSeconds": 0
+            }
+          },
+          {
+            "Id": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "TeamId": "00000001-0000-0000-0000-000000000000",
+            "Resources": 800,
+            "Owners": [
+              "7665d30a-5f0d-4976-8131-5a4ae3aed837"
+            ],
+            "Permissions": {},
+            "Intelligence": {
+              "ShareExploredMinimap": false,
+              "ShareVisibleMinimap": false,
+              "ShareWorldVision": false
+            },
+            "Perks": [
+              {
+                "SourceId": "2bd7a653-6795-4e75-a26e-10252fbc6b0a",
+                "Grants": [
+                  {
+                    "Perk": 1,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  },
+                  {
+                    "Perk": 2,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  },
+                  {
+                    "Perk": 3,
+                    "Lifetime": 2,
+                    "Scope": 0,
+                    "Position": {},
+                    "Radius": 0
+                  }
+                ]
+              }
+            ],
+            "SatelliteRecon": {
+              "Cooldown": 0,
+              "ActiveSeconds": 0
+            }
+          },
+          {
+            "Id": "9d00354f-6143-4cff-84fc-8bc46beb5f0c",
+            "TeamId": "00000003-0000-0000-0000-000000000000",
+            "Resources": 10000,
+            "Owners": [
+              "9d00354f-6143-4cff-84fc-8bc46beb5f0c"
+            ],
+            "Permissions": {},
+            "Intelligence": {
+              "ShareExploredMinimap": false,
+              "ShareVisibleMinimap": false,
+              "ShareWorldVision": false
+            },
+            "Perks": [],
+            "SatelliteRecon": {
+              "Cooldown": 0,
+              "ActiveSeconds": 0
+            }
+          }
+        ],
+        "units": [
+          {
+            "UnitId": "3583d60d-2274-492b-ac4e-319664678902",
+            "type": "tiberium-source",
+            "ArmyId": null,
+            "x": 60.5,
+            "y": 0,
+            "z": 60.5,
+            "HitPoints": 300,
+            "completed": true
+          },
+          {
+            "UnitId": "7782bb3c-ea49-44a8-bd70-0aa0e0711130",
+            "type": "gdi-bulldozer",
+            "ArmyId": "528839e6-bc9f-4c1a-a085-8c97e4c449e8",
+            "x": 97.01759,
+            "y": 0,
+            "z": 94.47835,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "bfe3e19e-eb4f-48ee-a02e-db8a0b911059",
+            "type": "",
+            "ArmyId": "528839e6-bc9f-4c1a-a085-8c97e4c449e8",
+            "x": 97.01759,
+            "y": 0,
+            "z": 94.47835,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "1b2c4da5-202c-4fec-bc2e-e149368c8f2b",
+            "type": "gdi-bulldozer",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 22.494247,
+            "y": 0,
+            "z": 11.927155,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "0b965b08-130f-4395-8e99-0038b230f6e5",
+            "type": "",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 22.494247,
+            "y": 0,
+            "z": 11.927155,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "7946e897-f6ec-486f-897a-7c13a1fe1f86",
+            "type": "gdi-bulldozer",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 22.494247,
+            "y": 0,
+            "z": 83.92718,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "9fac41c1-19d3-42cf-a85b-fa8353c2e0ba",
+            "type": "",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 22.494247,
+            "y": 0,
+            "z": 83.92718,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "a5524594-054b-4bdc-b968-35f0ea04f3b5",
+            "type": "gdi-bulldozer",
+            "ArmyId": "9d00354f-6143-4cff-84fc-8bc46beb5f0c",
+            "x": 94.5,
+            "y": 0,
+            "z": 22.5,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "8619f254-6ffe-4d3a-a7e3-feacd9219676",
+            "type": "",
+            "ArmyId": "9d00354f-6143-4cff-84fc-8bc46beb5f0c",
+            "x": 94.5,
+            "y": 0,
+            "z": 22.5,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "2bd7a653-6795-4e75-a26e-10252fbc6b0a",
+            "type": "gdi-base",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 18.5,
+            "y": 0,
+            "z": 90.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "a8ca1b5a-1465-4dea-ad68-9096e6201079",
+            "type": "gdi-base",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 18.5,
+            "y": 0,
+            "z": 18.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "8df6ddbf-790e-40bc-8536-5257a4fbf80e",
+            "type": "gdi-base",
+            "ArmyId": "528839e6-bc9f-4c1a-a085-8c97e4c449e8",
+            "x": 103.5,
+            "y": 0,
+            "z": 94.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "598c0a0b-ce50-427e-8ff8-f5deab2a5c37",
+            "type": "reaktor",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 26.5,
+            "y": 0,
+            "z": 88.5,
+            "HitPoints": 500,
+            "completed": true
+          },
+          {
+            "UnitId": "73c6f005-02b3-4103-8750-c4e26a9775a4",
+            "type": "reaktor",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 26.5,
+            "y": 0,
+            "z": 16.5,
+            "HitPoints": 500,
+            "completed": true
+          },
+          {
+            "UnitId": "540ed019-7b36-4e10-8a1e-9227d561940e",
+            "type": "tiberium-refinery",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 18.5,
+            "y": 0,
+            "z": 80.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "8cf53a51-6687-4cf6-a073-f0459ef8b404",
+            "type": "tiberium-refinery",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 18.5,
+            "y": 0,
+            "z": 8.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "bb0b45c0-0e6e-4977-a51a-aa6234939204",
+            "type": "harvester",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 18.5,
+            "y": 0,
+            "z": 76.5,
+            "HitPoints": 900,
+            "completed": false
+          },
+          {
+            "UnitId": "671b93eb-7008-4e79-8292-a335a343dbc9",
+            "type": "",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 18.5,
+            "y": 0,
+            "z": 76.5,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "4b069c7c-3af2-43b8-a3e7-c17564793400",
+            "type": "harvester",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 18.5,
+            "y": 0,
+            "z": 4.5,
+            "HitPoints": 900,
+            "completed": false
+          },
+          {
+            "UnitId": "40deb35d-cdcb-4ed7-bdf9-329da919eee5",
+            "type": "",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 18.5,
+            "y": 0,
+            "z": 4.5,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "3d8825f2-b10f-4185-8567-fdf525b377dd",
+            "type": "gdi-barracks",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 15.5,
+            "y": 0,
+            "z": 99.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "4cb904f0-746e-4b09-a372-913457b56cd9",
+            "type": "gdi-barracks",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 15.5,
+            "y": 0,
+            "z": 27.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "947d1836-40cf-4b83-8b90-37f5f502164d",
+            "type": "gunner",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 11.500006,
+            "y": 0,
+            "z": 95.663315,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "89e608e3-b87b-4cb4-b6c0-569b4479ec83",
+            "type": "gunner",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 11.500008,
+            "y": 0,
+            "z": 23.63813,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "0831004a-d3ff-4a52-bd50-31227d36d9aa",
+            "type": "gunner",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 96.56016,
+            "y": 0,
+            "z": 92.414055,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "f66e7530-e160-4817-bed0-87760b0bae7d",
+            "type": "gunner",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 10.985818,
+            "y": 0,
+            "z": 23.723906,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "1a0bbdad-9db8-4789-b15a-b84d84de3fa1",
+            "type": "gunner",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 5.6027484,
+            "y": 0,
+            "z": 114.34833,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "492d32bc-7d0d-4fe4-8129-d607afffd29b",
+            "type": "gunner",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 3.606447,
+            "y": 0,
+            "z": 126.3498,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "f653526b-2f84-4ff3-b55e-b7b251f62059",
+            "type": "vehicle-factory",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 29.5,
+            "y": 0,
+            "z": 101.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "07540d92-9abd-4835-bf79-a1240917b8ab",
+            "type": "vehicle-factory",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 29.5,
+            "y": 0,
+            "z": 29.5,
+            "HitPoints": 2500,
+            "completed": true
+          },
+          {
+            "UnitId": "ea4bcc80-662b-44a9-bc17-60fa48f363d6",
+            "type": "squad-leader",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 11.445183,
+            "y": 0,
+            "z": 94.382614,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "7c42ee2d-bf15-4fe0-81e7-6e5e7079250a",
+            "type": "squad-leader",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 10.31881,
+            "y": 0,
+            "z": 22.582933,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "059775a0-23c4-4fd7-857c-bbf11dbafba1",
+            "type": "medic",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 10.5080185,
+            "y": 0,
+            "z": 94.61186,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "16e03877-f01d-4c24-a379-a3de61d86884",
+            "type": "medic",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 11.430324,
+            "y": 0,
+            "z": 22.337643,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "b46aa89f-384c-4b52-bea7-a3cfeba14faa",
+            "type": "engineer",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 15.5,
+            "y": 0,
+            "z": 105.5,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "443a8054-9cd4-46d4-a878-075c803cf378",
+            "type": "engineer",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 15.5,
+            "y": 0,
+            "z": 33.5,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "9e9e79fd-d32b-4e0c-a25d-d8ef1ef541ba",
+            "type": "tank",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 27.9,
+            "y": 0,
+            "z": 110.3,
+            "HitPoints": 500,
+            "completed": false
+          },
+          {
+            "UnitId": "2a3025ea-c0e3-4746-b9bd-0da75d5e3c27",
+            "type": "",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 27.9,
+            "y": 0,
+            "z": 110.3,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "63267464-c342-4637-bda6-4bca10bfb758",
+            "type": "tank",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 27.9,
+            "y": 0,
+            "z": 38.3,
+            "HitPoints": 500,
+            "completed": false
+          },
+          {
+            "UnitId": "ccc02d83-a141-4ded-b792-1114d57cd0c6",
+            "type": "",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 27.9,
+            "y": 0,
+            "z": 38.3,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "a075e044-e417-4c57-8e90-629161b883ea",
+            "type": "reaktor",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 26.5,
+            "y": 0,
+            "z": 77.5,
+            "HitPoints": 500,
+            "completed": true
+          },
+          {
+            "UnitId": "9e997e24-0c00-4aad-bdb4-d7e16036b65e",
+            "type": "reaktor",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 26.5,
+            "y": 0,
+            "z": 5.5,
+            "HitPoints": 500,
+            "completed": true
+          },
+          {
+            "UnitId": "70ff03a2-28e9-4f2d-9499-5bb0d347375c",
+            "type": "gunner",
+            "ArmyId": "7665d30a-5f0d-4976-8131-5a4ae3aed837",
+            "x": 11.496873,
+            "y": 0,
+            "z": 96.05086,
+            "HitPoints": 100,
+            "completed": false
+          },
+          {
+            "UnitId": "80a02135-3811-43db-8333-99ddecebaf2f",
+            "type": "gunner",
+            "ArmyId": "52fb5e6e-b859-4580-a47a-e0d2746ecff0",
+            "x": 9.854167,
+            "y": 0,
+            "z": 24.729649,
+            "HitPoints": 100,
+            "completed": false
+          }
+        ],
+        "hostTime": 300.30332820001155
+      },
+      "hostMetrics": {
+        "cpuSeconds": 27.25,
+        "workingSetBytes": 102817792,
+        "metrics": {
+          "frameWorkMs": {
+            "Count": 10457,
+            "Mean": 2.665664808262411,
+            "P95": 5.8394,
+            "P99": 7.8534,
+            "Maximum": 223.3757,
+            "SampleCount": 10457
+          },
+          "frameIntervalMs": {
+            "Count": 10457,
+            "Mean": 28.7179237066081,
+            "P95": 34.0607,
+            "P99": 38.1078,
+            "Maximum": 100,
+            "SampleCount": 10457
+          },
+          "decisionsMs": {
+            "Count": 10457,
+            "Mean": 0.3281350482930068,
+            "P95": 0.5677,
+            "P99": 1.8649,
+            "Maximum": 100.5361,
+            "SampleCount": 10457
+          },
+          "requestReplyMs": {
+            "Count": 173,
+            "Mean": 761.2335248554914,
+            "P95": 2458.9756,
+            "P99": 39035.6157,
+            "Maximum": 57054.5325,
+            "SampleCount": 173
+          },
+          "heartbeatRoundTripMs": {
+            "Count": 0,
+            "Mean": 0,
+            "P95": 0,
+            "P99": 0,
+            "Maximum": 0,
+            "SampleCount": 0
+          },
+          "MaximumInbox": 4,
+          "MaximumControllers": 2,
+          "Snapshots": 0,
+          "MatchStarts": 0,
+          "Rejections": 0,
+          "RequestCount": 209,
+          "sentBytes": 210830754,
+          "receivedBytes": 138616,
+          "scopes": [
+            {
+              "Name": "AI.ArmoredSupport",
+              "Calls": 7911,
+              "TotalMilliseconds": 286.1595000000181,
+              "MaximumMilliseconds": 54.1039,
+              "AllocatedBytes": 52339296
+            },
+            {
+              "Name": "AI.ArmyGoals",
+              "Calls": 19096,
+              "TotalMilliseconds": 449.00940000001293,
+              "MaximumMilliseconds": 62.4524,
+              "AllocatedBytes": 39779640
+            },
+            {
+              "Name": "AI.BaseDefense",
+              "Calls": 7911,
+              "TotalMilliseconds": 63.38640000000117,
+              "MaximumMilliseconds": 22.6124,
+              "AllocatedBytes": 1871768
+            },
+            {
+              "Name": "AI.BuildSiteSearch",
+              "Calls": 31,
+              "TotalMilliseconds": 524.2167,
+              "MaximumMilliseconds": 56.0843,
+              "AllocatedBytes": 99225744
+            },
+            {
+              "Name": "AI.DefensePlanner",
+              "Calls": 6676,
+              "TotalMilliseconds": 13.959500000000153,
+              "MaximumMilliseconds": 0.2771,
+              "AllocatedBytes": 0
+            },
+            {
+              "Name": "AI.Infrastructure",
+              "Calls": 6676,
+              "TotalMilliseconds": 327.90650000000136,
+              "MaximumMilliseconds": 45.8952,
+              "AllocatedBytes": 30761200
+            },
+            {
+              "Name": "AI.OrderProgress",
+              "Calls": 19096,
+              "TotalMilliseconds": 68.24069999999723,
+              "MaximumMilliseconds": 17.8321,
+              "AllocatedBytes": 769776
+            },
+            {
+              "Name": "AI.Player",
+              "Calls": 20914,
+              "TotalMilliseconds": 3385.894200000017,
+              "MaximumMilliseconds": 62.5683,
+              "AllocatedBytes": 229890656
+            },
+            {
+              "Name": "AI.ProductionPlan",
+              "Calls": 13370,
+              "TotalMilliseconds": 176.44890000001416,
+              "MaximumMilliseconds": 41.8514,
+              "AllocatedBytes": 23336448
+            },
+            {
+              "Name": "AI.Scouting",
+              "Calls": 7911,
+              "TotalMilliseconds": 281.5737000000008,
+              "MaximumMilliseconds": 4.4871,
+              "AllocatedBytes": 14690928
+            },
+            {
+              "Name": "AI.ScoutSearch",
+              "Calls": 27287,
+              "TotalMilliseconds": 480.570499999984,
+              "MaximumMilliseconds": 9.9044,
+              "AllocatedBytes": 10381984
+            },
+            {
+              "Name": "AI.SquadAssault",
+              "Calls": 528,
+              "TotalMilliseconds": 37.47940000000061,
+              "MaximumMilliseconds": 21.0845,
+              "AllocatedBytes": 434456
+            },
+            {
+              "Name": "AI.SquadPreparation",
+              "Calls": 7384,
+              "TotalMilliseconds": 110.80970000000099,
+              "MaximumMilliseconds": 10.1384,
+              "AllocatedBytes": 10748640
+            },
+            {
+              "Name": "AI.ThreatAssessment",
+              "Calls": 7911,
+              "TotalMilliseconds": 30.28740000000062,
+              "MaximumMilliseconds": 3.164,
+              "AllocatedBytes": 370296
+            },
+            {
+              "Name": "Host.GotoPlanningSlice",
+              "Calls": 2554,
+              "TotalMilliseconds": 897.0553999999981,
+              "MaximumMilliseconds": 9.1999,
+              "AllocatedBytes": 58893072
+            },
+            {
+              "Name": "Host.GotoPublish",
+              "Calls": 75,
+              "TotalMilliseconds": 37.45230000000001,
+              "MaximumMilliseconds": 13.5114,
+              "AllocatedBytes": 1793680
+            },
+            {
+              "Name": "Host.Request.AttackRequest",
+              "Calls": 180,
+              "TotalMilliseconds": 2.755999999999998,
+              "MaximumMilliseconds": 0.1644,
+              "AllocatedBytes": 150624
+            },
+            {
+              "Name": "Host.Request.AttackTargetRequest",
+              "Calls": 26,
+              "TotalMilliseconds": 7.625199999999999,
+              "MaximumMilliseconds": 4.0325,
+              "AllocatedBytes": 392704
+            },
+            {
+              "Name": "Host.Request.BuildRequest",
+              "Calls": 33,
+              "TotalMilliseconds": 237.08499999999998,
+              "MaximumMilliseconds": 33.3152,
+              "AllocatedBytes": 29424928
+            },
+            {
+              "Name": "Host.Request.EnterUnitRequest",
+              "Calls": 7,
+              "TotalMilliseconds": 7.828400000000001,
+              "MaximumMilliseconds": 6.4861,
+              "AllocatedBytes": 89848
+            },
+            {
+              "Name": "Host.Request.GotoRequest",
+              "Calls": 76,
+              "TotalMilliseconds": 26.34309999999999,
+              "MaximumMilliseconds": 11.1534,
+              "AllocatedBytes": 953792
+            },
+            {
+              "Name": "Host.Request.HarvestRequest",
+              "Calls": 6,
+              "TotalMilliseconds": 19.576200000000004,
+              "MaximumMilliseconds": 18.4967,
+              "AllocatedBytes": 190256
+            },
+            {
+              "Name": "Host.Request.RequestPlayerUpdate",
+              "Calls": 1,
+              "TotalMilliseconds": 6.8254,
+              "MaximumMilliseconds": 6.8254,
+              "AllocatedBytes": 6800
+            },
+            {
+              "Name": "Host.Request.SetRallyPointRequest",
+              "Calls": 4,
+              "TotalMilliseconds": 4.714700000000001,
+              "MaximumMilliseconds": 4.2892,
+              "AllocatedBytes": 47288
+            },
+            {
+              "Name": "Host.Request.StopRequest",
+              "Calls": 5,
+              "TotalMilliseconds": 1.2882999999999998,
+              "MaximumMilliseconds": 0.7307,
+              "AllocatedBytes": 73480
+            },
+            {
+              "Name": "Host.Request.TrainUnitRequest",
+              "Calls": 33,
+              "TotalMilliseconds": 9.951300000000002,
+              "MaximumMilliseconds": 3.6385,
+              "AllocatedBytes": 465712
+            },
+            {
+              "Name": "Host.Request.UnitActionRequest",
+              "Calls": 2,
+              "TotalMilliseconds": 16.307,
+              "MaximumMilliseconds": 15.8719,
+              "AllocatedBytes": 39464
+            },
+            {
+              "Name": "Path.JobSlice",
+              "Calls": 5866,
+              "TotalMilliseconds": 699.5005999999984,
+              "MaximumMilliseconds": 13.5407,
+              "AllocatedBytes": 235765384
+            },
+            {
+              "Name": "Path.PlanningUpdate",
+              "Calls": 10457,
+              "TotalMilliseconds": 2216.5413000000403,
+              "MaximumMilliseconds": 13.5542,
+              "AllocatedBytes": 308907144
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

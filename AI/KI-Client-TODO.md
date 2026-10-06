@@ -1,6 +1,6 @@
 ﻿# KI-Client-TODO: verteilte Controller und Verhaltenskonfiguration
 
-Stand: 06.10.2026. Vom Benutzer als derzeit wichtigster Umbau priorisiert. Aufgaben 01 bis 08 sind implementiert; die übrigen Punkte bleiben offen.
+Stand: 06.10.2026. Vom Benutzer als derzeit wichtigster Umbau priorisiert. Aufgaben 01 bis 09 und 11 sind implementiert. Aufgabe 10 bleibt mangels ausreichendem Nutzenbefund zurückgestellt.
 
 ## Ziel und Grenzen
 
@@ -135,27 +135,35 @@ Erledigt heißt implementiert, angemessen geprüft und mit Ergebnis/Grenzen hier
 
 ### 09 – Performance und Multiplayer-Robustheit vergleichen
 
-- [ ] Offen. Priorität: hoch. Nach 08.
+- [x] Erledigt am 06.10.2026. Priorität: hoch. Nach 08.
 - Gleiche Karte, Seed, Profile und vergleichbare Spielphasen messen: alle KI auf Host; eine remote; mehrere remote. Entscheidungszeiten, Frame-Ausreißer, Host-Pfadsuche, Requestaufkommen, Netzlatenz und Kosten auf KI-Rechnern getrennt ausweisen.
 - Mehrere Armies pro Client mit gemeinsamen Arbeitsbudgets testen. Gesamte Welt wird weiterhin repliziert; zusätzliche Clients verursachen Netzwerk-/Replikationskosten.
 - Langzeittests mit Disconnect, wiederholtem game-start, spätem Beitritt, Request-Ablehnungen und veränderten Gebäuden/Perks durchführen. Neben Performance auch tatsächlichen Spielfortschritt prüfen.
 - Fertig wenn ein reproduzierbarer Vergleich mit Grenzen vorliegt. Erst danach entscheiden, ob automatische Verteilung ausreichend Nutzen bringt.
 
+- Ergebnis: Reproduzierbares Mehrprozess-Benchmarkskript mit realen Modellen und Produktions-Bots, opt-in JSON-Messungen für Update-/KI-/Pfadsucharbeit, CPU/TCP, Requestantworten und separaten Heartbeat-Roundtrip. Zwei Armies teilen auf einem Bot das vorhandene Vorplanungsbudget. Vier Varianten zweimal mit gleicher Karte/Profil/Seed geprüft; tatsächlicher Bau-/Produktionsfortschritt gemessen.
+- Validierung: Build ohne Warnungen/Fehler, 1.881 Checks bestanden. Stressläufe über 300 und 180 Sekunden: Disconnect/passiver Reconnect/Neuzuweisung, später Observer-Beitritt, zwei Spielneustarts, abgelehnter Token-/Army-Befehl und zerstörte Gebäude/Perk-Provider; neue Bauaufträge in jeder Phase, replizierte Neustarts bestätigt.
+- Befund: Ein gemeinsamer Bot senkt Host-Entscheidungsarbeit; vollständige Weltkopien erhöhen Gesamt-CPU und TCP-Kosten. Kein ausreichender positiver Nutzenbefund für automatische Verteilung. Loopback/grafiklose Messung, kein mehrstündiger Test oder FPS-Versprechen; Cargo blieb 0. Ergebnisse, Rohdaten und Reproduktion: [KI-Client-Performance.md](KI-Client-Performance.md).
+
 ### 10 – Optionale automatische Zuweisung
 
-- [ ] Offen. Priorität: später. Nach 09 und positivem Nutzenbefund.
+- [ ] Zurückgestellt. Priorität: später. Nach 09 und positivem Nutzenbefund; aktuell nicht ausreichend belegt. Manuelle Zuweisung bleibt bestehen. Aufgabe 11 ist davon unabhängig.
 - Clients melden freiwillige KI-Kapazität; Host verteilt freie Controller mit stabiler Zuweisung und Rückfall. Kein häufiges Migrieren jeder kleinen Laständerung.
 - Nutzer kann Übernahme deaktivieren oder begrenzen. Gemeldete Kapazität ist eine Planungshilfe; Host bleibt Entscheider. Langsame/überlastete Clients nicht beliebig mit weiteren Armies belasten.
 - Fertig wenn Zuweisung nachvollziehbar ist und alle Sicherheits-/Lifecycle-Regeln aus 05/07 weiter gelten.
 
 ### 11 – Dedicated-Server ohne Grafik bereitstellen
 
-- [ ] Offen. Priorität: anschließend. Nach 08 und 09; unabhängig von der optionalen automatischen Zuweisung in 10. Vom Benutzer ausdrücklich als späteres Ziel festgehalten.
+- [x] Erledigt am 06.10.2026. Priorität: anschließend. Nach 08 und 09; unabhängig von der optionalen automatischen Zuweisung in 10. Vom Benutzer ausdrücklich als späteres Ziel festgehalten.
 - Einen konkreten Dedicated-Server-Arbeitsplan erstellen und anschließend umsetzen: eigenständiger Host-Prozess ohne Fenster, GraphicsDevice, Renderer oder HUD. Vom Bot-Client unterscheiden: Der Server betreibt die autoritative Simulation, der Bot-Client nur zugewiesene KI-Entscheidungen.
 - Gemeinsame Simulation, Kataloge, Modell-Metadaten und Netzwerkregeln wiederverwenden; keine zweite Gameplay-Implementierung. Projektaufteilung erst anhand der dann verbleibenden Grafik-/Globals-Abhängigkeiten festlegen.
 - Serverkonfiguration und Startargumente für Karte, Port, Spieler-/KI-Slots und Spielstartregeln vorsehen. Kartenladen, Session-Lifecycle, Late Join, Disconnect sowie kontrolliertes Beenden und Diagnose ohne interaktive Spielkonsole ermöglichen.
 - Hostlokale und entfernte KI unterstützen; vorhandene Controller-Zuweisung und Rückfallregeln übernehmen.
 - Fertig wenn ein separater Server-Prozess ein Multiplayer-Spiel mit menschlichen Clients und KI zuverlässig betreibt. Mehrprozess- und Langzeittests dokumentieren.
+
+- Ergebnis: Eigenständiger autoritativer Prozess `RTS.dll --dedicated-server <config.json>` ohne Game1/RTSGame, GraphicsDevice, Renderer oder HUD. Versionierte Serverconfig für PNG-/JSON-Karte, festen Port, menschliche Slots, KI-Profile und Startregel; lokale stdin-/Datei-Adminbefehle, Snapshots/Late Join, Lobbyfreeze, map-publish vor Matchreset, kontrolliertes Beenden und Diagnose. Gemeinsame Host-/Pricing-/Import-/KI-Dienste; CommandCenter-Ziele gemeinsam ausgezogen. Eigene Projektaufteilung bewusst erst später, kein zweites Gameplay.
+- Validierung: Build ohne Warnungen/Fehler, 1.913 Checks erfolgreich. Produktions-Server + normaler Spieler-Vertrag + Produktions-Bot in echten Prozessen über 240 und 300 Sekunden: tatsächlicher Bau/Produktion und Bewegung, spätes Join, volle Slots, fremde Befehle, Bot-Abbruch/Host-Rückfall/erneute Zuweisung sowie zwei Matchneustarts und sauberes Stop. In jeder Matchphase neue Bauaufträge, Profil/Seed/Fingerprint erhalten.
+- Betrieb, Arbeitsplan, Grenzen und Rohdaten: [Dedicated-Server.md](Dedicated-Server.md). Windows/Loopback/grafiklose Spieler-Verbindungen; keine grafische oder mehrstündige LAN-/WAN-Abnahme. Optionale automatische Verteilung bleibt zurückgestellt.
 
 ## Erste Config-Dateien als Ziel für Aufgabe 02
 
@@ -165,4 +173,4 @@ Erledigt heißt implementiert, angemessen geprüft und mit Ergebnis/Grenzen hier
 
 ## Nächster Auftrag
 
-„Arbeite den nächsten offenen Punkt aus AI/KI-Client-TODO.md vollständig ab.“ beginnt bei 09. Die Profile werden bereits in 02 auf dem bestehenden Host-KI-Betrieb nutzbar; sie müssen nicht bis zum fertigen Bot-Prozess warten.
+„Arbeite den nächsten offenen Punkt aus AI/KI-Client-TODO.md vollständig ab.“ hat aktuell keinen weiteren umsetzbaren offenen Punkt. Punkt 10 bleibt bis zu einem positiven Nutzenbefund zurückgestellt; Dedicated-Server (11) ist abgeschlossen. Die Profile werden bereits in 02 auf dem bestehenden Host-KI-Betrieb nutzbar; sie müssen nicht bis zum fertigen Bot-Prozess warten.

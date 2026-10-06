@@ -70,6 +70,7 @@ public sealed partial class NetworkHandler : IDisposable
             pending.State == LocalRequestState.Pending) return pending;
         var receipt = _localRequests.GetValue(request, message => new(message, SessionGeneration));
         _requestReceipts[request.RequestId.Value] = receipt;
+        RunDiagnostics?.Request(request.RequestId.Value);
         if (purchase) _pendingAIPurchases[key] = receipt;
         return receipt;
     }
@@ -135,7 +136,9 @@ public sealed partial class NetworkHandler : IDisposable
     private readonly Stopwatch _localClock = Stopwatch.StartNew();
     private double _hostTimeOffset;
 
+    public ClientRunDiagnostics? RunDiagnostics { get; init; }
     public BotControllerOffer? BotOffer { get; init; }
+    public Func<string, BotControllerOffer?, string?>? JoinAdmission { get; init; }
     public Guid LocalPeerId { get; } = Guid.NewGuid();
     public string DisplayName { get; set; }
     public int? HostingPort => IsHost && _listener?.LocalEndpoint is IPEndPoint endpoint ? endpoint.Port : null;
@@ -216,8 +219,9 @@ public sealed partial class NetworkHandler : IDisposable
         return $"{name}{number:00}";
     }
 
-    public async Task<int> CreateSessionAsync(string sessionName, CancellationToken cancellationToken = default)
+    public async Task<int> CreateSessionAsync(string sessionName, CancellationToken cancellationToken = default, int? port = null)
     {
+        if (port is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(port));
         Disconnect();
 
         SessionName = ValidateDisplayName(sessionName);
@@ -226,11 +230,11 @@ public sealed partial class NetworkHandler : IDisposable
         Status = NetworkConnectionStatus.Hosting;
         _sessionAccepted = true;
         _cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        int port = StartSessionListener();
-        _discovery.StartAdvertising(SessionName, DisplayName, port);
+        int actualPort = StartSessionListener(port);
+        _discovery.StartAdvertising(SessionName, DisplayName, actualPort);
         _ = AcceptClientsAsync(_listener!, SessionGeneration, _cancellation.Token);
         await Task.CompletedTask;
-        return port;
+        return actualPort;
     }
 
     public async Task JoinSessionAsync(string sessionName, CancellationToken cancellationToken = default)
@@ -433,7 +437,7 @@ public sealed partial class NetworkHandler : IDisposable
         if (generation != SessionGeneration) { client.Dispose(); return; }
         var connection = new NetworkConnection(client, token,
             message => EnqueueInbound(new(generation, client, message)),
-            error => EnqueueInbound(new(generation, client, null, Closed: true, Error: error)));
+            error => EnqueueInbound(new(generation, client, null, Closed: true, Error: error)), RunDiagnostics is { } metrics ? metrics.Wire : null);
         if (!_connections.TryAdd(client, connection)) connection.Dispose();
     }
 
@@ -514,6 +518,12 @@ public sealed partial class NetworkHandler : IDisposable
         if (message.Type == NetworkMessageType.MemberJoined && message.DisplayName is not null)
             _peerDisplayNames[message.SenderId] = message.DisplayName;
         if (message.Type == NetworkMessageType.MemberLeft) _peerDisplayNames.TryRemove(message.SenderId, out _);
+        if (message.Type == NetworkMessageType.AIControllerHeartbeat)
+        {
+            if (message.SenderId == _hostPeerId && message.TargetId == LocalPeerId && message.AIControllerArmyId is Guid army)
+                RunDiagnostics?.HeartbeatReply(army, message.AIControllerGeneration, message.AIUpdateSequence);
+            return;
+        }
         if (message.Type == NetworkMessageType.AIControllerAssignmentCommand)
         { if (message.SenderId == _hostPeerId && message.AIControllerAssignment is { } assignment)
             { AIControllers.Apply(assignment); AbandonSupersededAIRequests(assignment); AIControllerAssignmentChanged?.Invoke(assignment); } return; }
@@ -543,6 +553,7 @@ public sealed partial class NetworkHandler : IDisposable
                 RejectJoin(client, "Incompatible build, invalid identity or duplicate player name.");
                 return;
             }
+            if (JoinAdmission?.Invoke(name, message.BotOffer) is string rejection) { RejectJoin(client, rejection); return; }
             if (message.BotOffer is { } offer && !offer.IsValid) { RejectJoin(client, "Invalid bot capabilities."); return; }
             try
             {
@@ -599,6 +610,9 @@ public sealed partial class NetworkHandler : IDisposable
             MessageReceived?.Invoke(message with { PlayerId = sender.Id, ControllerPeerId = sender.Id });
     }
 
+    internal Task SendToPeerAsync(Guid peerId, NetworkMessage message) =>
+        _members.TryGetValue(peerId, out var peer) ? SendAsync(peer.Client, message) : Task.CompletedTask;
+
     private void RejectJoin(TcpClient client, string error)
     {
         _ = SendAsync(client, new NetworkMessage(NetworkMessageType.JoinRejected, LocalPeerId, Error: error));
@@ -617,9 +631,9 @@ public sealed partial class NetworkHandler : IDisposable
         return normalizedName;
     }
 
-    private int StartSessionListener()
+    private int StartSessionListener(int? requestedPort)
     {
-        for (int port = SessionPortStart; port <= SessionPortEnd; port++)
+        for (int port = requestedPort ?? SessionPortStart; port <= (requestedPort ?? SessionPortEnd); port++)
         {
             try
             {
@@ -634,7 +648,7 @@ public sealed partial class NetworkHandler : IDisposable
             }
         }
 
-        throw new InvalidOperationException($"No free session port in range {SessionPortStart}-{SessionPortEnd}.");
+        throw new InvalidOperationException($"No free session port in range {requestedPort ?? SessionPortStart}-{requestedPort ?? SessionPortEnd}.");
     }
 
     private async Task SendCommandAsync(NetworkMessage message, CancellationToken cancellationToken)

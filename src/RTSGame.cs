@@ -12,6 +12,7 @@ namespace RTS;
 public class RTSGame
 {
     public LocalBotProcesses LocalBots { get; }
+    public LocalDedicatedServer LocalServer { get; }
     public GameWorld World { get; }
     public PlayerHandler LocalPlayer => Globals.LocalPlayer;
     private KeyboardState _previousKeyboardState;
@@ -117,6 +118,8 @@ public class RTSGame
         Network.SetHostTimeProvider(() => NetworkHost.HostTime);
         NetworkClient = new NetworkClient(Network);
         LocalBots = new LocalBotProcesses(Network, message => Globals.Console.Print(message));
+        LocalServer = new LocalDedicatedServer(message => Globals.Console.Print(message));
+        LocalServer.Ready += port => _ = Network.JoinSessionAsync("127.0.0.1", port);
         _consoleCommands = new ConsoleCommands(Globals.Console, this);
 
         Globals.CellHighlightEffect = new BasicEffect(Globals.GraphicsDevice)
@@ -271,47 +274,8 @@ public class RTSGame
         }
     }
 
-    internal bool ApplyCommandCenterGoal(CommandCenter commandCenter, UnitActionType actionType)
-    {
-        if (!Network.IsHost || !commandCenter.IsOperational || commandCenter.ArmyId is not Guid armyId ||
-            Armies.Find(armyId) is not Army army)
-            return false;
-
-        if (actionType == UnitActionType.AIStopGoals)
-        {
-            if (_manualArmyGoals.Remove(armyId, out var running))
-                running.Controller.Stop();
-            _manualArmyScouts.Remove(armyId);
-            return true;
-        }
-
-        Player? actor = _players.FirstOrDefault(player => army.OwnerPlayerIds.Contains(player.Id));
-        if (actor is null)
-            return false;
-        if (actionType == UnitActionType.AIStartScouting)
-        {
-            ScoutingController scouting = new(World, actor.Id);
-            scouting.Start(World.Units.Units.Where(unit => unit.ArmyId == armyId));
-            _manualArmyScouts[armyId] = scouting;
-            return true;
-        }
-
-        AIArmyGoal goal = actionType switch
-        {
-            UnitActionType.AIStartReactor => AIArmyGoal.BuildReactor,
-            UnitActionType.AIStartRefinery => AIArmyGoal.BuildRefinery,
-            UnitActionType.AIStartEconomy => AIArmyGoal.EstablishEconomy,
-            _ => AIArmyGoal.None
-        };
-        if (goal == AIArmyGoal.None)
-            return false;
-
-        if (!_manualArmyGoals.TryGetValue(armyId, out var runningGoal))
-            runningGoal = (actor, new ArmyGoalController());
-        runningGoal.Controller.Start(goal);
-        _manualArmyGoals[armyId] = runningGoal;
-        return true;
-    }
+    internal bool ApplyCommandCenterGoal(CommandCenter center, UnitActionType action) =>
+        ManualArmyGoals.Apply(center, action, World, Network, Armies, _players, _manualArmyGoals, _manualArmyScouts);
 
     private void UpdateConsole(GameTime gameTime)
     {
@@ -390,6 +354,7 @@ public class RTSGame
         Globals.Telemetry.FramesProcessed++;
         Network.Update();
         LocalBots.Update();
+        LocalServer.Update();
         if (Network.Status is NetworkConnectionStatus.Connecting or NetworkConnectionStatus.Synchronizing)
             return;
 

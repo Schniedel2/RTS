@@ -16,7 +16,7 @@ public sealed record BotClientConfig(
     [property: JsonRequired] string ServerAddress,
     [property: JsonRequired] int Port,
     [property: JsonRequired] string DisplayName,
-    string? ProposedProfileId = null, int MaximumArmies = 1, bool Reconnect = true)
+    string? ProposedProfileId = null, int MaximumArmies = 1, bool Reconnect = true, string? DiagnosticsPath = null)
 {
     public static BotClientConfig Load(string path)
     {
@@ -41,6 +41,7 @@ public sealed record BotClientConfig(
         if (Port is < 1 or > 65535) throw new InvalidDataException($"{source}: $.port must be in 1..65535.");
         if (string.IsNullOrWhiteSpace(DisplayName) || DisplayName.Length > 32 || DisplayName != DisplayName.Trim()) throw new InvalidDataException($"{source}: $.displayName must contain 1..32 characters without surrounding whitespace.");
         if (MaximumArmies is < 1 or > 32) throw new InvalidDataException($"{source}: $.maximumArmies must be in 1..32.");
+        if (DiagnosticsPath is not null && string.IsNullOrWhiteSpace(DiagnosticsPath)) throw new InvalidDataException($"{source}: $.diagnosticsPath must be a nonempty file path.");
         if (ProposedProfileId is not null && !Enum.GetValues<AIStrategyProfileType>().Any(t => AIProfileCatalog.Id(t) == ProposedProfileId))
             throw new InvalidDataException($"{source}: $.proposedProfileId is unknown.");
     }
@@ -56,7 +57,9 @@ public static class BotClient
             var config = BotClientConfig.Load(Path.GetFullPath(path));
             Globals.MeshHandler = new MeshHandler();
             Globals.MeshHandler.LoadMeshes(Globals.ModelsDirectory, loadTextures: false);
-            using var network = new NetworkHandler(config.DisplayName) { BotOffer = new(config.MaximumArmies, config.ProposedProfileId) };
+            var diagnostics = config.DiagnosticsPath is null ? null : new ClientRunDiagnostics();
+            if (diagnostics is not null) { PerformanceMeasurements.Enabled = true; PerformanceMeasurements.Reset(); }
+            using var network = new NetworkHandler(config.DisplayName) { BotOffer = new(config.MaximumArmies, config.ProposedProfileId), RunDiagnostics = diagnostics };
             network.Diagnostic += text => System.Console.WriteLine("[Network] " + text);
             using var cancellation = new CancellationTokenSource();
             ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; cancellation.Cancel(); };
@@ -67,8 +70,10 @@ public static class BotClient
                 NetworkInput? input = null;
                 using var runtime = new RemoteAIRuntime(config.MaximumArmies);
                 network.MessageReceived += message => {
+                    if (diagnostics is not null && message.Type == NetworkMessageType.StartMultiplayerGameCommand) diagnostics.MatchStarts++;
                     if (message.Type == NetworkMessageType.SessionSnapshot && message.SessionSnapshot is { } snapshot)
                     {
+                        if (diagnostics is not null) diagnostics.Snapshots++;
                         runtime.Dispose();
                         input?.Dispose();
                         world = new GameWorld(snapshot.World.Width, snapshot.World.Height, 1, graphicsEnabled: false);
@@ -84,7 +89,7 @@ public static class BotClient
                         System.Console.WriteLine($"Assigned army={assignment.ArmyId} generation={assignment.Generation} profile={AIProfileCatalog.Id(assignment.Profile.Type)} seed={assignment.Profile.Seed} version={assignment.ProfileVersion} fingerprint={assignment.ProfileFingerprint}");
                 };
                 var clock = Stopwatch.StartNew();
-                double previous = 0, nextConnect = 0;
+                double previous = 0, nextConnect = 0, nextReport = 5;
                 NetworkConnectionStatus? lastStatus = null;
                 while (!cancellation.IsCancellationRequested)
                 {
@@ -96,20 +101,27 @@ public static class BotClient
                         network.JoinSessionAsync(config.ServerAddress, config.Port, cancellation.Token).GetAwaiter().GetResult();
                         nextConnect = now + 3;
                     }
+                    long frameStarted = Stopwatch.GetTimestamp();
                     network.Update();
                     var time = new GameTime(TimeSpan.FromSeconds(now), TimeSpan.FromSeconds(Math.Min(0.1, now - previous)));
+                    double interval = (now - previous) * 1000;
                     previous = now;
                     if (world is not null)
                     {
                         if (network.Status == NetworkConnectionStatus.Connected) world.Update(time);
+                        long decisionStarted = Stopwatch.GetTimestamp();
                         runtime.Update(time, world, network);
+                        if (now >= 5) diagnostics?.Decisions.Add(Stopwatch.GetElapsedTime(decisionStarted).TotalMilliseconds);
                     }
                     if (network.Status != lastStatus) { System.Console.WriteLine($"Status: {network.Status}; controllers={runtime.Players.Count}"); lastStatus = network.Status; }
+                    if (now >= 5) diagnostics?.Frame(Stopwatch.GetElapsedTime(frameStarted).TotalMilliseconds, interval, network.PendingMessages, runtime.Players.Count);
+                    if (diagnostics is not null && now >= nextReport)
+                    { diagnostics.Save(config.DiagnosticsPath!); nextReport = now + 5; }
                     Thread.Sleep(16);
                 }
                 return 0;
             }
-            finally { System.Console.CancelKeyPress -= cancel; }
+            finally { System.Console.CancelKeyPress -= cancel; if (diagnostics is not null) diagnostics.Save(config.DiagnosticsPath!); }
         }
         catch (Exception error) { System.Console.Error.WriteLine("Bot client: " + error); return 1; }
     }

@@ -1,4 +1,4 @@
-using RTS;
+﻿using RTS;
 using RTS.Network;
 using System.Reflection;
 using System.Text.Json;
@@ -13,7 +13,7 @@ internal static class BotClientChecks
         foreach (var invalid in new[] { valid with { SchemaVersion = 2 }, valid with { ServerAddress = "" },
             valid with { Port = 0 }, valid with { Port = 65536 }, valid with { DisplayName = " " },
             valid with { DisplayName = new string('x', 33) }, valid with { MaximumArmies = 0 },
-            valid with { MaximumArmies = 33 }, valid with { ProposedProfileId = "unknown" } })
+            valid with { MaximumArmies = 33 }, valid with { ProposedProfileId = "unknown" }, valid with { DiagnosticsPath = " " } })
         {
             bool rejected = false;
             try { invalid.Validate("test"); } catch (InvalidDataException) { rejected = true; }

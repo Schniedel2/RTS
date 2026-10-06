@@ -76,6 +76,7 @@ SchemaVersion 1; JSON-Namen in camelCase. Unbekannte/fehlende Pflichtfelder, dop
 | displayName | Pflicht; eindeutiger Name, 1..32 Zeichen, ohne äußere Leerzeichen |
 | proposedProfileId | Optional; null oder eines der vier bekannten Profil-IDs; nur ein Vorschlag |
 | maximumArmies | Optional; 1..32, Default 1; Host und lokale Laufzeit begrenzen gleichzeitige Übernahmen |
+| diagnosticsPath | Optional; Dateipfad für JSON-Diagnose, Default null (aus); pro Prozess einen eigenen Pfad wählen |
 | reconnect | Optional; Default true; erneuter Verbindungsversuch nach mindestens drei Sekunden |
 
 Die Auswahl einer Config ist ausdrücklich erforderlich. Eine fehlerhafte Datei startet keinen Ersatz-Bot. Beenden mit Strg+C im startenden Terminal; Dispose räumt lokale Controller/Claims/Queues und Transport auf. Exit-Code 0 bei kontrolliertem Ende, 1 bei Start-/Laufzeitfehler, 2 bei Verbindungsende und deaktiviertem Reconnect. Der Bot erzeugt kein Spiel-Fenster; Standardausgabe/Standardfehler bleiben für Terminal oder umgeleitete Logs verfügbar.
@@ -116,3 +117,11 @@ $runDirectory = Join-Path $env:TEMP ('RTS-console-bot-' + [guid]::NewGuid().ToSt
 New-Item -ItemType Directory $runDirectory | Out-Null
 dotnet run --project tests/GridNavigationChecks/GridNavigationChecks.csproj -- --bot-host $runDirectory launch
 ```
+
+## Opt-in-Messungen (Aufgabe 09)
+
+Mit `"diagnosticsPath": "bot-metrics.json"` schreibt der Bot alle fünf Sekunden und beim kontrollierten Ende einen atomar ersetzten Bericht. Relative Pfade beziehen sich auf das Prozess-Arbeitsverzeichnis. Ohne dieses Feld werden keine Samples gesammelt. Gemessen werden CPU-Zeit, Working Set, TCP-Bytes, KI-/Pfadsuch-Scopes, Update-Arbeit und -Intervalle, Request-Rückmeldungen, Inbox-Spitzen sowie Controllerzahl und Snapshot-/Spielstartzahl.
+
+Host-Testläufe setzen zusätzlich `NetworkHandler.RunDiagnostics`. Nur dann antwortet der Host auf gültige generationsgebundene Controller-Heartbeats mit einem gezielten Diagnose-Echo. Dieses liefert Anwendungs-Roundtrip einschließlich beider Update-Schleifen; es ist kein reiner TCP-Ping. Die erste Request-Antwort enthält zusätzlich lokale Auftragswarteschlange und Host-Planung. Beide Zeiten werden getrennt ausgewiesen. Keine Änderung am Berechtigungs-/Fallback-Vertrag.
+
+Details, Vergleich und reproduzierbares Mehrprozess-Skript: [KI-Client-Performance.md](KI-Client-Performance.md). Die grafische FPS und ein mehrstündiger Spieltest bleiben separate Prüfungen.

@@ -59,3 +59,7 @@ Das ist ein begrenzter Headless-Vergleich, kein grafischer Langzeit-/Multiplayer
 ## Fensterloser Bot-Prozess
 
 `bot-client.example.json` konfiguriert die TCP-Verbindung, den Profilvorschlag und die maximale Army-Anzahl. Start: `RTS --bot-client <config.json>`. Der Host weist die Armies ausdrücklich zu. Bedienung und Grenzen: [KI-Bot-Client](../../AI/KI-Bot-Client.md).
+
+Optionales `diagnosticsPath` in der Bot-Verbindungsconfig aktiviert JSON-Messungen; pro Prozess einen eigenen Dateipfad verwenden. Vergleich und Testskripte: [KI-Client-Performance](../../AI/KI-Client-Performance.md).
+
+Dedicated-Host: `dedicated-server.example.json` und `RTS.dll --dedicated-server <config.json>`. Kartenpfad, menschliche Slots, KI-Profile und Startregel konfigurieren. [Betrieb und Prüfungen](../../AI/Dedicated-Server.md).
