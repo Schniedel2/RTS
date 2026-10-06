@@ -19,6 +19,7 @@ public class Game1 : Game
     public Game1()
     {
         Globals.Graphics = new GraphicsDeviceManager(this);
+        Exiting += (_, _) => _rtsGame?.LocalBots.Dispose();
 
         Content.RootDirectory = "Content";
 
@@ -90,7 +91,7 @@ public class Game1 : Game
         {
             _simulationTotalTime += gameTime.ElapsedGameTime;
             var simulationTime = new GameTime(_simulationTotalTime, gameTime.ElapsedGameTime);
-            _rtsGame.Update(simulationTime, Globals._camera, GraphicsDevice.Viewport);
+            _rtsGame.Update(simulationTime, Globals._camera, GraphicsDevice.Viewport, inputFocused: IsActive);
         }
             
         base.Update(gameTime);
@@ -126,7 +127,7 @@ public class Game1 : Game
 
         _rtsGame.Draw3D(Globals._camera);
 
-        Globals._debugRenderer.DrawSelectedSquadLeaders(
+        Globals._debugRenderer.DrawSelectionMarkers(
             _rtsGame.World,
             _rtsGame.LocalPlayer.SelectedUnits,
             Globals._camera.View,

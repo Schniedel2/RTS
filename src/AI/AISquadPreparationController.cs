@@ -32,7 +32,7 @@ public sealed class AISquadPreparationController(
     private static readonly AIProductionNeed HealerNeed = new(
         AIUnitRole.Healer, AIMovementDomain.Infantry, Mobility: 0.2f);
     public const int RequiredGunners = 3;
-    private const float ThinkIntervalSeconds = 1.0f;
+    private float ThinkIntervalSeconds => _profile.DecisionIntervalSeconds;
     private const float OrderRetrySeconds = 3.0f;
 
     private readonly PlayerCommandService _commands = new(network, playerId, new AIUnitTaskAgent(world, $"{armyId}:squad", AIUnitTask.SquadMember, 40));
@@ -205,7 +205,7 @@ public sealed class AISquadPreparationController(
             return;
         }
 
-        PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+        PurchaseQuote quote = world.SimulationPricing.GetQuote(new PurchaseRequest(
             PurchasableType.Unit, unitTypeId, armyId, barracks.UnitId));
         if (!AIResourcePlanner.CanPropose(world, armyId, quote))
         {

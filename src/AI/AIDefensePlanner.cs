@@ -108,7 +108,7 @@ public sealed class AIDefensePlanner(
             return;
         }
 
-        Army? ownerArmy = Globals.Game.Armies.Find(actor.ArmyId);
+        Army? ownerArmy = world.SimulationArmies.Find(actor.ArmyId);
         if (ownerArmy is null)
         {
             State = AIDefensePlanState.WaitingForResources;
@@ -167,7 +167,7 @@ public sealed class AIDefensePlanner(
                 if (solution.ProducerBuildingId is not Guid producerId ||
                     string.IsNullOrWhiteSpace(solution.CrewTypeId))
                     return true;
-                PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+                PurchaseQuote quote = world.SimulationPricing.GetQuote(new PurchaseRequest(
                     PurchasableType.Unit, solution.CrewTypeId, actor.ArmyId, producerId));
                 if (!AIResourcePlanner.CanPropose(world, actor.ArmyId, quote, AIOrderPriority.Power))
                 {

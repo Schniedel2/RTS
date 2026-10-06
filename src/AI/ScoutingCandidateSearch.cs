@@ -27,7 +27,7 @@ public sealed class ScoutingCandidateSearch
             Point cell = new(x, z), sector = ScoutingTargets.Sector(cell);
             int distance = Math.Max(Math.Abs(x - current.X), Math.Abs(z - current.Y));
             if (distance < min || excluded(sector) ||
-                world.Visibility.GetDisplayedTerrainVisibility(army, cell, false) != VisibilityState.Unexplored ||
+                world.Visibility.GetSimulationVisibility(army, cell) != VisibilityState.Unexplored ||
                 (unit is not Helicopter && !unit.MovementProfile.CanUseTerrain(world.GameGrid.GetCell(cell)))) continue;
             _sectors.TryGetValue(sector, out Summary summary);
             summary.Count++;
@@ -48,7 +48,7 @@ public sealed class ScoutingCandidateSearch
             }
             if (Target is not Point target) yield break;
             // Reject stale samples or competing reservations without rescanning all cells.
-            if (world.Visibility.GetDisplayedTerrainVisibility(army, target, false) == VisibilityState.Unexplored &&
+            if (world.Visibility.GetSimulationVisibility(army, target) == VisibilityState.Unexplored &&
                 (unit is Helicopter || unit.MovementProfile.CanUseTerrain(world.GameGrid.GetCell(target))) &&
                 (reserve is null || reserve(target))) yield break;
             _sectors.Remove(ScoutingTargets.Sector(target));

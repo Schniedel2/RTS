@@ -407,38 +407,34 @@ public class DebugRenderer
         }
     }
 
-    public void DrawSelectedSquadLeaders(
+    public void DrawSelectionMarkers(
         GameWorld world,
         IReadOnlyList<Unit> selectedUnits,
         Matrix view,
         Matrix projection)
     {
         var vertices = new List<VertexPositionColor>();
+        foreach (Unit unit in selectedUnits)
+            if (unit.IsSelectable && world.Visibility.IsUnitVisibleToLocalPlayer(unit))
+                vertices.AddRange(UnitSelectionGeometry.CreateMarker(world, unit, Color.White));
         foreach (SquadLeader leader in FindHighlightedSquadLeaders(world, selectedUnits))
+            vertices.AddRange(UnitSelectionGeometry.CreateMarker(world, leader, Color.Cyan, 1.25f));
+
+        if (vertices.Count == 0) return;
+        GraphicsDevice graphics = Globals.GraphicsDevice;
+        BlendState oldBlend = graphics.BlendState;
+        DepthStencilState oldDepth = graphics.DepthStencilState;
+        try
         {
-            float radius = Math.Max(0.75f,
-                Math.Max(leader.Width, leader.Length) * world.GameGrid.CellSize * 0.7f);
-            const int segments = 40;
-            for (int index = 0; index < segments; index++)
-            {
-                float firstAngle = MathHelper.TwoPi * index / segments;
-                float secondAngle = MathHelper.TwoPi * (index + 1) / segments;
-                vertices.Add(new VertexPositionColor(RingPoint(firstAngle), Color.Cyan));
-                vertices.Add(new VertexPositionColor(RingPoint(secondAngle), Color.Cyan));
-            }
-
-            Vector3 RingPoint(float angle)
-            {
-                float x = leader.Position.X + MathF.Cos(angle) * radius;
-                float z = leader.Position.Z + MathF.Sin(angle) * radius;
-                x = Math.Clamp(x, 0.0f, world.Terrain.Width - 1.001f);
-                z = Math.Clamp(z, 0.0f, world.Terrain.Height - 1.001f);
-                return new Vector3(x, world.Terrain.GetSurfaceHeight(x, z) + 0.12f, z);
-            }
-        }
-
-        if (vertices.Count > 0)
+            graphics.BlendState = BlendState.NonPremultiplied;
+            graphics.DepthStencilState = DepthStencilState.DepthRead;
             DrawLines(vertices.ToArray(), view, projection);
+        }
+        finally
+        {
+            graphics.BlendState = oldBlend;
+            graphics.DepthStencilState = oldDepth;
+        }
     }
 
     internal static IReadOnlyList<SquadLeader> FindHighlightedSquadLeaders(

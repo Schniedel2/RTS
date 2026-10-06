@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.IO;
@@ -17,11 +17,15 @@ public class GameWorld
     internal Dictionary<Guid, AIOrderProgressMonitor> AIOrderMonitors => _aiOrderMonitors ??= [];
     private Dictionary<Guid, AIOrderQueue>? _aiOrderQueues;
     internal Dictionary<Guid, AIOrderQueue> AIOrderQueues => _aiOrderQueues ??= [];
+    private RemoteAIBuildSites? _remoteBuildSites;
+    internal RemoteAIBuildSites RemoteBuildSites => _remoteBuildSites ??= new(this);
     private AIUnitTasks? _unitTasks;
     public AIUnitTasks UnitTasks => _unitTasks ??= new(this);
     private ScoutingTargets? _scoutingTargets;
     public ScoutingTargets ScoutingTargets => _scoutingTargets ??= new(this);
     public ArmyHandler SimulationArmies { get; private set; } = new();
+    private PricingService? _simulationPricing;
+    public PricingService SimulationPricing => _simulationPricing ??= new(SimulationArmies, Units.FindById);
     internal RTS.Network.NetworkHandler? SimulationNetwork { get; private set; }
     private Func<Guid, Guid, bool>? _allianceResolver;
     internal bool IsMovementAuthority =>
@@ -38,6 +42,7 @@ public class GameWorld
         Func<Guid, Guid, bool>? allianceResolver = null)
     {
         SimulationArmies = armies;
+        _simulationPricing = null;
         SimulationNetwork = network;
         _allianceResolver = allianceResolver;
     }
@@ -79,11 +84,11 @@ public class GameWorld
         Units = new UnitHandler(this);
         Markers = new MarkerHandler();
         Projectiles = new ProjectileHandler(graphicsEnabled ? ParticlesExplosion : null);
-        Particles = new ParticleSystem();
+        Particles = new ParticleSystem(graphicsEnabled);
         Decals = new DecalHandler();
         SmokeEmitters = new SmokeEmitterHandler();
         Weather = new WeatherHandler(terrainWidth, terrainHeight);
-        Tiberium = new TiberiumHandler();
+        Tiberium = new TiberiumHandler(this);
         PathfindingManager = new PathfindingManager(this);
         Visibility = new VisibilitySystem(this);
         GameplayMarkers = new GameplayMarkerHandler();

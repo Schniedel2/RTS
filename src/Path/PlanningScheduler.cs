@@ -30,8 +30,10 @@ public sealed class PlanningScheduler
         LastMilliseconds = 0;
     }
 
-    public void Update(int maximumSteps = MaximumStepsPerUpdate, double maximumMilliseconds = MaximumMillisecondsPerUpdate)
+    public void Update(int? maximumSteps = null, double? maximumMilliseconds = null)
     {
+        maximumSteps ??= AIRuntimeSettings.LocalCompute.PlanningStepsPerUpdate;
+        maximumMilliseconds ??= AIRuntimeSettings.LocalCompute.PlanningMillisecondsPerUpdate;
         using var measurement = PerformanceMeasurements.Measure("Path.PlanningUpdate");
         LastSteps = 0;
         long started = Stopwatch.GetTimestamp();

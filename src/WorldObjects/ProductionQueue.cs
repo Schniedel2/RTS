@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -98,6 +98,14 @@ public sealed class ProductionQueue
         while (_completed.Count > 128) _completed.Dequeue();
         completedOrder = activeOrder;
         return true;
+    }
+
+    public void ApplyCompleted(Guid orderId)
+    {
+        if (orderId == Guid.Empty || _completed.Contains(orderId)) return;
+        _orders.RemoveAll(order => order.OrderId == orderId);
+        _completed.Enqueue(orderId);
+        while (_completed.Count > 128) _completed.Dequeue();
     }
 
     public ProductionQueueState GetState() => new(

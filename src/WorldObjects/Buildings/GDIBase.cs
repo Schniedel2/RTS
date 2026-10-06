@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
@@ -44,7 +44,7 @@ public class GDIBase : Building, IPerkProvider
                 : new PerkGrant(perk, PerkLifetime.WhileProviderOperational))
             .ToList();
         if (ArmyId is Guid armyId &&
-            Globals.Game.Armies.Find(armyId)?.PowerStatus.HasEnoughPower == true)
+            SimulationWorld.SimulationArmies.Find(armyId)?.PowerStatus.HasEnoughPower == true)
         {
             if (SatelliteRecon.HasOperator(Globals.World, this))
                 perks.Add(new PerkGrant(PerkType.SatelliteOperator, PerkLifetime.WhileProviderOperational));
@@ -75,7 +75,7 @@ public class GDIBase : Building, IPerkProvider
     {
         if (IsCompleted)
         {
-            Army? army = ArmyId is Guid armyId ? Globals.Game.Armies.Find(armyId) : null;
+            Army? army = ArmyId is Guid armyId ? SimulationWorld.SimulationArmies.Find(armyId) : null;
 
             if (army?.PowerStatus.HasEnoughPower == true)
                 RadarSpeedFactor += 0.01f;

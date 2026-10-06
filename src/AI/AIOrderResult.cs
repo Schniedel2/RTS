@@ -1,11 +1,11 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace RTS;
 
 public enum AIOrderStatus { Requested, Accepted, Rejected, InProgress, Completed, Failed }
 public enum AIOrderFailure { None, Resources, BuildSite, Producer, Perk, InvalidTarget, Validation, Cancelled, Timeout, SessionChanged, RecoveryCooldown }
 
-/// <summary>Shared host-local outcome; execution still uses normal network requests.</summary>
+/// <summary>Shared controller outcome; execution still uses normal network requests.</summary>
 public sealed class AIOrderResult
 {
     private readonly List<AIOrderStatus> _transitions = [AIOrderStatus.Requested];

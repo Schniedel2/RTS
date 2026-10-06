@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Xna.Framework;
@@ -19,7 +19,7 @@ public sealed class AIUnitTasks(GameWorld world)
     private readonly List<Guid> _remove = [];
     public void Update(double now)
     {
-        long generation = (world.SimulationNetwork ?? Globals.Game?.Network)?.SessionGeneration ?? -1;
+        long generation = world.SimulationNetwork?.SessionGeneration ?? -1;
         if (_initialized && (generation != _generation || now < _now)) _assignments.Clear();
         _initialized = true; _generation = generation; _now = now;
         _remove.Clear();
@@ -66,6 +66,11 @@ public sealed class AIUnitTasks(GameWorld world)
     {
         foreach (Guid id in _assignments.Where(pair => pair.Value.Owner == owner && pair.Value.Priority <= maximumPriority)
             .Select(pair => pair.Key).ToArray()) Release(id, owner);
+    }
+    internal void ReleaseArmy(Guid army)
+    {
+        foreach (Guid id in _assignments.Where(pair => pair.Value.ArmyId == army).Select(pair => pair.Key).ToArray())
+            _assignments.Remove(id);
     }
     public void Renew(string owner, double now)
     {

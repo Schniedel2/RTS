@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -17,13 +17,13 @@ public static class BBModelLoader
         string? SharedName);
     private sealed record EmbeddedTextureEntry(int Index, int? Id, string? FileName, string? Source, string? SharedName);
 
-    public static Mesh Load(string path, Color? color = null)
+    public static Mesh Load(string path, Color? color = null, bool loadTextures = true)
     {
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
         JsonElement root = document.RootElement;
         Color vertexColor = color ?? Color.SteelBlue;
         (float Width, float Height) resolution = ReadResolution(root);
-        Dictionary<int, ImportedTexture> textureRegions = ReadTextureRegions(root, path);
+        Dictionary<int, ImportedTexture> textureRegions = ReadTextureRegions(root, path, loadTextures);
 
         Dictionary<string, IReadOnlyList<SubMesh>> elementsByUuid = [];
         if (root.TryGetProperty("elements", out JsonElement elements))
@@ -527,7 +527,7 @@ public static class BBModelLoader
         }).ToArray();
     }
 
-    private static Dictionary<int, ImportedTexture> ReadTextureRegions(JsonElement root, string modelPath)
+    private static Dictionary<int, ImportedTexture> ReadTextureRegions(JsonElement root, string modelPath, bool loadTextures)
     {
         Dictionary<int, ImportedTexture> regions = [];
         if (!root.TryGetProperty("textures", out JsonElement textures))
@@ -579,6 +579,17 @@ public static class BBModelLoader
             // two models may both embed e.g. "texture.png" without sharing or
             // overwriting an atlas region. The index distinguishes multiple
             // textures inside one model.
+            if (!loadTextures)
+            {
+                // CPU geometry uses the same face/group importer without allocating GPU atlases.
+                var size = ReadResolution(root);
+                var placeholder = new TextureHandler.TextureRegion { Width = (int)size.Width,
+                    Height = (int)size.Height, AtlasWidth = (int)size.Width, AtlasHeight = (int)size.Height };
+                var geometryTexture = new ImportedTexture(placeholder, null, entry.SharedName);
+                regions[entry.Index] = geometryTexture;
+                if (entry.Id is int geometryId) regions[geometryId] = geometryTexture;
+                continue;
+            }
             string embeddedKey = entry.SharedName ?? $"bbmodel:{Path.GetFullPath(modelPath)}:texture:{entry.Index}";
             if (!Globals.TextureHandler.TryGetTextureRegionByCacheKey(embeddedKey, out TextureHandler.TextureRegion region))
             {

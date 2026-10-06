@@ -441,7 +441,7 @@ internal static partial class AIReconstructionChecks
             pad.ProductionQueue.Update(10, out _);
             scenario.Add(new CatalogVehicle("helicopter", new(29.5f, 0, 12.5f), scenario.NextId()));
             infrastructure.Update(tick);
-            Check(infrastructure.IsAirSupportReady, "Two air attackers complete the air-force quota");
+            Check(infrastructure.IsAirSupportReady, "Two air attackers complete the air-force quota: " + infrastructure.LastDecision);
             scenario.Remove(first); scenario.Messages.Clear();
             infrastructure.Update(tick); scenario.Network.Update();
             Check(scenario.Messages.Any(m => m.Type == NetworkMessageType.TrainUnitRequest && m.UnitTypeId == "helicopter"),

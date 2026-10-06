@@ -158,7 +158,7 @@ public static class ComplexCommandPayloads
             NetworkMessageType.HarvestCommand => m with { UnitId = null, HarvestPhase = null, CargoAmount = 0 },
             _ => m
         };
-        if (remainder with { ServerTime = 0 } != new NetworkMessage(m.Type, m.SenderId))
+        if (remainder with { ServerTime = 0, RequestId = null, RequestGeneration = 0, AIControllerArmyId = null, AIControllerActorId = null, AIControllerGeneration = 0, ControllerPeerId = null } != new NetworkMessage(m.Type, m.SenderId))
         { error = "Unexpected fields in " + m.Type + " payload."; return false; }
         error = string.Empty;
         return true;

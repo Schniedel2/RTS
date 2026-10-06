@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using RTS.Network;
@@ -8,13 +8,13 @@ namespace RTS;
 public enum AIOrderPriority { Expansion, Research, Production, Defense, Economy, Power, Survival }
 public enum AIQueuedOrderState { Queued, WaitingForResources, WaitingForWorker, WaitingForProducer, Requested, InProgress, Paused, Completed, Failed }
 
-/// <summary>Host-local arbitration. Execution always uses the ordinary host request path.</summary>
+/// <summary>Controller-local arbitration. Execution always uses the ordinary host request path.</summary>
 public sealed class AIOrderQueue : IDisposable
 {
-    public sealed class Order(NetworkMessage request, LocalRequestReceipt receipt, AIOrderPriority priority, bool urgent)
+    public sealed class Order(NetworkMessage request, RequestReceipt receipt, AIOrderPriority priority, bool urgent)
     {
         public NetworkMessage Request { get; } = request;
-        public LocalRequestReceipt Receipt { get; } = receipt;
+        public RequestReceipt Receipt { get; } = receipt;
         public AIOrderPriority Priority { get; internal set; } = priority;
         public bool Urgent { get; internal set; } = urgent;
         public AIOrderResult Result => Receipt.Result;
@@ -35,7 +35,7 @@ public sealed class AIOrderQueue : IDisposable
         internal float WaitingSeconds;
         internal bool Sent;
         internal bool ResumePending;
-        internal LocalRequestReceipt? ExecutionReceipt;
+        internal RequestReceipt? ExecutionReceipt;
         internal Guid? SiteId => Request.Type == NetworkMessageType.BuildRequest ? Request.UnitId : Request.ConstructionSiteId;
         public IReadOnlyList<Guid> Workers { get; internal set; } = request.UnitIds ?? [];
         public Guid? ProducerId => Request.Type is NetworkMessageType.TrainUnitRequest or NetworkMessageType.ResearchRequest
@@ -140,14 +140,14 @@ public sealed class AIOrderQueue : IDisposable
 
             if (request.Type == NetworkMessageType.BuildConstructionRequest)
             {
-                _network.TrackLocalRequest(request);
+                _network.TrackRequest(request);
                 if (existing.Sent && existing.State != AIQueuedOrderState.Paused &&
                     (request.UnitIds ?? []).Length > 0 && (request.UnitIds ?? []).All(id =>
                         CanUse(id, existing.SiteId) && _world.Units.FindById(id) is MobileUnit { IsDying: false } worker &&
                         worker.ArmyId == _actor.ArmyId && worker.BuildRate > 0))
                 {
                     existing.Workers = request.UnitIds!;
-                    existing.ExecutionReceipt = _network.TrackLocalRequest(request);
+                    existing.ExecutionReceipt = _network.TrackRequest(request);
                     _ = _network.SendToHostAsync(request);
                 }
                 else _network.AbandonLocalRequest(request, "Construction retry is deferred to its scheduled worker.");
@@ -155,7 +155,7 @@ public sealed class AIOrderQueue : IDisposable
             if (!_collecting) Dispatch();
             return true;
         }
-        var tracked = _network.TrackLocalRequest(request)!;
+        var tracked = _network.TrackRequest(request)!;
         AIOrderPriority priority = request.Type == NetworkMessageType.ResearchRequest && _priority < AIOrderPriority.Power
             ? AIOrderPriority.Research : _priority;
         GameplayDefinition? product = GameplayCatalog.Find(request.Type == NetworkMessageType.BuildRequest
@@ -173,10 +173,11 @@ public sealed class AIOrderQueue : IDisposable
     public void Dispatch(bool dispatchOrders = true)
     {
         if (_disposed) return;
-        if (!_network.IsHost || _network.SessionGeneration != _generation) { Dispose(); return; }
+        if (!_network.CanRunAI(_actor.ArmyId) || _network.SessionGeneration != _generation) { Dispose(); return; }
         foreach (Order order in _orders)
         {
             if (Terminal(order)) continue;
+            if (order.Result.Status == AIOrderStatus.Completed) { order.State = AIQueuedOrderState.Completed; order.ReservedResources = 0; continue; }
             if (order.Result.Status is AIOrderStatus.Rejected or AIOrderStatus.Failed)
             { order.State = AIQueuedOrderState.Failed; order.ReservedResources = 0; continue; }
             if (order.Receipt.State is LocalRequestState.Rejected or LocalRequestState.Abandoned)
@@ -190,6 +191,12 @@ public sealed class AIOrderQueue : IDisposable
                 continue;
             }
             order.ResumePending = order.ExecutionReceipt?.State == LocalRequestState.Pending;
+            if (!_network.IsHost)
+            {
+                order.ReservedResources = 0;
+                if (order.State != AIQueuedOrderState.Paused) order.State = AIQueuedOrderState.InProgress;
+                continue;
+            }
             order.ReservedResources = 0; // The host has now deducted the actual purchase price.
             if (order.SiteId is Guid siteId)
             {
@@ -218,7 +225,9 @@ public sealed class AIOrderQueue : IDisposable
             }
             else order.State = AIQueuedOrderState.Completed;
         }
-        Budget.Begin(Globals.Game.Armies.Find(_actor.ArmyId)?.Resources ?? 0, ReservedResources,
+        foreach (Order order in _orders.Where(order => order.Receipt.State == LocalRequestState.Accepted))
+            _network.ReportRequestExecution(order.Receipt, order.Result.Status, order.Result.Failure, order.Result.Reason);
+        Budget.Begin(_world.SimulationArmies.Find(_actor.ArmyId)?.Resources ?? 0, ReservedResources,
             _world.Units.GetArmyUnits(_actor.ArmyId).OfType<Building>()
                 .Where(building => !building.IsDying).Sum(building => building.ProductionQueue.Orders.Count));
         if (!dispatchOrders) return;
@@ -238,7 +247,7 @@ public sealed class AIOrderQueue : IDisposable
             {
                 PurchasableType type = order.Request.Type == NetworkMessageType.BuildRequest ? PurchasableType.Building
                     : order.Request.Type == NetworkMessageType.ResearchRequest ? PurchasableType.Research : PurchasableType.Unit;
-                PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(type,
+                PurchaseQuote quote = _world.SimulationPricing.GetQuote(new PurchaseRequest(type,
                     order.Request.UnitTypeId!, _actor.ArmyId, order.ProducerId ?? order.Workers.FirstOrDefault()));
                 if (!quote.IsAvailable)
                 {
@@ -270,8 +279,14 @@ public sealed class AIOrderQueue : IDisposable
             {
                 if (order.ResumePending) continue;
                 NetworkMessage resume = NetworkCommands.CreateBuildConstructionRequest(_actor.Id,
-                    order.Workers.ToArray(), order.SiteId!.Value);
-                order.ExecutionReceipt = _network.TrackLocalRequest(resume);
+                    order.Workers.ToArray(), order.SiteId!.Value) with
+                {
+                    AIControllerArmyId = order.Request.AIControllerArmyId,
+                    AIControllerActorId = order.Request.AIControllerActorId,
+                    AIControllerGeneration = order.Request.AIControllerGeneration,
+                    ControllerPeerId = order.Request.ControllerPeerId
+                };
+                order.ExecutionReceipt = _network.TrackRequest(resume);
                 _ = _network.SendToHostAsync(resume);
                 order.ResumePending = true;
                 order.State = AIQueuedOrderState.InProgress;

@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using RTS.Network;
 using System;
 using System.Collections.Generic;
@@ -33,7 +33,7 @@ public sealed class AIProductionPlanExecutor(
     private bool _requestSent;
     private Guid? _adoptedProductionOrderId;
     private readonly AIProgressWatch _progress = new();
-    private LocalRequestReceipt? _receipt;
+    private RequestReceipt? _receipt;
     private Guid? _activeProducerId;
     private bool _wasAcknowledged;
     private Guid? _observedProductionHead;
@@ -346,6 +346,9 @@ public sealed class AIProductionPlanExecutor(
     {
         if (_receipt?.Result.ManagedByQueue == true)
             return _receipt.Result.Status == AIOrderStatus.Completed;
+        if (step.Kind == AIProductionPlanStepKind.Research &&
+            GameplayCatalog.Find(PurchasableType.Research, step.TypeId)?.GrantedPerk is PerkType completedPerk &&
+            world.SimulationArmies.Find(actor.ArmyId)?.Perks.Has(completedPerk) == true) return true;
         if (_adoptedProductionOrderId is Guid adopted)
             return FindProducer(step)?.ProductionQueue.WasCompleted(adopted) == true;
         return step.Kind switch
@@ -358,7 +361,7 @@ public sealed class AIProductionPlanExecutor(
                 : false,
         AIProductionPlanStepKind.Research =>
             GameplayCatalog.Find(PurchasableType.Research, step.TypeId)?.GrantedPerk is PerkType perk &&
-            Globals.Game.Armies.Find(actor.ArmyId)?.Perks.Has(perk) == true,
+            world.SimulationArmies.Find(actor.ArmyId)?.Perks.Has(perk) == true,
         AIProductionPlanStepKind.AssignCrew =>
             step.UnitId is Guid crewId && step.TargetUnitId is Guid targetId &&
             world.Units.FindById(crewId) is Unit { IsEmbarked: true } crew &&
@@ -379,7 +382,7 @@ public sealed class AIProductionPlanExecutor(
     }
 
     private PurchaseQuote Quote(PurchasableType type, string typeId, Guid producerId) =>
-        Globals.Game.Pricing.GetQuote(new PurchaseRequest(type, typeId, actor.ArmyId, producerId));
+        world.SimulationPricing.GetQuote(new PurchaseRequest(type, typeId, actor.ArmyId, producerId));
 
     private bool CanPay(PurchaseQuote quote) => AIResourcePlanner.CanPropose(world, actor.ArmyId, quote);
 

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "serverAddress": "127.0.0.1",
+  "port": 27000,
+  "displayName": "RTS-Bot",
+  "proposedProfileId": "balanced-assault",
+  "maximumArmies": 1,
+  "reconnect": true
+}

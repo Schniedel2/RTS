@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
@@ -145,7 +145,7 @@ public class Building : Unit
             IReadOnlyList<UnitAction> researchActions = GameplayCatalog.CreateResearchActions(GameplayTypeId);
             if (researchActions.Count > 0)
             {
-                Army? army = ArmyId is Guid armyId ? Globals.Game.Armies.Find(armyId) : null;
+                Army? army = ArmyId is Guid armyId ? SimulationWorld.SimulationArmies.Find(armyId) : null;
                 var queuedResearch = Globals.World.Units.Units.OfType<Building>()
                     .Where(building => building.ArmyId == ArmyId)
                     .SelectMany(building => building.ProductionQueue.Orders)

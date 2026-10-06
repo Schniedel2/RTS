@@ -85,6 +85,7 @@ internal static class AIStrategicCatalogChecks
             Set(game, typeof(RTSGame), "<World>k__BackingField", world);
             Set(game, typeof(RTSGame), "<Armies>k__BackingField", armies);
             Set(game, typeof(RTSGame), "<Pricing>k__BackingField", pricing);
+            world.ConfigureSimulation(armies, network);
             Globals.World = world; Globals.Game = game;
             var list = (IList<Unit>)typeof(UnitHandler).GetField("_units", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(units)!;
             CatalogBuilding AddBuilding(string id) { var b = (CatalogBuilding)BuildingFactory.SpawnBuilding(id, Vector3.Zero, 0, Guid.NewGuid(), actor.ArmyId)!; list.Add(b); return b; }

@@ -16,13 +16,15 @@ public sealed class PlayerCommandService
     private readonly NetworkHandler _network;
 
     public Guid PlayerId { get; }
-    public LocalRequestReceipt? LastRequest { get; private set; }
+    public RequestReceipt? LastRequest { get; private set; }
 
+    private readonly AIControllerAssignment? _assignment;
     public AIUnitTaskAgent? TaskAgent { get; }
     public PlayerCommandService(NetworkHandler network, Guid playerId, AIUnitTaskAgent? taskAgent = null)
     {
         _network = network ?? throw new ArgumentNullException(nameof(network));
         PlayerId = playerId; TaskAgent = taskAgent;
+        _assignment = network.AIControllers.ForActor(playerId);
     }
 
     public Task GotoAsync(IEnumerable<Guid> unitIds, Vector3 target, bool appendToQueue = false,
@@ -142,6 +144,15 @@ public sealed class PlayerCommandService
 
     private Task SendAsync(NetworkMessage request, CancellationToken cancellationToken)
     {
+        if (_assignment is { } assignment)
+            request = request with { AIControllerArmyId = assignment.ArmyId, AIControllerActorId = assignment.ActorId,
+                AIControllerGeneration = assignment.Generation, ControllerPeerId = _network.LocalPeerId };
+        if (_assignment is not null && !_network.IsHost && _network.Status != NetworkConnectionStatus.Connected)
+        {
+            LastRequest = _network.TrackRequest(request);
+            _network.ResolveLocalRequest(request, false, "Remote controller must finish session synchronization.");
+            return Task.CompletedTask;
+        }
         if (TaskAgent is not null && request.Type is NetworkMessageType.GotoRequest or
             NetworkMessageType.AttackTargetRequest or NetworkMessageType.StopRequest or
             NetworkMessageType.FollowRequest or NetworkMessageType.AttackGroundRequest or NetworkMessageType.EnterUnitRequest or
@@ -150,12 +161,12 @@ public sealed class PlayerCommandService
             Guid[] ids = request.UnitIds ?? (request.UnitId is Guid id ? [id] : []);
             if (!TaskAgent.Authorize(ids))
             {
-                LastRequest = _network.TrackLocalRequest(request);
+                LastRequest = _network.TrackRequest(request);
                 _network.ResolveLocalRequest(request, false, "Unit is assigned to a higher-priority AI task.", AIOrderFailure.Validation);
                 return Task.CompletedTask;
             }
         }
-        LastRequest = _network.TrackLocalRequest(request);
+        LastRequest = _network.TrackRequest(request);
         if (LastRequest is not null && !ReferenceEquals(LastRequest.Request, request))
             return Task.CompletedTask;
         if (!_network.AllowLocalAIRequest(request))

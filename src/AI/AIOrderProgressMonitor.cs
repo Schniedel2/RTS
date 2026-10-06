@@ -32,7 +32,7 @@ public sealed class AIOrderProgressMonitor : IDisposable
     private long _generation;
     private float _time;
     private float _elapsed;
-    private LocalRequestReceipt? _lastRejection;
+    private RequestReceipt? _lastRejection;
     public string? LastDecision { get; private set; }
 
     public AIOrderProgressMonitor(GameWorld world, Player actor, NetworkHandler network)
@@ -78,7 +78,7 @@ public sealed class AIOrderProgressMonitor : IDisposable
     public void Update(GameTime gameTime)
     {
         using var measurement = PerformanceMeasurements.Measure("AI.OrderProgress");
-        if (!_network.IsHost) return;
+        if (!_network.CanRunAI(_actor.ArmyId)) return;
         if (_generation != _network.SessionGeneration)
         {
             Reset(); _generation = _network.SessionGeneration;
@@ -88,7 +88,7 @@ public sealed class AIOrderProgressMonitor : IDisposable
         if (_elapsed < 1) return;
         dt = _elapsed; _elapsed = 0;
         LastDecision = null;
-        LocalRequestReceipt? rejection = _network.GetLastLocalRejection(_actor.Id);
+        RequestReceipt? rejection = _network.GetLastLocalRejection(_actor.Id);
         if (rejection is not null && !ReferenceEquals(rejection, _lastRejection))
         {
             _lastRejection = rejection;

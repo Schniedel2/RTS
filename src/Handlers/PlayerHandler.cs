@@ -3,6 +3,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using System.Collections.Generic;
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -30,6 +31,9 @@ public class PlayerHandler
     private readonly RenderStateStack _renderStates;
     private readonly List<Unit> _selectedUnits = [];
     private MouseState _previousMouseState;
+    private UnitTypeSelection? _typeSelection;
+    private UnitTypeSelection TypeSelection => _typeSelection ??= new();
+    private bool _pointerBlocked;
     public IReadOnlyList<Unit> SelectedUnits => _selectedUnits;
     public UnitAction? ActiveAction { get; private set; }
     private Rectangle _currentSelectionRect;
@@ -68,6 +72,7 @@ public class PlayerHandler
 
     public bool SelectAction(UnitAction action, bool alternateAction)
     {
+        TypeSelection.Reset();
         var recipients = Recipients(ControllableUnits(_selectedUnits), action);
         if (recipients.Count == 0 || SingleActor(action) && recipients.Count != 1) return false;
         //  single-use actions are handled immediately / current action-selection remains unchanged
@@ -232,6 +237,13 @@ public class PlayerHandler
         _isDrag = false;        
 
         MouseState mouse = Mouse.GetState();
+        if (_pointerBlocked)
+        {
+            _previousMouseState = mouse;
+            _pointerBlocked = mouse.LeftButton == ButtonState.Pressed || mouse.RightButton == ButtonState.Pressed;
+            return;
+        }
+        if (ActiveAction is not null) TypeSelection.Reset();
         //  update mouse-world position
         Point screenPosition = mouse.Position;
         Ray ray = CreatePickRay(camera, viewport, screenPosition);
@@ -358,13 +370,36 @@ public class PlayerHandler
                 if (IsLeftButtonReleased(mouse))
                 {
                     bool firstSelection = ControllableUnits(_selectedUnits).Count == 0;
-                    if (firstSelection && !_isSelectingUnits)
-                        SelectUnits(camera, viewport, _currentSelectionRect, 1);
-
+                    bool shift = Keyboard.GetState().IsKeyDown(Keys.LeftShift) || Keyboard.GetState().IsKeyDown(Keys.RightShift);
+                    Unit? targetUnit = FindUnitAt(camera, viewport, mouse.Position);
+                    Guid armyId = Globals.Game.Players.FirstOrDefault(player => player.Id == Globals.Game.Network.LocalPeerId)?.ArmyId ?? Guid.Empty;
                     if (_isSelectingUnits)
+                    {
+                        TypeSelection.Reset();
                         SelectUnits(camera, viewport, _currentSelectionRect, 99);
-                    else if (!firstSelection && IsMouseOnTerrain)
-                        PerformClickAction(_selectedUnits, MouseWorldPosition, 0);
+                    }
+                    else if (UnitTypeSelection.IsSelectionIntent(targetUnit, _selectedUnits, armyId,
+                        firstSelection, shift, ActiveAction is not null))
+                    {
+                        bool doubled = TypeSelection.Click(targetUnit, mouse.Position,
+                            (double)Stopwatch.GetTimestamp() / Stopwatch.Frequency);
+                        List<Unit> nearby = doubled && targetUnit is not null
+                            ? UnitTypeSelection.GetNearby(targetUnit, _map.Units.Units, armyId,
+                                unit => _map.Visibility.IsUnitVisibleToLocalPlayer(unit)) : new();
+                        if (nearby.Count > 0)
+                            ApplySelection(shift ? UnitTypeSelection.Merge(_selectedUnits, nearby, armyId,
+                                unit => _map.Visibility.IsUnitVisibleToLocalPlayer(unit)) : nearby);
+                        else if (targetUnit is not null && shift && targetUnit.ArmyId == armyId)
+                            ApplySelection(UnitTypeSelection.Merge(_selectedUnits, new[] { targetUnit }, armyId,
+                                unit => _map.Visibility.IsUnitVisibleToLocalPlayer(unit)));
+                        else
+                            ApplySelection(targetUnit is null ? Array.Empty<Unit>() : new[] { targetUnit });
+                    }
+                    else
+                    {
+                        TypeSelection.Reset();
+                        if (IsMouseOnTerrain) PerformClickAction(_selectedUnits, MouseWorldPosition, 0);
+                    }
 
                     _isSelectingUnits = false;
                 }
@@ -372,6 +407,7 @@ public class PlayerHandler
 
             if (IsRightButtonPressed(mouse))
             {
+                TypeSelection.Reset();
                 if (ActiveAction is not null) ActiveAction = null;
                 else ClearSelection();
             }
@@ -409,6 +445,17 @@ public class PlayerHandler
         }
 
         _previousMouseState = mouse;
+    }
+
+    public void SuspendPointerInput()
+    {
+        _isDrag = false;
+        TypeSelection.Reset();
+        _isSelectingUnits = false;
+        _formationPlacementActive = false;
+        _previousMouseState = Mouse.GetState();
+        _pointerBlocked = _previousMouseState.LeftButton == ButtonState.Pressed ||
+            _previousMouseState.RightButton == ButtonState.Pressed;
     }
 
     public bool IsUnitSelected(Unit unit)
@@ -472,11 +519,11 @@ public class PlayerHandler
     {
         ClearSelection(notify: false);
 
-        Unit[] candidates = _map.Units.Units
-            .Where(unit => unit.IsSelectable &&
+        Unit[] candidates = maxUnits == 1
+            ? FindUnitAt(camera, viewport, Mouse.GetState().Position) is Unit hit ? new[] { hit } : Array.Empty<Unit>()
+            : _map.Units.Units.Where(unit => unit.IsSelectable &&
                 _map.Visibility.IsUnitVisibleToLocalPlayer(unit) &&
-                selection.Intersects(unit.GetScreenBounds(camera.View, camera.Projection, viewport)))
-            .ToArray();
+                selection.Intersects(unit.GetScreenBounds(camera.View, camera.Projection, viewport))).ToArray();
 
         // A mobile unit standing on a building (for example a helicopter on a
         // helipad) must remain directly selectable. The same rule keeps drag
@@ -493,6 +540,12 @@ public class PlayerHandler
     }
 
     public void SetUnitSelection(IReadOnlyList<Unit> units)
+    {
+        TypeSelection.Reset();
+        ApplySelection(units);
+    }
+
+    private void ApplySelection(IReadOnlyList<Unit> units)
     {
         ClearSelection(notify: false);
         foreach (Unit unit in units)
@@ -718,16 +771,9 @@ public class PlayerHandler
         private Unit? FindUnitAt(Camera camera, Viewport viewport, Point screenPosition)
         {
             Ray ray = CreatePickRay(camera, viewport, screenPosition);
-            float terrainDistance = _map.Terrain.TryGetIntersection(ray, out Vector3 terrainHit)
-                ? Vector3.Distance(ray.Position, terrainHit) + 0.01f
-                : float.PositiveInfinity;
-            var hits = _map.Units.Units
-                .Where(unit => unit.IsSelectable && _map.Visibility.IsUnitVisibleToLocalPlayer(unit))
-                .Select(unit => (Unit: unit, Distance: unit.IntersectSelectionRay(ray)))
-                .Where(hit => hit.Distance is float distance && distance <= terrainDistance)
-                .OrderBy(hit => hit.Distance)
-                .Select(hit => hit.Unit).ToArray();
-            return PrioritizeMobileUnits(hits).FirstOrDefault();
+            Vector3? terrain = _map.Terrain.TryGetIntersection(ray, out Vector3 hit) ? hit : null;
+            return UnitSelectionGeometry.Pick(_map.Units.Units, ray, terrain, _map.GameGrid.CellSize,
+                unit => _map.Visibility.IsUnitVisibleToLocalPlayer(unit));
         }
 
         private static IEnumerable<Unit> PrioritizeMobileUnits(IReadOnlyList<Unit> candidates) =>
@@ -958,12 +1004,8 @@ public class PlayerHandler
                 camera.Projection,
                 viewport);
 
-            Globals.RenderHelper.DrawRectangle(
-                spriteBatch,
-                unitBounds,
-                Color.Transparent,
-                Color.White,
-                borderThickness: 2);
+            if (Globals.Debug_ShowUnitBounds)
+                Globals.RenderHelper.DrawRectangle(spriteBatch, unitBounds, Color.Transparent, Color.White, borderThickness: 2);
             if (Globals.Debug_ShowUnitCommands)
                 RenderHelper.DrawTextCentered(spriteBatch, Globals._debugFont,
                     unit.GetDebugCommandText(),

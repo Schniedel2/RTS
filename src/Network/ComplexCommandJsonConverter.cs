@@ -59,7 +59,13 @@ internal sealed class ComplexCommandJsonConverter : JsonConverter<NetworkMessage
             if (!name.Equals("type", StringComparison.OrdinalIgnoreCase) &&
                 !name.Equals("senderId", StringComparison.OrdinalIgnoreCase) &&
                 !name.Equals("serverTime", StringComparison.OrdinalIgnoreCase) &&
-                !name.Equals("payload", StringComparison.OrdinalIgnoreCase))
+                !name.Equals("payload", StringComparison.OrdinalIgnoreCase) &&
+                !name.Equals("requestId", StringComparison.OrdinalIgnoreCase) &&
+                !name.Equals("requestGeneration", StringComparison.OrdinalIgnoreCase) &&
+                !name.Equals("aiControllerArmyId", StringComparison.OrdinalIgnoreCase) &&
+                !name.Equals("aiControllerActorId", StringComparison.OrdinalIgnoreCase) &&
+                !name.Equals("aiControllerGeneration", StringComparison.OrdinalIgnoreCase) &&
+                !name.Equals("controllerPeerId", StringComparison.OrdinalIgnoreCase))
                 throw new JsonException("Unexpected envelope field: " + name);
         if (!fields.TryGetValue("senderId", out JsonElement sender) || sender.ValueKind != JsonValueKind.String || !sender.TryGetGuid(out Guid senderId) ||
             !fields.TryGetValue("payload", out JsonElement payload) || payload.ValueKind != JsonValueKind.Object)
@@ -71,7 +77,28 @@ internal sealed class ComplexCommandJsonConverter : JsonConverter<NetworkMessage
             throw new JsonException("Invalid server time.");
         ComplexCommandPayload value = payload.Deserialize(ComplexCommandPayloads.PayloadType(kind), options) as ComplexCommandPayload
             ?? throw new JsonException("Missing payload.");
-        return ComplexCommandPayloads.Create(senderId, value, time);
+        NetworkMessage result = ComplexCommandPayloads.Create(senderId, value, time);
+        if (fields.TryGetValue("requestId", out var requestId))
+        {
+            if (!requestId.TryGetGuid(out Guid id) || id == Guid.Empty) throw new JsonException("Invalid requestId.");
+            result.RequestId = id;
+        }
+        if (fields.TryGetValue("requestGeneration", out var generation))
+        {
+            if (!generation.TryGetInt64(out long numberGeneration) || numberGeneration < 0) throw new JsonException("Invalid requestGeneration.");
+            result.RequestGeneration = numberGeneration;
+        }
+        Guid? Id(string field)
+        {
+            if (!fields.TryGetValue(field, out var element)) return null;
+            if (element.ValueKind != JsonValueKind.String || !element.TryGetGuid(out Guid id) || id == Guid.Empty) throw new JsonException("Invalid " + field);
+            return id;
+        }
+        long aiGeneration = 0;
+        if (fields.TryGetValue("aiControllerGeneration", out var ag) && (!ag.TryGetInt64(out aiGeneration) || aiGeneration < 0)) throw new JsonException("Invalid controller generation.");
+        result = result with { AIControllerArmyId = Id("aiControllerArmyId"), AIControllerActorId = Id("aiControllerActorId"),
+            ControllerPeerId = Id("controllerPeerId"), AIControllerGeneration = aiGeneration };
+        return result;
     }
 
     private static void RejectDuplicates(JsonElement element)
@@ -101,6 +128,11 @@ internal sealed class ComplexCommandJsonConverter : JsonConverter<NetworkMessage
         writer.WriteNumber("type", (int)value.Type);
         writer.WriteString("senderId", value.SenderId);
         writer.WriteNumber("serverTime", value.ServerTime);
+        if (value.RequestId is Guid id) { writer.WriteString("requestId", id); writer.WriteNumber("requestGeneration", value.RequestGeneration); }
+        if (value.AIControllerArmyId is Guid army) writer.WriteString("aiControllerArmyId", army);
+        if (value.AIControllerActorId is Guid actor) writer.WriteString("aiControllerActorId", actor);
+        if (value.ControllerPeerId is Guid peer) writer.WriteString("controllerPeerId", peer);
+        if (value.AIControllerGeneration != 0) writer.WriteNumber("aiControllerGeneration", value.AIControllerGeneration);
         writer.WritePropertyName("payload");
         JsonSerializer.Serialize(writer, payload, payload.GetType(), options);
         writer.WriteEndObject();

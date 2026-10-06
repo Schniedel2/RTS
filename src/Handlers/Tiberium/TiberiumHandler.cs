@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
@@ -76,12 +76,17 @@ public sealed class TiberiumHandler
 
     public bool HasTiberium(Point cell) => _cells.ContainsKey(cell);
 
-    private static TerrainTile GetTileAt(Point cell)
+    private readonly GameWorld? _world;
+    private GameWorld World => _world ?? Globals.World;
+    private double HostTime => World.SimulationNetwork?.EstimatedHostTime ?? Globals.Game.Network.EstimatedHostTime;
+    public TiberiumHandler(GameWorld? world = null) { _world = world; }
+
+    private TerrainTile GetTileAt(Point cell)
     {
-        Vector3 center = Globals.World.GameGrid.ToWorldPosition(cell, 0.0f);
-        int x = Math.Clamp((int)center.X, 0, Globals.World.Terrain.Width - 1);
-        int z = Math.Clamp((int)center.Z, 0, Globals.World.Terrain.Height - 1);
-        return Globals.World.Terrain.GetTile(x, z);
+        Vector3 center = World.GameGrid.ToWorldPosition(cell, 0.0f);
+        int x = Math.Clamp((int)center.X, 0, World.Terrain.Width - 1);
+        int z = Math.Clamp((int)center.Z, 0, World.Terrain.Height - 1);
+        return World.Terrain.GetTile(x, z);
     }
 
     /// <summary>
@@ -99,10 +104,10 @@ public sealed class TiberiumHandler
         float initialAmount = 0.0f)
     {
         state = null!;
-        if (!Globals.Game.Network.IsHost)
+        if (!(World.SimulationNetwork ?? Globals.Game.Network).IsHost)
             return false;
 
-        GameGrid grid = Globals.World.GameGrid;
+        GameGrid grid = World.GameGrid;
         if (_cells.ContainsKey(cell) || !grid.Contains(cell) || grid.GetCell(cell).IsBlocked)
             return false;
 
@@ -189,7 +194,7 @@ public sealed class TiberiumHandler
 
         // Not gameTime.TotalGameTime: CreatedAt is stamped in the host's time frame (see
         // TiberiumSeedState), which only NetworkHandler.EstimatedHostTime matches on clients too.
-        double now = Globals.Game.Network.EstimatedHostTime;
+        double now = HostTime;
         foreach (TiberiumCell cell in _cells.Values)
         {
             if (allowGrowth)
@@ -202,8 +207,8 @@ public sealed class TiberiumHandler
 
     public void Paint(IEnumerable<Point> cells, float amount = MaximumAmount * 0.25f)
     {
-        double now = Globals.Game.Network.EstimatedHostTime;
-        foreach (Point point in cells.Where(Globals.World.GameGrid.Contains))
+        double now = HostTime;
+        foreach (Point point in cells.Where(World.GameGrid.Contains))
         {
             if (_cells.TryGetValue(point, out TiberiumCell? existing))
             {
@@ -240,7 +245,7 @@ public sealed class TiberiumHandler
     public void SimulateArea(IReadOnlySet<Point> area, float seconds, IEnumerable<TiberiumSource> sources)
     {
         if (seconds <= 0 || area.Count == 0) return;
-        double now = Globals.Game.Network.EstimatedHostTime;
+        double now = HostTime;
         foreach ((Point point, TiberiumCell cell) in _cells.Where(pair => area.Contains(pair.Key)).ToArray())
         {
             cell.Amount = MathF.Min(MaximumAmount, cell.Amount + seconds * GrowthPerSecond * cell.GrowthFactor);
@@ -251,7 +256,7 @@ public sealed class TiberiumHandler
         int attempts = Math.Max(1, (int)Math.Floor(seconds / TiberiumSource.SpreadIntervalSeconds));
         foreach (TiberiumSource source in sources)
         {
-            Point center = Globals.World.GameGrid.ToCell(source.Position);
+            Point center = World.GameGrid.ToCell(source.Position);
             if (!area.Contains(center)) continue;
             List<Point> candidates = area.Where(cell =>
                 Math.Abs(cell.X - center.X) <= TiberiumSource.SpreadRadius &&
@@ -275,7 +280,7 @@ public sealed class TiberiumHandler
 
     public TiberiumSeedState[] GetStates()
     {
-        double now = Globals.Game.Network.EstimatedHostTime;
+        double now = HostTime;
         return _cells.Select(pair => new TiberiumSeedState(pair.Key.X, pair.Key.Y,
             now - pair.Value.Amount / (GrowthPerSecond * Math.Max(0.0001f, pair.Value.GrowthFactor)),
             pair.Value.Amount, pair.Value.RotationYRadians, pair.Value.SubType,
@@ -287,10 +292,10 @@ public sealed class TiberiumHandler
         _cells.Clear();
         _renderChunks.Clear();
         if (states is null) return;
-        double now = Globals.Game.Network.EstimatedHostTime;
+        double now = HostTime;
         foreach (TiberiumSeedState state in states)
         {
-            if (!Globals.World.GameGrid.Contains(new Point(state.CellX, state.CellZ))) continue;
+            if (!World.GameGrid.Contains(new Point(state.CellX, state.CellZ))) continue;
             ApplySeed(state with { CreatedAt = now - state.Amount / (GrowthPerSecond * Math.Max(0.0001f, state.GrowthFactor)) });
         }
         Update(new GameTime(), false);
@@ -310,7 +315,7 @@ public sealed class TiberiumHandler
 
     private bool TryEditorSeed(Point cell, double now)
     {
-        if (_cells.ContainsKey(cell) || !Globals.World.GameGrid.Contains(cell) || Globals.World.GameGrid.GetCell(cell).IsBlocked) return false;
+        if (_cells.ContainsKey(cell) || !World.GameGrid.Contains(cell) || World.GameGrid.GetCell(cell).IsBlocked) return false;
         TerrainTile tile = GetTileAt(cell);
         if (Random.Shared.NextDouble() > SeedChanceByTile.GetValueOrDefault(tile, 0.5f)) return false;
         int hash = HashCode.Combine(cell.X, cell.Y, (int)now);
@@ -339,8 +344,8 @@ public sealed class TiberiumHandler
             return;
 
         Mesh mesh = Globals.MeshHandler.Meshes["tiberium-1"];
-        GameGrid grid = Globals.World.GameGrid;
-        Terrain terrain = Globals.World.Terrain;
+        GameGrid grid = World.GameGrid;
+        Terrain terrain = World.Terrain;
         LastVisibleChunkCount = 0;
         LastDrawnCellCount = 0;
         effect.Parameters["EmissivePulseTime"]?.SetValue(_visualTimeSeconds);
@@ -360,7 +365,7 @@ public sealed class TiberiumHandler
                 {
                     if (!_cells.TryGetValue(cell, out TiberiumCell? tiberium) || tiberium.Amount <= 0.0f)
                         continue;
-                    if (!Globals.World.Visibility.IsTerrainExploredToLocalPlayer(cell))
+                    if (!World.Visibility.IsTerrainExploredToLocalPlayer(cell))
                         continue;
                     Vector3 position = grid.ToWorldPosition(cell, 0.0f);
                     position.Y = terrain.GetSurfaceHeight(position.X, position.Z);

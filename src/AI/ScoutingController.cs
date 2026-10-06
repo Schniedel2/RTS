@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 namespace RTS;
 public sealed class ScoutingController(GameWorld world, Guid? commandPlayerId = null,
-    Network.NetworkHandler? commandNetwork = null) : IDisposable
+    Network.NetworkHandler? commandNetwork = null, float reconsiderSeconds = 8) : IDisposable
 {
     private sealed class State
     {
@@ -14,7 +14,7 @@ public sealed class ScoutingController(GameWorld world, Guid? commandPlayerId = 
         public float ReconsiderIn;
         public int Version;
         public readonly Dictionary<Point, double> FailedSectors = [];
-        public Network.LocalRequestReceipt? Receipt;
+        public Network.RequestReceipt? Receipt;
         public Vector3 LastPosition;
         public float StalledFor;
     }
@@ -56,15 +56,15 @@ public sealed class ScoutingController(GameWorld world, Guid? commandPlayerId = 
             if (!state.HasTarget && state.ReconsiderIn > 0) continue;
             if (state.ReconsiderIn > 0 && current != state.Target &&
                 world.ScoutingTargets.TargetOf(id) == state.Target &&
-                world.Visibility.GetDisplayedTerrainVisibility(army, state.Target, false) == VisibilityState.Unexplored)
+                world.Visibility.GetSimulationVisibility(army, state.Target) == VisibilityState.Unexplored)
             { world.ScoutingTargets.Claim(id, army, state.Target, _controller, now); continue; }
             world.ScoutingTargets.Release(id, _controller);
             state.HasTarget = false; state.Planning = true; state.Selecting = true;
             Point target = default;
             bool found = false, reachable = false;
             int version = ++state.Version;
-            long generation = (world.SimulationNetwork ?? Globals.Game?.Network)?.SessionGeneration ?? -1;
-            bool Valid() => !_disposed && generation == ((world.SimulationNetwork ?? Globals.Game?.Network)?.SessionGeneration ?? -1) && _scouts.TryGetValue(id, out State? active) && ReferenceEquals(active, state) &&
+            long generation = world.SimulationNetwork?.SessionGeneration ?? -1;
+            bool Valid() => !_disposed && generation == (world.SimulationNetwork?.SessionGeneration ?? -1) && _scouts.TryGetValue(id, out State? active) && ReferenceEquals(active, state) &&
                 (task is null || task.CanUse(unit)) && state.Version == version && state.Planning && world.Units.FindById(id) == unit && !unit.IsDying &&
                 !unit.IsEmbarked && unit.ArmyId == army && world.GameGrid.ToCell(unit.Position) == current;
             void Cancelled() { if (state.Version != version || !_scouts.TryGetValue(id, out State? active) || !ReferenceEquals(active, state)) return; state.Planning = false; state.ReconsiderIn = 0; world.ScoutingTargets.Release(id, _controller); }
@@ -80,16 +80,22 @@ public sealed class ScoutingController(GameWorld world, Guid? commandPlayerId = 
                     return;
                 }
                 if (!world.ScoutingTargets.Claim(id, army, target, _controller, _now)) { state.ReconsiderIn = 2; return; }
-                state.HasTarget = true; state.ReconsiderIn = 8;
+                state.HasTarget = true; state.ReconsiderIn = reconsiderSeconds;
                 state.Receipt = null;
                 Vector3 position = world.GameGrid.ToWorldPosition(target, 0);
                 if (commandPlayerId is Guid playerId)
                 {
-                    var commands = new Network.PlayerCommandService(commandNetwork ?? Globals.Game.Network, playerId, task);
+                    var commands = new Network.PlayerCommandService(commandNetwork ?? world.SimulationNetwork ?? throw new InvalidOperationException("Scouting requires a configured simulation network."), playerId, task);
                     _ = commands.GotoAsync([unit.UnitId], position);
                     state.Receipt = commands.LastRequest;
                 }
-                else _ = Globals.Game.NetworkClient.RequestGotoAsync([unit.UnitId], position.X, position.Y, position.Z);
+                else
+                {
+                    Network.NetworkHandler network = world.SimulationNetwork ?? throw new InvalidOperationException("Scouting requires a configured simulation network.");
+                    var commands = new Network.PlayerCommandService(network, network.LocalPeerId);
+                    _ = commands.GotoAsync([unit.UnitId], position);
+                    state.Receipt = commands.LastRequest;
+                }
             }
             IEnumerable<int> Work()
             {

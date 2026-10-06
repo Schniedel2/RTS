@@ -17,7 +17,8 @@ public sealed class ScoutingTargets(GameWorld world)
     {
         if (world.IsMovementAuthority || now == _lastClientPlanningTime) return;
         _lastClientPlanningTime = now;
-        ClientPlanning.Update(512, 0.5);
+        ClientPlanning.Update(Math.Min(512, AIRuntimeSettings.LocalCompute.PlanningStepsPerUpdate),
+            Math.Min(0.5, AIRuntimeSettings.LocalCompute.PlanningMillisecondsPerUpdate));
     }
     private double _lastTime;
     private long _generation = -1;
@@ -25,7 +26,7 @@ public sealed class ScoutingTargets(GameWorld world)
     public Point? TargetOf(Guid scoutId) => _leases.TryGetValue(scoutId, out var lease) ? lease.Cell : null;
     public void Clean(double now)
     {
-        long generation = (world.SimulationNetwork ?? Globals.Game?.Network)?.SessionGeneration ?? -1;
+        long generation = world.SimulationNetwork?.SessionGeneration ?? -1;
         if (generation != _generation || now < _lastTime) { _leases.Clear(); ClientPlanning.Reset(); _lastClientPlanningTime = double.NaN; }
         _generation = generation; _lastTime = now;
         foreach (var pair in _leases.ToArray())

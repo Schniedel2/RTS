@@ -64,8 +64,8 @@ public class PathfindingManager
         }
     }
 
-    public void Update(int maximumSteps = PlanningScheduler.MaximumStepsPerUpdate,
-        double maximumMilliseconds = PlanningScheduler.MaximumMillisecondsPerUpdate)
+    public void Update(int? maximumSteps = null,
+        double? maximumMilliseconds = null)
     {
         EnsureSession();
         if (!_map.IsMovementAuthority) { Reset(); return; }

@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -201,6 +201,10 @@ public class ConsoleCommands
         _console.RegisterCommand(
             "ai-status",
             SetAIPlayerStatus);
+        _console.RegisterCommand("bot-client-start", StartBotClient);
+        _console.RegisterCommand("bot-client-stop", StopBotClient);
+        _console.RegisterCommand("ai-controller-assign", AssignAIController);
+        _console.RegisterCommand("ai-controller-list", ListAIControllers);
         _console.RegisterCommand(
             "ai-list",
             ListAIPlayers);
@@ -504,7 +508,7 @@ public class ConsoleCommands
         }
 
         foreach (NetworkPeer member in _rtsGame.Network.Members)
-            _console.Print($"{member.Id} {member.DisplayName}");
+            _console.Print($"{member.Id} {member.DisplayName}" + (member.BotOffer is { } offer ? $" bot capacity={offer.MaximumArmies} proposed={offer.ProposedProfileId ?? "host default"}" : ""));
     }
 
     private void SendToHost(string[] args)
@@ -799,6 +803,71 @@ public class ConsoleCommands
         _console.Print($"AI '{aiPlayer.Name}' status={status}.");
     }
 
+    private void StartBotClient(string[] args)
+    {
+        if (args.Length is < 1 or > 2) { _console.Print("Usage: bot-client-start <AI-name|id> [config.json]"); return; }
+        AIPlayer? ai = _rtsGame.FindAIPlayer(args[0]);
+        if (ai is null) { _console.Print("AI player not found. Create it with ai-create first."); return; }
+        try { _rtsGame.LocalBots.Start(ai, args.Length == 2 ? args[1] : null); }
+        catch (Exception error) when (error is InvalidOperationException or IOException or ArgumentException or System.ComponentModel.Win32Exception)
+        { _console.Print("Bot start failed: " + error.Message); }
+    }
+
+    private void StopBotClient(string[] args)
+    {
+        if (args.Length != 1) { _console.Print("Usage: bot-client-stop <AI-name|id|all>"); return; }
+        if (args[0].Equals("all", StringComparison.OrdinalIgnoreCase)) { _rtsGame.LocalBots.Dispose(); return; }
+        AIPlayer? ai = _rtsGame.FindAIPlayer(args[0]);
+        if (ai is null || !_rtsGame.LocalBots.Stop(ai.Id)) _console.Print("No local bot for this AI.");
+    }
+
+    private void AssignAIController(string[] args)
+    {
+        if (!_rtsGame.Network.IsHost) { _console.Print("Only the host can assign AI controllers."); return; }
+        if (args.Length is < 2 or > 3 || (args.Length == 3 && args[2] != "proposed")) { _console.Print("Usage: ai-controller-assign <ai-name|id> <host|peer-name|peer-id> [proposed]"); return; }
+        AIPlayer? ai = _rtsGame.FindAIPlayer(args[0]);
+        if (ai is null) { _console.Print("AI player not found."); return; }
+        Guid peer;
+        if (args[1].Equals("host", StringComparison.OrdinalIgnoreCase)) peer = _rtsGame.Network.LocalPeerId;
+        else
+        {
+            var matches = _rtsGame.Network.Members.Where(p => p.DisplayName.Equals(args[1], StringComparison.OrdinalIgnoreCase) ||
+                p.Id.ToString().Equals(args[1], StringComparison.OrdinalIgnoreCase) || p.Id.ToString("N").StartsWith(args[1], StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (matches.Length != 1) { _console.Print("Specify one connected peer using session-members."); return; }
+            peer = matches[0].Id;
+        }
+        var previous = _rtsGame.Network.AIControllers.Find(ai.Player.ArmyId);
+        var profile = previous?.Profile ?? ai.Controller.StrategyProfile ?? AIStrategyProfile.Create(0, ai.Player.ArmyId);
+        if (args.Length == 3)
+        {
+            string? proposal = _rtsGame.Network.Members.FirstOrDefault(p => p.Id == peer)?.BotOffer?.ProposedProfileId;
+            if (proposal is null) { _console.Print("Peer has no profile proposal."); return; }
+            var type = Enum.GetValues<AIStrategyProfileType>().Single(t => AIProfileCatalog.Id(t) == proposal);
+            profile = AIProfileCatalog.Default.Resolve(type, profile.Seed);
+        }
+        AIControllerAssignment assignment;
+        try { assignment = _rtsGame.Network.AssignAIController(ai.Player.ArmyId, ai.Id, peer, profile); }
+        catch (ArgumentException error) { _console.Print(error.Message); return; }
+
+        // Dispose old planning now, not after a second host decision tick.
+        ai.Controller.BeginMatch(0, ai.Player.ArmyId, assignment.Profile);
+        ai.SetStatus(AIPlayerStatus.Active);
+        _console.Print($"AI {ai.Name}: peer={peer} generation={assignment.Generation} profile={profile.Type} seed={profile.Seed}.");
+    }
+
+    private void ListAIControllers(string[] args)
+    {
+        foreach (var assignment in _rtsGame.Network.AIControllers.Snapshot())
+        {
+            _console.Print($"AI actor={assignment.ActorId} army={assignment.ArmyId} peer={assignment.ControllerPeerId} " +
+                $"generation={assignment.Generation} profile={assignment.Profile.Type} seed={assignment.Profile.Seed} version={assignment.ProfileVersion} fingerprint={assignment.ProfileFingerprint[..12]}");
+            if (_rtsGame.Network.GetAIControllerHealth(assignment.ArmyId) is { } health)
+                _console.Print($"  heartbeat={health.HeartbeatAgeSeconds:0.0}s progress={health.ProgressAgeSeconds:0.0}s fallback={health.LastFallbackReason ?? "none"}");
+        }
+        foreach (AIPlayer ai in _rtsGame.RemoteAI.Players)
+            _console.Print($"Local remote AI {ai.Id}: {ai.Controller.Goal} | {ai.Controller.LastDecision}");
+    }
+
     private void ListAIPlayers(string[] args)
     {
         if (_rtsGame.AIPlayers.Count == 0)
@@ -810,6 +879,9 @@ public class ConsoleCommands
         foreach (AIPlayer aiPlayer in _rtsGame.AIPlayers)
             _console.Print($"AI {aiPlayer.Name} id={aiPlayer.Id.ToString("N")[..8]} team={aiPlayer.Player.TeamId} " +
                 $"status={aiPlayer.Status} goal={aiPlayer.Controller.Goal} " +
+                $"profile={aiPlayer.Controller.StrategyProfile?.Type} seed={aiPlayer.Controller.StrategyProfile?.Seed} " +
+                $"think={aiPlayer.Controller.StrategyProfile?.DecisionIntervalSeconds}s reserve={aiPlayer.Controller.StrategyProfile?.ResourceReserve} scout={aiPlayer.Controller.StrategyProfile?.ScoutReconsiderSeconds}s " +
+                $"planning={AIRuntimeSettings.LocalCompute.PlanningStepsPerUpdate} steps/{AIRuntimeSettings.LocalCompute.PlanningMillisecondsPerUpdate}ms " +
                 $"threats=[inf:{aiPlayer.Controller.Threats.AntiInfantryNeed:0.00} " +
                 $"veh:{aiPlayer.Controller.Threats.AntiVehicleNeed:0.00} " +
                 $"air:{aiPlayer.Controller.Threats.AntiAirNeed:0.00}] " +

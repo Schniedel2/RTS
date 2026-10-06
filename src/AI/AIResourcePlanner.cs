@@ -6,6 +6,7 @@ namespace RTS;
 public sealed class AIResourcePlanner
 {
     public const int SafetyReserve = 800;
+    public int ConfiguredReserve { get; set; } = SafetyReserve;
     public AIOrderPriority MinimumPurchasePriority { get; internal set; } = AIOrderPriority.Expansion;
     public int Resources { get; private set; }
     public int InFlightExpenses { get; private set; }
@@ -35,7 +36,7 @@ public sealed class AIResourcePlanner
     internal bool TryAllocate(int price, AIOrderPriority priority)
     {
         if (price == 0) return true;
-        if ((long)AvailableResources < (long)price + ReserveFor(priority))
+        if ((long)AvailableResources < (long)price + (priority >= AIOrderPriority.Defense ? 0 : ConfiguredReserve))
         { Protect(price); return false; }
         InFlightExpenses += price;
         return true;
@@ -48,7 +49,7 @@ public sealed class AIResourcePlanner
         // The central queue must see affordable AND unaffordable strategic wishes.
         // Submission itself neither spends nor reserves resources.
         if (world.AIOrderQueues.ContainsKey(armyId)) return true;
-        return (long)(Globals.Game.Armies.Find(armyId)?.Resources ?? 0) >=
+        return (long)(world.SimulationArmies.Find(armyId)?.Resources ?? 0) >=
             (long)quote.FinalPrice + ReserveFor(priority);
     }
 }

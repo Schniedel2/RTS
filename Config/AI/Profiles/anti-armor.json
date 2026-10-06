@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "profileId": "anti-armor",
+  "type": "AntiArmor",
+  "displayName": "Anti-Armor",
+  "requiredGunners": 2,
+  "requiredRakZero": 2,
+  "requiredTanks": 2,
+  "retreatHealthFraction": 0.42,
+  "attackReadinessSeconds": 6,
+  "defenseRadiusInCells": 34,
+  "assaultStallTimeoutSeconds": 65,
+  "decisionIntervalSeconds": 1,
+  "resourceReserve": 800,
+  "scoutReconsiderSeconds": 8
+}

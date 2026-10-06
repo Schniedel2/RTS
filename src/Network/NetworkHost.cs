@@ -1,3 +1,4 @@
+﻿using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
@@ -98,6 +99,27 @@ public sealed class NetworkHost
             _earthworkBroadcasts.Enqueue(command);
         }, refreshGraphics: world.GraphicsEnabled, armies: armies);
         networkInput.MessageReceived += HandleMessage;
+        networkHandler.AIControllerAssignmentChanged += RejectSupersededAIRequests;
+    }
+
+    private void RejectSupersededAIRequests(AIControllerAssignment assignment)
+    {
+        bool Stale(NetworkMessage request) => request.AIControllerArmyId == assignment.ArmyId &&
+            request.AIControllerGeneration != assignment.Generation;
+        // Only pending admission/planning is removed. Accepted simulation jobs stay untouched.
+        int count = _requestQueue.Count;
+        for (int i = 0; i < count && _requestQueue.TryDequeue(out var request); i++)
+        {
+            if (!Stale(request)) { _requestQueue.Enqueue(request); continue; }
+            _networkHandler.ResolveLocalRequest(request, false, "Controller assignment changed.");
+            _requestVersions.Remove(request);
+        }
+        if (_pendingGoto is { } pending && Stale(pending.ReceiptRequest))
+        {
+            ReleasePlanningIntent(pending, supersededController: true);
+            _networkHandler.ResolveLocalRequest(pending.ReceiptRequest, false, "Controller assignment changed during planning.");
+            _pendingGoto = null; _pendingGotoReady = false;
+        }
     }
 
     private async Task PublishEarthworkAsync()
@@ -260,8 +282,37 @@ public sealed class NetworkHost
 
     private void HandleMessage(NetworkMessage message)
     {
+        if (message.Type.ToString().EndsWith("Request", StringComparison.Ordinal))
+        {
+            if (!AuthorizeController(message))
+            { _networkHandler.ResolveLocalRequest(message, false, "Invalid or stale AI controller assignment."); return; }
+            if (message.AIControllerActorId is Guid actor) message = message with { SenderId = actor, PlayerId = actor };
+        }
+        if (message.Type.ToString().EndsWith("Request", StringComparison.Ordinal) && _networkHandler.ReplayKnownRequest(message)) return;
         if (!AdmitRequest(message))
             _networkHandler.ResolveLocalRequest(message, false, "Host admission rejected the request (invalid payload, target or full inbox).");
+    }
+
+    internal bool AuthorizeController(NetworkMessage request)
+    {
+        bool ai = request.AIControllerArmyId.HasValue || request.AIControllerActorId.HasValue || request.AIControllerGeneration != 0;
+        if (ai && !_networkHandler.AIControllers.Authorizes(request)) return false;
+        if (ai && request.Type is NetworkMessageType.GrantArmyControlRequest or NetworkMessageType.RevokeArmyControlRequest or
+            NetworkMessageType.TransferUnitRequest or NetworkMessageType.MergeArmiesRequest or NetworkMessageType.StartMultiplayerGameRequest or
+            NetworkMessageType.SpawnRequest or NetworkMessageType.ToolActionRequest or NetworkMessageType.RequestPlayerUpdate) return false;
+        if (ai && request.ConstructionSiteId is Guid siteId && _world.Units.FindById(siteId)?.ArmyId is Guid siteArmy && siteArmy != request.AIControllerArmyId) return false;
+        if (!ai && _networkHandler.AIControllers.ForActor(request.SenderId) is not null) return false;
+        Guid[] recipients = (request.UnitIds ?? []).Concat(request.UnitId is Guid singleId && request.Type != NetworkMessageType.BuildRequest ? new[] { singleId } : Array.Empty<Guid>()).Distinct().ToArray();
+        foreach (Guid id in recipients)
+        {
+            Unit? unit = _world.Units.FindById(id);
+            if (unit?.ArmyId is not Guid army) continue; // normal validation handles missing units
+            if (ai && army != request.AIControllerArmyId) return false;
+            if (!ai && _networkHandler.AIControllers.Find(army) is not null) return false;
+        }
+        if (request.ArmyId is Guid explicitArmy && (ai ? explicitArmy != request.AIControllerArmyId : _networkHandler.AIControllers.Find(explicitArmy) is not null)) return false;
+        if (!ai && request.SecondaryArmyId is Guid secondary && _networkHandler.AIControllers.Find(secondary) is not null) return false;
+        return true;
     }
 
     private bool AdmitRequest(NetworkMessage message)
@@ -341,6 +392,7 @@ public sealed class NetworkHost
         if (_requestQueue.Count >= MaximumQueuedRequests)
             return false;
 
+        if (!_networkHandler.AdmitRequestId(message)) return true;
         RememberPlanningVersions(message);
         _requestQueue.Enqueue(message);
         return true;
@@ -368,6 +420,7 @@ public sealed class NetworkHost
         try
         {
             UpdateHostSimulation(gameTime);
+            PublishRequestExecution();
             await PublishSatelliteReconAsync(gameTime);
             await PublishEarthworkAsync();
             await PublishHelicoptersAsync();
@@ -386,7 +439,7 @@ public sealed class NetworkHost
                 _pendingGoto = null;
                 _pendingGotoReady = false;
                 NetworkMessage? planned = FilterPlannedCommand(finished);
-                if (planned is not null) { CommitGotoEnds(planned); await PublishAsync(planned); }
+                if (planned is not null) { planned.RequestId = finished.ReceiptRequest.RequestId; planned.RequestGeneration = finished.ReceiptRequest.RequestGeneration; CommitGotoEnds(planned); await PublishAsync(planned); }
                 _networkHandler.ResolveLocalRequest(finished.ReceiptRequest, planned is not null,
                     planned is not null ? null : finished.Versions.Keys.Any(id =>
                         _world.Units.FindMobileUnitById(id) is MobileUnit mobile && PlanUnitValid(finished, mobile))
@@ -397,6 +450,7 @@ public sealed class NetworkHost
             foreach (NetworkMessage queuedRequest in TakeRequestsForUpdate())
             {
                 using var measurement = PerformanceMeasurements.Measure(RequestMeasurementNames[queuedRequest.Type]);
+                if (!AuthorizeController(queuedRequest)) { _networkHandler.ResolveLocalRequest(queuedRequest, false, "Controller assignment changed."); continue; }
                 NetworkMessage request = queuedRequest;
 
                 if (request.Type is NetworkMessageType.GotoRequest or NetworkMessageType.StopRequest or
@@ -483,6 +537,8 @@ public sealed class NetworkHost
                     continue;
                 }
 
+                command.RequestId = queuedRequest.RequestId;
+                command.RequestGeneration = queuedRequest.RequestGeneration;
                 _networkHandler.ApplyLocalCommand(command);
                 await _networkHandler.BroadcastAsync(command, CancellationToken.None);
                 _networkHandler.ResolveLocalRequest(queuedRequest, true);
@@ -494,6 +550,31 @@ public sealed class NetworkHost
         finally
         {
             _updateGate.Release();
+        }
+    }
+
+    private void PublishRequestExecution()
+    {
+        foreach (NetworkMessage request in _networkHandler.AcceptedRequests)
+        {
+            Guid? siteId = request.Type == NetworkMessageType.BuildRequest ? request.UnitId : request.ConstructionSiteId;
+            if (request.Type is NetworkMessageType.BuildRequest or NetworkMessageType.BuildConstructionRequest && siteId is Guid site)
+            {
+                if (_world.Units.FindById(site) is not Building building || building.IsDying)
+                    _networkHandler.ReportRequestExecution(request, AIOrderStatus.Failed, AIOrderFailure.InvalidTarget, "Construction lost.");
+                else _networkHandler.ReportRequestExecution(request, building.IsCompleted ? AIOrderStatus.Completed : AIOrderStatus.InProgress);
+            }
+            else if (request.Type is NetworkMessageType.TrainUnitRequest or NetworkMessageType.ResearchRequest && request.ProductionOrderId is Guid order)
+            {
+                if (_world.Units.FindById(request.UnitId!.Value) is not Building producer || producer.IsDying)
+                    _networkHandler.ReportRequestExecution(request, AIOrderStatus.Failed, AIOrderFailure.Producer, "Producer lost.");
+                else if (producer.ProductionQueue.WasCompleted(order))
+                    _networkHandler.ReportRequestExecution(request, AIOrderStatus.Completed);
+                else if (producer.ProductionQueue.Orders.Any(item => item.OrderId == order))
+                    _networkHandler.ReportRequestExecution(request, AIOrderStatus.InProgress);
+                else _networkHandler.ReportRequestExecution(request, AIOrderStatus.Failed, AIOrderFailure.Cancelled, "Production cancelled.");
+            }
+            else _networkHandler.ReportRequestExecution(request, AIOrderStatus.Completed);
         }
     }
 
@@ -613,7 +694,7 @@ public sealed class NetworkHost
 
     private bool PlanVersionValid(GotoPlan plan, MobileUnit unit) =>
         !unit.IsDying && !unit.IsEmbarked &&
-        _armies.CanControl(plan.Request.SenderId, unit.ArmyId) &&
+        AuthorizeController(plan.Request) && _armies.CanControl(plan.Request.SenderId, unit.ArmyId) &&
         plan.Versions.TryGetValue(unit.UnitId, out long version) && version == _planningVersions.GetValueOrDefault(unit.UnitId);
 
     private bool PlanUnitValid(GotoPlan plan, MobileUnit unit) =>
@@ -1028,11 +1109,12 @@ public sealed class NetworkHost
             }, cancelled);
     }
 
-    private void ReleasePlanningIntent(GotoPlan plan)
+    private void ReleasePlanningIntent(GotoPlan plan, bool supersededController = false)
     {
         foreach (Guid id in plan.Versions.Keys)
             if (_world.Units.FindMobileUnitById(id) is MobileUnit mobile &&
-                PlanUnitValid(plan, mobile) && mobile.MovementStatus == MovementStatus.Planning &&
+                (PlanUnitValid(plan, mobile) || supersededController && _planningVersions.GetValueOrDefault(id) == plan.Versions[id]) &&
+                mobile.MovementStatus == MovementStatus.Planning &&
                 mobile.CurrentCommand?.Target == new Vector2(plan.Request.X, plan.Request.Z))
                 mobile.ClearCommand();
     }
@@ -1111,7 +1193,7 @@ public sealed class NetworkHost
         // Register immediately so another request in this host tick cannot
         // claim the same footprint before the replicated command is processed.
         Building? building = _world.Units.SpawnBuilding(request.UnitTypeId, position,
-            request.TargetAngleY, unitId, request.SenderId, quote.FinalPrice);
+            request.TargetAngleY, unitId, request.SenderId, quote.FinalPrice, armyId);
         if (building is null)
             return null;
         ArmyResourceService.TrySpend(army, _world, building.PurchasePrice);
@@ -1193,6 +1275,14 @@ public sealed class NetworkHost
     {
         if (request.SenderId != _networkHandler.LocalPeerId)
             return null;
+
+        // Validate before publishing/resetting the world or starting any controller.
+        try { _ = AIProfileCatalog.Default; _ = AIRuntimeSettings.Default; _ = AIRuntimeSettings.LocalCompute; }
+        catch (Exception error) when (error is InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            Globals.Console?.Print($"Cannot start game: {error.Message}");
+            return null;
+        }
 
         // AI controllers live only on the host. Include their player identities
         // explicitly so a map publish or player-list rebuild cannot drop them

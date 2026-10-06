@@ -3,6 +3,8 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 
 namespace RTS;
 
@@ -17,6 +19,7 @@ public sealed class GameHud
     private float _minimapRefreshElapsed;
     private bool _showMinimap;
     private KeyboardState _previousKeyboardState;
+    public SelectionGroupHotkeys GroupHotkeys { get; } = new();
 
     public HudLayout Layout { get; private set; }
     public Dictionary<int, SelectionGroup> SelectionGroups { get; } = new();
@@ -53,28 +56,29 @@ public sealed class GameHud
             homeConsumed = true;
         }
 
-        Keys[] groupKeys = {Keys.D0, Keys.D1, Keys.D2, Keys.D3, Keys.D4, Keys.D5, Keys.D6, Keys.D7, Keys.D8, Keys.D9};
-        
-        foreach (Keys groupKey in groupKeys)
-        {            
-            if (keyboard.IsKeyDown(groupKey) && !_previousKeyboardState.IsKeyDown(groupKey))
+        bool groupConsumed = false;
+        SelectionGroupKey? groupKey = GroupHotkeys.Update(keyboard,
+            (double)Stopwatch.GetTimestamp() / Stopwatch.Frequency,
+            inputEnabled && Layout.Mode is HudLayoutMode.Game or HudLayoutMode.Editor);
+        if (groupKey is SelectionGroupKey command)
+        {
+            groupConsumed = true;
+            if (command.Save)
+                RecreateSelectionGroup(command.Number, selectedUnits);
+            else if (SelectionGroups.TryGetValue(command.Number, out SelectionGroup? group))
             {
-                //  group-key pressed
-                int groupNum = groupKey - Keys.D0;
-                if (keyboard.IsKeyDown(Keys.LeftControl) || keyboard.IsKeyDown(Keys.RightControl))
-                {
-                    RecreateSelectionGroup(groupNum, Globals.LocalPlayer.SelectedUnits);
-                }
-                else
-                {
-                    if (SelectionGroups.TryGetValue(groupNum, out SelectionGroup? group))
-                    {
-                        Globals.LocalPlayer.SetUnitSelection(group.Units);
-                    }
-                }
+                List<Unit> live = SelectionGroupHotkeys.GetLiveMembers(_world, group.Units);
+                foreach (Unit removed in group.Units.Except(live))
+                    removed.NotifyRemovedFromSelectionGroup(command.Number);
+                group.Units.Clear();
+                group.Units.AddRange(live);
+                List<Unit> visible = live.Where(unit => _world.Visibility.IsUnitVisibleToLocalPlayer(unit)).ToList();
+                Globals.LocalPlayer.SetUnitSelection(visible);
+                if (command.CenterCamera && SelectionGroupHotkeys.TryGetCenter(_world, visible, out Vector3 center))
+                    camera.CenterOn(center, _world.Terrain);
             }
         }
-                
+
         _previousKeyboardState = keyboard;
 
         _minimapRefreshElapsed += (float)gameTime.ElapsedGameTime.TotalSeconds;
@@ -83,7 +87,7 @@ public sealed class GameHud
             _minimapRefreshElapsed %= 0.2f;
             _minimap.Refresh(localArmy?.Id ?? Guid.Empty);
         }
-        return satelliteConsumed || minimapConsumed || actionPanelConsumed || homeConsumed;
+        return satelliteConsumed || minimapConsumed || actionPanelConsumed || homeConsumed || groupConsumed;
     }
 
     public void Draw(SpriteBatch spriteBatch, Camera camera, Army? localArmy, GameWorld world)
@@ -103,6 +107,8 @@ public sealed class GameHud
     public void Reset()
     {
         _minimap.Reset();
+        GroupHotkeys.Reset();
+        foreach (int number in SelectionGroups.Keys.ToArray()) DeleteSelectionGroup(number);
         _minimapRefreshElapsed = 0.0f;
         _showMinimap = false;
     }

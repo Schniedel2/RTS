@@ -20,7 +20,7 @@ internal static partial class AIReconstructionChecks
             Check(ReferenceEquals(result, queue.Orders[0].Result) && result.Status == AIOrderStatus.Requested,
                 "Gateway receipt and army order share one requested outcome");
             scenario.Network.Update(); scenario.PumpHost();
-            Check(result.Status == AIOrderStatus.Accepted && result.WasAccepted, "Real host acknowledgment explicitly records Accepted");
+            Check(result.Transitions.Contains(AIOrderStatus.Accepted) && result.WasAccepted, "Real host acknowledgment explicitly records Accepted");
             queue.Dispatch();
             Check(result.Status == AIOrderStatus.InProgress && !result.IsTerminal, "Accepted FIFO is a running job");
             scenario.Barracks.ProductionQueue.Update(100, out _); queue.Dispatch();

@@ -1,0 +1,3 @@
+﻿# Same test map/armies as aitest, then outsource AI1 to a local bot process.
+call aitest
+bot-client-start AI1

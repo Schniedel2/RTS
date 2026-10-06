@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "profileId": "balanced-assault",
+  "type": "BalancedAssault",
+  "displayName": "Balanced Assault",
+  "requiredGunners": 3,
+  "requiredRakZero": 1,
+  "requiredTanks": 1,
+  "retreatHealthFraction": 0.45,
+  "attackReadinessSeconds": 5,
+  "defenseRadiusInCells": 36,
+  "assaultStallTimeoutSeconds": 60,
+  "decisionIntervalSeconds": 1,
+  "resourceReserve": 800,
+  "scoutReconsiderSeconds": 8
+}

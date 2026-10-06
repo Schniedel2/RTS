@@ -63,7 +63,7 @@ public sealed class AIThreatAssessment(Guid armyId)
     {
         using var measurement = PerformanceMeasurements.Measure("AI.ThreatAssessment");
         double now = gameTime.TotalGameTime.TotalSeconds;
-        long generation = (world.SimulationNetwork ?? Globals.Game?.Network)?.SessionGeneration ?? -1;
+        long generation = world.SimulationNetwork?.SessionGeneration ?? -1;
         if (_initialized && (generation != _generation || now < _lastTime))
         {
             _observations.Clear(); Current = RememberedThreats = AIThreatSnapshot.Baseline;
@@ -187,10 +187,7 @@ public sealed class AIThreatAssessment(Guid armyId)
 
     private bool CanObserve(GameWorld world, Vector3 position)
     {
-        CellVisibility visibility = world.Visibility.GetVisibility(armyId, world.GameGrid.ToCell(position));
-        return (visibility & CellVisibility.Visible) != 0 ||
-            (world.SimulationArmies.Find(armyId)?.Intelligence.ShareWorldVision == true &&
-             (visibility & CellVisibility.VisibleByAlly) != 0);
+        return world.Visibility.GetSimulationVisibility(armyId, world.GameGrid.ToCell(position)) == VisibilityState.Visible;
     }
 
     private AICombatContext ObservationContext(Vector3 position)

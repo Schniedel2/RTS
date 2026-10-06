@@ -21,26 +21,17 @@ public sealed record AIStrategyProfile(
     float AttackReadinessSeconds,
     float DefenseRadiusInCells,
     float AssaultStallTimeoutSeconds,
-    int Seed)
+    int Seed,
+    float DecisionIntervalSeconds = 1,
+    int ResourceReserve = 800,
+    float ScoutReconsiderSeconds = 8)
 {
-    public static AIStrategyProfile Create(int matchSeed, Guid armyId)
+    public static AIStrategyProfile Create(int matchSeed, Guid armyId, AIProfileCatalog? profiles = null)
     {
-        int seed = CombineSeed(matchSeed, armyId);
-        var random = new Random(seed);
-        int roll = random.Next(100);
-        AIStrategyProfile profile = roll switch
-        {
-            < 40 => new(AIStrategyProfileType.BalancedAssault, "Balanced Assault",
-                3, 1, 1, 0.45f, 5.0f, 36.0f, 60.0f, seed),
-            < 65 => new(AIStrategyProfileType.InfantryCompany, "Infantry Company",
-                4, 0, 1, 0.50f, 7.0f, 40.0f, 70.0f, seed),
-            < 90 => new(AIStrategyProfileType.AntiArmor, "Anti-Armor",
-                2, 2, 2, 0.42f, 6.0f, 34.0f, 65.0f, seed),
-            _ => new(AIStrategyProfileType.FastRecon, "Fast Recon",
-                2, 1, 1, 0.36f, 2.0f, 30.0f, 45.0f, seed)
-        };
-        return profile;
+        return AIRuntimeSettings.Default.Select(matchSeed, armyId, profiles ?? AIProfileCatalog.Default);
     }
+
+    internal static int EffectiveSeed(int matchSeed, Guid armyId) => CombineSeed(matchSeed, armyId);
 
     private static int CombineSeed(int matchSeed, Guid armyId)
     {

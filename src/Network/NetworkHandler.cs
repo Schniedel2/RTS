@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -15,11 +15,11 @@ namespace RTS.Network;
 
 public enum NetworkConnectionStatus { Disconnected, Hosting, Connecting, Synchronizing, Connected, Faulted }
 
-public sealed class NetworkHandler : IDisposable
+public sealed partial class NetworkHandler : IDisposable
 {
     public const int SessionPortStart = 27000;
     public const int SessionPortEnd = 27010;
-    public const int ProtocolVersion = 7;
+    public const int ProtocolVersion = 11;
     public const int MaximumMessagesPerUpdate = 128;
     public const int MaximumPendingMessages = 8192;
     private readonly NetworkInbox<Inbound> _receivedMessages = new(input => input.Message, input => (input.Generation, input.Client));
@@ -41,7 +41,7 @@ public sealed class NetworkHandler : IDisposable
         if (router is null) _localAIOrderRouters.Remove(actorId);
         else _localAIOrderRouters[actorId] = router;
     }
-    internal bool RouteLocalAIOrder(NetworkMessage request) => IsHost &&
+    internal bool RouteLocalAIOrder(NetworkMessage request) =>
         _localAIOrderRouters.TryGetValue(request.SenderId, out var router) && router(request);
     internal void SetLocalAIRequestPolicy(Guid actorId, Func<NetworkMessage, bool>? policy)
     {
@@ -49,10 +49,15 @@ public sealed class NetworkHandler : IDisposable
         else _localAIPolicies[actorId] = policy;
     }
     internal bool AllowLocalAIRequest(NetworkMessage request) =>
-        !IsHost || !_localAIPolicies.TryGetValue(request.SenderId, out var policy) || policy(request);
+        !_localAIPolicies.TryGetValue(request.SenderId, out var policy) || policy(request);
+    public RequestReceipt TrackRequest(NetworkMessage request) => TrackLocalRequest(request)!;
+
     internal LocalRequestReceipt? TrackLocalRequest(NetworkMessage request)
     {
-        if (!IsHost) return null;
+        EnsureRequestSession();
+        request.RequestId ??= Guid.NewGuid();
+        request.RequestGeneration = SessionGeneration;
+        if (_requestReceipts.TryGetValue(request.RequestId.Value, out var known) && known.Request.SenderId == request.SenderId) return known;
         if (_receiptGeneration != SessionGeneration)
         {
             _pendingAIPurchases.Clear(); _localRejections.Clear();
@@ -64,6 +69,7 @@ public sealed class NetworkHandler : IDisposable
         if (purchase && _pendingAIPurchases.TryGetValue(key, out var pending) &&
             pending.State == LocalRequestState.Pending) return pending;
         var receipt = _localRequests.GetValue(request, message => new(message, SessionGeneration));
+        _requestReceipts[request.RequestId.Value] = receipt;
         if (purchase) _pendingAIPurchases[key] = receipt;
         return receipt;
     }
@@ -73,7 +79,10 @@ public sealed class NetworkHandler : IDisposable
             ? receipt : null;
     internal void ResolveLocalRequest(NetworkMessage request, bool accepted, string? reason = null, AIOrderFailure failure = AIOrderFailure.Validation)
     {
+        if (request.Type.ToString().EndsWith("Command", StringComparison.Ordinal)) return;
+        PublishRequestFeedback(request, accepted ? LocalRequestState.Accepted : LocalRequestState.Rejected, reason, failure);
         if (!_localRequests.TryGetValue(request, out LocalRequestReceipt? receipt)) return;
+        if (receipt.State != LocalRequestState.Pending) return;
         receipt.State = receipt.Generation != SessionGeneration ? LocalRequestState.Abandoned
             : accepted ? LocalRequestState.Accepted : LocalRequestState.Rejected;
         receipt.Reason = reason;
@@ -126,8 +135,10 @@ public sealed class NetworkHandler : IDisposable
     private readonly Stopwatch _localClock = Stopwatch.StartNew();
     private double _hostTimeOffset;
 
+    public BotControllerOffer? BotOffer { get; init; }
     public Guid LocalPeerId { get; } = Guid.NewGuid();
     public string DisplayName { get; set; }
+    public int? HostingPort => IsHost && _listener?.LocalEndpoint is IPEndPoint endpoint ? endpoint.Port : null;
     public string SessionName { get; private set; } = "";
     public Guid? SessionId { get; private set; }
     public bool IsHost { get; private set; }
@@ -248,7 +259,7 @@ public sealed class NetworkHandler : IDisposable
             if (generation != SessionGeneration) { connection.Dispose(); return; }
             StartConnection(connection, generation, _cancellation.Token);
             await SendAsync(connection, new NetworkMessage(NetworkMessageType.JoinSession, LocalPeerId,
-                DisplayName: DisplayName, ProtocolVersion: ProtocolVersion), cancellationToken);
+                DisplayName: DisplayName, ProtocolVersion: ProtocolVersion) { BotOffer = BotOffer }, cancellationToken);
         }
         catch (Exception error) when (error is SocketException or IOException or OperationCanceledException or ObjectDisposedException)
         {
@@ -304,18 +315,21 @@ public sealed class NetworkHandler : IDisposable
 
     public Task SendToHostAsync(NetworkMessage message, CancellationToken cancellationToken = default)
     {
+        if (message.RequestId is Guid requestId && _requestReceipts.TryGetValue(requestId, out var receipt))
+        { receipt.WasSent = true; _requestPollTimes[requestId] = _localClock.Elapsed.TotalSeconds; }
         if (IsHost)
         {
             EnqueueLocalMessage(message);
             return Task.CompletedTask;
         }
 
-        return SendToServerAsync(message, cancellationToken);
+        return SendToServerAsync(message.AIControllerActorId.HasValue ? message with { SenderId = LocalPeerId, PlayerId = LocalPeerId } : message, cancellationToken);
     }
 
     public void ApplyLocalCommand(NetworkMessage message)
     {
         AssertGameThread();
+        if (message.Type == NetworkMessageType.RequestFeedbackCommand) { ApplyRequestFeedback(message); return; }
         if (AcceptComplexCommand(message)) MessageReceived?.Invoke(message);
     }
 
@@ -366,6 +380,7 @@ public sealed class NetworkHandler : IDisposable
     {
         if (_gameThreadId == 0) _gameThreadId = Environment.CurrentManagedThreadId;
         AssertGameThread();
+        UpdateRequestFeedback();
         long started = Stopwatch.GetTimestamp();
         for (int count = 0; count < MaximumMessagesPerUpdate; count++)
         {
@@ -380,11 +395,14 @@ public sealed class NetworkHandler : IDisposable
             }
             if (Stopwatch.GetElapsedTime(started).TotalMilliseconds >= 4) break;
         }
+        UpdateAIControllerLeases();
     }
 
     public void Disconnect()
     {
         Interlocked.Increment(ref _generation);
+        AIControllers.Clear();
+        _aiLeases.Clear(); _aiFallbackReasons.Clear();
         _cancellation?.Cancel();
         _listener?.Stop();
         foreach (NetworkConnection connection in _connections.Values) connection.Dispose();
@@ -496,6 +514,12 @@ public sealed class NetworkHandler : IDisposable
         if (message.Type == NetworkMessageType.MemberJoined && message.DisplayName is not null)
             _peerDisplayNames[message.SenderId] = message.DisplayName;
         if (message.Type == NetworkMessageType.MemberLeft) _peerDisplayNames.TryRemove(message.SenderId, out _);
+        if (message.Type == NetworkMessageType.AIControllerAssignmentCommand)
+        { if (message.SenderId == _hostPeerId && message.AIControllerAssignment is { } assignment)
+            { AIControllers.Apply(assignment); AbandonSupersededAIRequests(assignment); AIControllerAssignmentChanged?.Invoke(assignment); } return; }
+        if (message.Type == NetworkMessageType.SessionSnapshot && message.SessionSnapshot is { } snapshot)
+            AIControllers.Restore(snapshot.AIControllers ?? []);
+        if (message.Type == NetworkMessageType.RequestFeedbackCommand) { ApplyRequestFeedback(message); return; }
         MessageReceived?.Invoke(message);
     }
 
@@ -519,6 +543,7 @@ public sealed class NetworkHandler : IDisposable
                 RejectJoin(client, "Incompatible build, invalid identity or duplicate player name.");
                 return;
             }
+            if (message.BotOffer is { } offer && !offer.IsValid) { RejectJoin(client, "Invalid bot capabilities."); return; }
             try
             {
                 // Capture and encode every initial message on the game thread,
@@ -538,7 +563,7 @@ public sealed class NetworkHandler : IDisposable
                 byte[][] frames = initial.Select(NetworkConnection.Encode).ToArray();
                 if (!_connections.TryGetValue(client, out NetworkConnection? connection)) return;
                 foreach (byte[] frame in frames) if (!connection.TrySend(frame)) return;
-                _members[message.SenderId] = new NetworkPeer(message.SenderId, name, client);
+                _members[message.SenderId] = new NetworkPeer(message.SenderId, name, client) { BotOffer = message.BotOffer };
                 _peerDisplayNames[message.SenderId] = name;
                 var joined = new NetworkMessage(NetworkMessageType.MemberJoined, message.SenderId, DisplayName: name);
                 MessageReceived?.Invoke(joined);
@@ -553,6 +578,8 @@ public sealed class NetworkHandler : IDisposable
         }
         NetworkPeer? sender = _members.Values.FirstOrDefault(peer => ReferenceEquals(peer.Client, client));
         if (sender is null || sender.Id != message.SenderId) return;
+        if (message.Type == NetworkMessageType.AIControllerHeartbeat)
+        { ReceiveAIHeartbeat(message, sender.Id); return; }
         if (message.Type == NetworkMessageType.RequestWorldData)
         {
             if (_sessionSnapshotProvider is not null) _ = SendAsync(client, _sessionSnapshotProvider());
@@ -565,10 +592,11 @@ public sealed class NetworkHandler : IDisposable
             if (message.Type == NetworkMessageType.CommandToAll) MessageReceived?.Invoke(message);
             return;
         }
+        if (message.Type == NetworkMessageType.RequestStatusRequest) { ReplayRequestFeedback(message); return; }
         // Clients issue requests, never confirmations. Actor identity comes from the connection.
         if (message.Type.ToString().EndsWith("Request", StringComparison.Ordinal) ||
             message.Type is NetworkMessageType.CommandToHost or NetworkMessageType.RequestPlayerUpdate or NetworkMessageType.NotifyUnitsSelected)
-            MessageReceived?.Invoke(message with { PlayerId = sender.Id });
+            MessageReceived?.Invoke(message with { PlayerId = sender.Id, ControllerPeerId = sender.Id });
     }
 
     private void RejectJoin(TcpClient client, string error)
@@ -639,7 +667,7 @@ public sealed class NetworkHandler : IDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
         byte[] frame = NetworkConnection.Encode(message);
-        IEnumerable<NetworkPeer> recipients = message.Type == NetworkMessageType.CommandToMember
+        IEnumerable<NetworkPeer> recipients = message.Type is NetworkMessageType.CommandToMember or NetworkMessageType.RequestFeedbackCommand
             ? _members.Values.Where(peer => peer.Id == message.TargetId)
             : _members.Values.Where(peer => peer.Id != message.SenderId);
         foreach (NetworkPeer peer in recipients)

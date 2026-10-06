@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Microsoft.Xna.Framework;
 
 namespace RTS.Network;
@@ -374,6 +374,7 @@ public static class NetworkCommands
             Z: spawnPosition.Z,
             ArmyId: building.ArmyId,
             SpawnSourceBuildingId: building.UnitId,
+            ProductionOrderId: order.OrderId,
             ExitX: exitPosition.X,
             ExitY: exitPosition.Y,
             ExitZ: exitPosition.Z,

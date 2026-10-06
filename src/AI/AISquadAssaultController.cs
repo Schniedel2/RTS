@@ -27,7 +27,7 @@ public sealed class AISquadAssaultController(
 {
     public const float SevereAverageHealthFraction = 0.45f;
     public const int MinimumFightingSoldiers = 2;
-    private const float ThinkIntervalSeconds = 0.75f;
+    private float ThinkIntervalSeconds => 0.75f * _profile.DecisionIntervalSeconds;
     private const float OrderRefreshSeconds = 2.0f;
     private const float StagingRadiusInCells = 8.0f;
     private const float ImmediateThreatRadiusInCells = 14.0f;
@@ -229,8 +229,8 @@ public sealed class AISquadAssaultController(
         Building[] candidates = world.Units.Units.OfType<Building>()
             .Where(building => !_unreachableTargets.ContainsKey(building.UnitId))
             .Where(building => building.CanBeTargeted && building.ArmyId != armyId && IsEnemy(building) &&
-            world.Visibility.GetDisplayedTerrainVisibility(
-                armyId, world.GameGrid.ToCell(building.Position), forMinimap: false) != VisibilityState.Unexplored)
+            world.Visibility.GetSimulationVisibility(
+                armyId, world.GameGrid.ToCell(building.Position)) != VisibilityState.Unexplored)
             .OrderBy(GetTargetPriority)
             .ThenBy(building => DistanceToHomeSquared(building.Position))
             .ThenBy(building => building.UnitId)
@@ -250,8 +250,8 @@ public sealed class AISquadAssaultController(
         return world.Units.Units.Where(candidate =>
                 candidate is not Building && candidate.CanBeTargeted && IsEnemy(candidate) &&
                 HorizontalDistanceSquared(candidate.Position, leader.Position) <= radiusSquared &&
-                world.Visibility.GetDisplayedTerrainVisibility(
-                    armyId, world.GameGrid.ToCell(candidate.Position), forMinimap: false) == VisibilityState.Visible &&
+                world.Visibility.GetSimulationVisibility(
+                    armyId, world.GameGrid.ToCell(candidate.Position)) == VisibilityState.Visible &&
                 attackers.Any(attacker => attacker.CanAttackTarget(candidate) && attacker.AttackDamage > 0.0f))
             .OrderBy(candidate => HorizontalDistanceSquared(candidate.Position, leader.Position))
             .ThenBy(candidate => candidate.UnitId)

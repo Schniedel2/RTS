@@ -58,8 +58,8 @@ public static class AICrewPowerPlanner
             GameplayDefinition? offer = GameplayCatalog.GetProducedBy(trainer.GameplayTypeId)
                 .Where(d => d.Type == PurchasableType.Unit && d.AI?.Roles.HasFlag(AIUnitRole.Crew) == true &&
                     (AIStrategicCatalog.HasQueuedProduct(trainer, d.TypeId) || trainer.CanProduceUnit(world, d.TypeId)) &&
-                    Globals.Game.Pricing.GetQuote(new(PurchasableType.Unit, d.TypeId, armyId, trainer.UnitId)).IsAvailable)
-                .OrderBy(d => Globals.Game.Pricing.GetQuote(new(PurchasableType.Unit, d.TypeId, armyId, trainer.UnitId)).FinalPrice)
+                    world.SimulationPricing.GetQuote(new(PurchasableType.Unit, d.TypeId, armyId, trainer.UnitId)).IsAvailable)
+                .OrderBy(d => world.SimulationPricing.GetQuote(new(PurchasableType.Unit, d.TypeId, armyId, trainer.UnitId)).FinalPrice)
                 .ThenBy(d => d.TypeId, StringComparer.Ordinal).FirstOrDefault();
             if (offer is null) continue;
             bool queued = trainer.ProductionQueue.Orders.Any(order =>

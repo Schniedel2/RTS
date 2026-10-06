@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
@@ -250,7 +250,7 @@ public class UnitHandler
         float RotateYDegrees,
         Guid unitId,
         Guid creatorPlayerId,
-        int? purchasePrice = null)
+        int? purchasePrice = null, Guid? armyId = null)
     {
         if (FindById(unitId) is not null) return null;
         Building? unit = BuildingFactory.SpawnBuilding(buildingTypeName, position, RotateYDegrees,
@@ -258,9 +258,10 @@ public class UnitHandler
         if (unit is null)
             return null;
 
-        if (unit is Building building && !building.EvaluatePlacement(World, position, RotateYDegrees).IsAllowed)
+        if (armyId is Guid assignedArmy) unit.SetArmy(assignedArmy);
+        else AssignCurrentArmy(unit, creatorPlayerId);
+        if (!unit.EvaluatePlacement(World, position, RotateYDegrees).IsAllowed)
             return null;
-        AssignCurrentArmy(unit, creatorPlayerId);
         if (SetFootprints(unit, RotateYDegrees))
         {
             lock (_unitsSync) _units.Add(unit);
@@ -638,7 +639,7 @@ public class UnitHandler
         return true;
     }
 
-    private static void AssignCurrentArmy(Unit unit, Guid creatorPlayerId)
+    private void AssignCurrentArmy(Unit unit, Guid creatorPlayerId)
     {
         if (creatorPlayerId == Guid.Empty)
         {
@@ -646,7 +647,7 @@ public class UnitHandler
             return;
         }
 
-        Player? owner = Globals.Game.Players.FirstOrDefault(player => player.Id == creatorPlayerId);
-        unit.SetArmy(owner?.ArmyId ?? creatorPlayerId);
+        Player? owner = Globals.Game?.Players.FirstOrDefault(player => player.Id == creatorPlayerId);
+        unit.SetArmy(owner?.ArmyId ?? Armies.Armies.FirstOrDefault(army => army.OwnerPlayerIds.Contains(creatorPlayerId))?.Id ?? creatorPlayerId);
     }
 }

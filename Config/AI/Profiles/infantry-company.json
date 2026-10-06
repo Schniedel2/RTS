@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "profileId": "infantry-company",
+  "type": "InfantryCompany",
+  "displayName": "Infantry Company",
+  "requiredGunners": 4,
+  "requiredRakZero": 0,
+  "requiredTanks": 1,
+  "retreatHealthFraction": 0.5,
+  "attackReadinessSeconds": 7,
+  "defenseRadiusInCells": 40,
+  "assaultStallTimeoutSeconds": 70,
+  "decisionIntervalSeconds": 1,
+  "resourceReserve": 800,
+  "scoutReconsiderSeconds": 8
+}

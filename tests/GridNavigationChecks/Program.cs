@@ -1,10 +1,14 @@
-using RTS.Network;
+﻿using RTS.Network;
 using System.Text.Json;
 using Microsoft.Xna.Framework;
 using Viewport = Microsoft.Xna.Framework.Graphics.Viewport;
 using RTS;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+
+if (args.Length > 0 && args[0] == "--remote-ai-peer") { AIReconstructionChecks.RunRemoteAIPeer(args); return; }
+
+if (args.Length > 0 && args[0] == "--bot-host") { AIReconstructionChecks.RunBotHost(args[1], args.Length > 2 && args[2] == "reconnect", args.Length > 2 && args[2] == "launch"); return; }
 
 // Exercise production navigation without creating a graphics device or loading assets.
 int checks = 0;
@@ -665,7 +669,7 @@ Field(game, typeof(RTSGame), "<Armies>k__BackingField", armies);
 Field(game, typeof(RTSGame), "<Pricing>k__BackingField",
     new PricingService(armies, id => units.FindById(id)));
 Globals.Game = game;
-var transport = Empty<NetworkHandler>();
+using var transport = new NetworkHandler("Host fixture");
 Guid hostId = Guid.NewGuid(), ownerId = Guid.NewGuid(), armyId = Guid.NewGuid();
 Field(transport, typeof(NetworkHandler), "<LocalPeerId>k__BackingField", hostId);
 Field(transport, typeof(NetworkHandler), "<IsHost>k__BackingField", true);
@@ -682,6 +686,7 @@ GDIBarracks Barracks(Guid id)
 }
 var barracks = Barracks(Guid.NewGuid());
 UnitList(units).Add(barracks);
+Field(transport, typeof(NetworkHandler), "<AIControllers>k__BackingField", new AIControllerAssignments());
 var input = new NetworkInput(transport);
 var host = new NetworkHost(transport, input, world);
 // Exercise the actual host scheduler across update boundaries, including
@@ -1274,6 +1279,10 @@ try
      ],"outliner":["cube","mesh"]}
     """);
     var imported = BBModelLoader.Load(fixture);
+    var cpuImported = BBModelLoader.Load(fixture, loadTextures: false);
+    Check(cpuImported.GetBounds() == imported.GetBounds() && cpuImported.FootprintBounds.SequenceEqual(imported.FootprintBounds)
+        && cpuImported.ClearanceBounds.SequenceEqual(imported.ClearanceBounds), "CPU and atlas imports retain identical gameplay bounds");
+
     Check(imported.SubMeshes.Count == 4 && imported.Root.Children.Count == 2, "Mixed materials split into batches without changing hierarchy");
     Check(imported.SubMeshes.Count(p => p.SharedTextureName == "bricks") == 2, "Shared provenance retained for cubes and meshes");
     Check(imported.SubMeshes.Select(p => p.TextureAtlasIndex).Distinct().Count() == 2, "Shared and local textures can use separate atlases");
@@ -2364,6 +2373,7 @@ Check(reactorCrewMetadata.CrewCapacity == 4 &&
     "Reactor crew capacity, power bonus and Engineer capability share catalog metadata");
 Guid crewArmy = Guid.NewGuid();
 var crewWorld = Empty<GameWorld>();
+Field(crewWorld, typeof(GameWorld), "<SimulationArmies>k__BackingField", Globals.Game.Armies);
 var crewUnits = new UnitHandler();
 Field(crewWorld, typeof(GameWorld), "<Units>k__BackingField", crewUnits);
 var crewReactor = Empty<Reaktor>();
@@ -3089,7 +3099,7 @@ using (var clientNetwork = new NetworkHandler("LoopbackClient"))
         [new RuntimeUnitSnapshot("soldier", snapshotUnitId, Guid.Empty, null,
             0.5f, 0, 0.5f, 0, 100, UnitBehavior.Passive, 0,
             new UnitState(snapshotUnitId, 1, "unit-state", 1, []), [])],
-        [], 12.5);
+        [], 12.5, AIControllers: [new AIControllerAssignment(Guid.NewGuid(), Guid.NewGuid(), hostNetwork.LocalPeerId, 3, AIStrategyProfile.Create(42, Guid.Empty))]);
     hostNetwork.SetSessionSnapshotProvider(() => new NetworkMessage(
         NetworkMessageType.SessionSnapshot, hostNetwork.LocalPeerId, SessionSnapshot: snapshot));
     int port = hostNetwork.CreateSessionAsync("LoopbackSession").GetAwaiter().GetResult();
@@ -3107,6 +3117,7 @@ using (var clientNetwork = new NetworkHandler("LoopbackClient"))
           initialTypes.IndexOf(NetworkMessageType.JoinAccepted) < initialTypes.IndexOf(NetworkMessageType.SessionSnapshot) &&
           initialTypes.IndexOf(NetworkMessageType.SessionSnapshot) < initialTypes.IndexOf(NetworkMessageType.SessionReady),
         "Late join receives acceptance, complete snapshot, and readiness in order");
+    Check(clientNetwork.AIControllers.Snapshot().SequenceEqual(snapshot.AIControllers!), "Late join restores controller generations and effective profiles before readiness");
     Check(clientNetwork.SessionId == hostNetwork.SessionId && clientNetwork.Members.Count == 0,
         "Loopback join establishes one session without publishing a partial peer");
 }
@@ -3174,7 +3185,19 @@ checks += SimulationIsolationChecks.Run();
 checks += ComplexCommandChecks.Run();
 checks += SessionLifecycleChecks.Run();
 checks += AIReconstructionChecks.Run();
+checks += AIReconstructionChecks.RunAIContextChecks();
+checks += BotClientChecks.Run();
+checks += AIProfileConfigChecks.Run();
+checks += AIRuntimeSettingsChecks.Run();
+checks += RequestFeedbackChecks.Run();
+checks += AIReconstructionChecks.RunControllerAssignmentChecks();
+checks += AIReconstructionChecks.RunRemoteRuntimeChecks();
+checks += AIReconstructionChecks.RunControllerFailoverChecks();
+checks += AIReconstructionChecks.RunRepeatableAISettingsMatch();
 checks += AIReconstructionChecks.RunSatelliteReconChecks();
+checks += SelectionGroupHotkeyChecks.Run();
+checks += UnitSelectionGeometryChecks.Run();
+checks += UnitTypeSelectionChecks.Run();
 if (args.Contains("--unit-query-report"))
     System.IO.File.WriteAllText(System.IO.Path.Combine("AI", "Unit-Abfragen-Messung.md"), UnitQueryChecks.MeasurementReport);
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");

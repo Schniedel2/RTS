@@ -30,7 +30,7 @@ internal static partial class AIReconstructionChecks
         {
             var commands = new PlayerCommandService(scenario.Network, scenario.AI.Id);
             commands.TrainUnitAsync(Guid.NewGuid(), "gepard").GetAwaiter().GetResult();
-            LocalRequestReceipt receipt = commands.LastRequest!;
+            RequestReceipt receipt = commands.LastRequest!;
             Check(receipt.State == LocalRequestState.Pending, "Sending is distinct from host acceptance");
             scenario.Network.Update(); scenario.PumpHost();
             Check(receipt.State == LocalRequestState.Rejected && receipt.Reason is not null,

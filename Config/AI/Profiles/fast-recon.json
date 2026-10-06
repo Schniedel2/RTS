@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "profileId": "fast-recon",
+  "type": "FastRecon",
+  "displayName": "Fast Recon",
+  "requiredGunners": 2,
+  "requiredRakZero": 1,
+  "requiredTanks": 1,
+  "retreatHealthFraction": 0.36,
+  "attackReadinessSeconds": 2,
+  "defenseRadiusInCells": 30,
+  "assaultStallTimeoutSeconds": 45,
+  "decisionIntervalSeconds": 1,
+  "resourceReserve": 800,
+  "scoutReconsiderSeconds": 8
+}

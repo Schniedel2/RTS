@@ -47,7 +47,7 @@ public static class AIStrategicCatalog
 
     public static GameplayDefinition? SelectBuilding(GameWorld world, Guid armyId, AIStrategicBuildingNeed need, bool requireAvailable = false) =>
         Select(world, armyId, GameplayCatalog.All.Where(d => Matches(d, need) && (!requireAvailable ||
-            Globals.Game.Pricing.GetQuote(new(PurchasableType.Building, d.TypeId, armyId)).IsAvailable && FindBuilder(world, armyId, d.TypeId) is not null)), d => need switch
+            world.SimulationPricing.GetQuote(new(PurchasableType.Building, d.TypeId, armyId)).IsAvailable && FindBuilder(world, armyId, d.TypeId) is not null)), d => need switch
         {
             AIStrategicBuildingNeed.Power => d.Building!.PowerProduction - d.Building.PowerConsumption,
             AIStrategicBuildingNeed.Storage => d.Building!.ResourceCapacity / (1 + d.Building.PowerConsumption),
@@ -67,10 +67,10 @@ public static class AIStrategicCatalog
             (!world.AIOrderMonitors.TryGetValue(armyId, out var monitor) || !monitor.AvoidProducer(b.UnitId)) &&
             product.Producers.Any(p => p.TypeId == GameplayCatalog.Canonicalize(b.GameplayTypeId)) &&
             (product.Type != PurchasableType.Unit || HasQueuedProduct(b, product.TypeId) || b.CanProduceUnit(world, product.TypeId)) &&
-            Globals.Game.Pricing.GetQuote(new(product.Type, product.TypeId, armyId, b.UnitId)).IsAvailable)
+            world.SimulationPricing.GetQuote(new(product.Type, product.TypeId, armyId, b.UnitId)).IsAvailable)
             .OrderBy(b => world.AIOrderQueues.TryGetValue(armyId, out var queue) && !queue.CanUse(b.UnitId))
             .ThenByDescending(b => HasQueuedProduct(b, product.TypeId))
-            .ThenBy(b => Globals.Game.Pricing.GetQuote(new(product.Type, product.TypeId, armyId, b.UnitId)).FinalPrice)
+            .ThenBy(b => world.SimulationPricing.GetQuote(new(product.Type, product.TypeId, armyId, b.UnitId)).FinalPrice)
             .ThenBy(b => b.UnitId).FirstOrDefault();
 
     public static bool HasQueuedProduct(Building producer, string typeId) => producer.ProductionQueue.Orders.Any(order =>
@@ -84,7 +84,7 @@ public static class AIStrategicCatalog
         AIProductionPlanner.CreatePlan(target, world.Units.GetArmyUnits(armyId).Where(u => u.ArmyId == armyId && !u.IsDying &&
             !u.IsEmbarked && (u is not Building b || b.IsCompleted) &&
             (u is not MobileUnit m || m.BuildRate <= 0 || m.Occupancy?.IsOperational != false)).Select(u => u.GameplayTypeId),
-            Globals.Game.Armies.Find(armyId)?.Perks.ActivePerks ?? [],
+            world.SimulationArmies.Find(armyId)?.Perks.ActivePerks ?? [],
             ArmyPowerStatus.Calculate(world.Units.GetArmyUnits(armyId), armyId).Balance);
 
     private static GameplayDefinition? Select(GameWorld world, Guid armyId, IEnumerable<GameplayDefinition> candidates,
@@ -102,7 +102,7 @@ public static class AIStrategicCatalog
                     step.Kind == AIProductionPlanStepKind.Research ? PurchasableType.Research : PurchasableType.Unit;
                 Unit? producer = world.Units.GetArmyUnits(armyId).FirstOrDefault(u => u.ArmyId == armyId && !u.IsDying &&
                     u.GameplayTypeId == step.ProducerTypeId);
-                PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new(type, step.TypeId, armyId, producer?.UnitId));
+                PurchaseQuote quote = world.SimulationPricing.GetQuote(new(type, step.TypeId, armyId, producer?.UnitId));
                 if (quote.UnavailableReason is not null || step == plan.NextStep && !quote.IsAvailable)
                 { available = false; break; }
                 cost += quote.FinalPrice;

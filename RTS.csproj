@@ -31,6 +31,10 @@
   </ItemGroup>
   <ItemGroup>
       <MonoGameContentReference Include="Content\Content.mgcb" />
+      <None Update="Config\AI\**\*">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </None>
       <None Update="Content\Console\Batches\*.batch">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>

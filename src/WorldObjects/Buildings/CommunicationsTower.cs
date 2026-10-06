@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
@@ -33,7 +33,7 @@ public class CommunicationsTower : Building, IPerkProvider
     {
         List<PerkGrant> perks = new(GetHealthPerks());
         if (IsOperational && Occupancy?.IsOperational != false && ArmyId is Guid id &&
-            Globals.Game.Armies.Find(id)?.PowerStatus.HasEnoughPower == true)
+            SimulationWorld.SimulationArmies.Find(id)?.PowerStatus.HasEnoughPower == true)
             perks.Add(new(PerkType.SatelliteUplink, PerkLifetime.WhileProviderOperational));
         return perks;
     }

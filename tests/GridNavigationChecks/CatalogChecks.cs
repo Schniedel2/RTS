@@ -52,6 +52,7 @@ internal static class CatalogChecks
             Set(game, typeof(RTSGame), "<World>k__BackingField", world);
             Set(game, typeof(RTSGame), "<Armies>k__BackingField", armies);
             Set(game, typeof(RTSGame), "<Pricing>k__BackingField", pricing);
+            world.ConfigureSimulation(armies, network);
             Globals.World = world; Globals.Game = game;
             foreach (PurchasableType type in Enum.GetValues<PurchasableType>())
             {

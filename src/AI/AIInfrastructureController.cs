@@ -207,7 +207,7 @@ public sealed class AIInfrastructureController(
         { LastDecision = $"Temporarily skipping failed plan {typeId}; other AI work continues."; return; }
         _planTarget = typeId;
         GameplayDefinition? target = GameplayCatalog.Find(type, typeId);
-        Army? army = Globals.Game.Armies.Find(actor.ArmyId);
+        Army? army = world.SimulationArmies.Find(actor.ArmyId);
         if (target is null || army is null)
         {
             LastDecision = $"Cannot plan {typeId}: catalog or army state is unavailable.";

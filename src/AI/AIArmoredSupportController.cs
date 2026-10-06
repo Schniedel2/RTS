@@ -25,7 +25,7 @@ public sealed class AIArmoredSupportController(
     AIThreatAssessment? threatAssessment = null)
 {
 
-    private const float ThinkIntervalSeconds = 1.0f;
+    private float ThinkIntervalSeconds => profile.DecisionIntervalSeconds;
     private const float RequestTimeoutSeconds = 3.0f;
     private readonly PlayerCommandService _commands = new(network, actor.Id);
     private readonly AIThreatAssessment _threat = threatAssessment ?? new(actor.ArmyId);
@@ -111,7 +111,7 @@ public sealed class AIArmoredSupportController(
             return;
         }
 
-        PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+        PurchaseQuote quote = world.SimulationPricing.GetQuote(new PurchaseRequest(
             PurchasableType.Unit, selected.TypeId, actor.ArmyId, producer.UnitId));
         if (!AIResourcePlanner.CanPropose(world, actor.ArmyId, quote))
         {
@@ -162,7 +162,7 @@ public sealed class AIArmoredSupportController(
             currentCounts: CountOwnedCatalogUnits());
         Building? producer = product is null ? null : AIStrategicCatalog.FindAvailableProducer(world, actor.ArmyId, product);
         if (product is null || producer is null) return false;
-        PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new(
+        PurchaseQuote quote = world.SimulationPricing.GetQuote(new(
             PurchasableType.Unit, product.TypeId, actor.ArmyId, producer.UnitId));
         if (!AIResourcePlanner.CanPropose(world, actor.ArmyId, quote, AIOrderPriority.Defense)) return false;
         if (_threat.Current.AntiAirNeed >= AIDefensePlanner.AirThreatThreshold &&
@@ -190,7 +190,7 @@ public sealed class AIArmoredSupportController(
             return;
         }
         string typeId = definition.TypeId;
-        PurchaseQuote quote = Globals.Game.Pricing.GetQuote(new PurchaseRequest(
+        PurchaseQuote quote = world.SimulationPricing.GetQuote(new PurchaseRequest(
             PurchasableType.Building, typeId, actor.ArmyId));
         if (!AIResourcePlanner.CanPropose(world, actor.ArmyId, quote))
         {

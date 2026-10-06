@@ -77,7 +77,7 @@ internal static partial class AIReconstructionChecks
             using var queue = new AIOrderQueue(scenario.World, scenario.AI.Player, scenario.Network);
             var commands = new PlayerCommandService(scenario.Network, scenario.AI.Id);
             commands.TrainUnitAsync(scenario.Barracks.UnitId, "gunner").GetAwaiter().GetResult();
-            LocalRequestReceipt pending = commands.LastRequest!;
+            RequestReceipt pending = commands.LastRequest!;
             Check(queue.Orders[0].State == AIQueuedOrderState.WaitingForResources && pending.State == LocalRequestState.Pending,
                 "Scheduler waiting is distinct from host rejection");
             queue.Update(61);
@@ -109,7 +109,7 @@ internal static partial class AIReconstructionChecks
                 "Rejected host request releases funds and does not block unrelated purchases");
             Check(queue.Orders[1].State == AIQueuedOrderState.InProgress, "Valid request succeeds alongside rejected producer");
             commands.TrainUnitAsync(scenario.Barracks.UnitId, "engineer").GetAwaiter().GetResult();
-            LocalRequestReceipt pending = commands.LastRequest!;
+            RequestReceipt pending = commands.LastRequest!;
             scenario.Network.Disconnect(); queue.Dispatch();
             Check(pending.State == LocalRequestState.Abandoned && queue.ReservedResources == 0,
                 "Session change discards old-generation queue and reservations");

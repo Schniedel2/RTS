@@ -4,6 +4,10 @@ Diese Liste wird in Reihenfolge abgearbeitet. Ein Punkt gilt erst als erledigt, 
 
 Die Modellangaben beziehen sich auf Codex-Aufgaben. `gpt-6-luna` eignet sich für kleine, klar begrenzte Änderungen, `gpt-6-sol` für normale Implementierungs- und Refactoring-Aufgaben und `gpt-6-astra` für Architektur, schwierige Fehlersuche sowie systemweite Tests. Der angegebene Reasoning-Aufwand ist ein sinnvoller Startwert und kann bei unerwartet komplexem Code erhöht werden.
 
+## Aktuell priorisierter Umbau
+
+Seit 06.10.2026 ist die Entkopplung für verteilte, konfigurierbare KI-Controller vom Benutzer als wichtigste nächste Arbeit priorisiert. Der schrittweise Plan steht in [KI-Client-TODO.md](KI-Client-TODO.md). Dort zuerst den nächsten offenen Punkt bearbeiten, wenn der Auftrag dieses Vorhaben betrifft; offene Aufgaben dieser Liste werden dadurch nicht automatisch erledigt.
+
 ## Phase 1: Konkrete Fehler und Stillstände
 
 - [x] **KI ohne Scout weiterlaufen lassen**

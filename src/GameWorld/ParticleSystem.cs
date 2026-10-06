@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
@@ -8,6 +8,8 @@ namespace RTS;
 
 public sealed class ParticleSystem
 {
+    private readonly bool _graphicsEnabled;
+    public ParticleSystem(bool graphicsEnabled = true) { _graphicsEnabled = graphicsEnabled; }
     private readonly List<Particle> _particles = [];
     private readonly List<SmokeParticle> _smokeParticles = [];
     private readonly List<DebrisParticle> _debrisParticles = [];
@@ -43,7 +45,7 @@ public sealed class ParticleSystem
         float exhaustStrength,
         bool motorActive)
     {
-        if (!HasParticleCapacity)
+        if (!_graphicsEnabled || !HasParticleCapacity)
             return;
 
         exhaustStrength = MathHelper.Clamp(exhaustStrength, 0.0f, 1.0f);
@@ -71,6 +73,7 @@ public sealed class ParticleSystem
 
     public void EmitExplosion(Vector3 position, ExplosionEmissionSettings? settings = null)
     {
+        if (!_graphicsEnabled) return;
         settings ??= ExplosionEmissionPresets.TankShell();
         if (settings.CreateScorchMark)
             Globals.World.Decals.AddScorchMark(position, 1.9f * settings.Intensity);
@@ -201,6 +204,7 @@ public sealed class ParticleSystem
         Vector3 barrelDirection,
         MuzzleFlashEmissionSettings settings)
     {
+        if (!_graphicsEnabled) return;
         EmitSmoke(position, barrelDirection, settings.SmokeSettings);
 
         if (!Globals.TilemapHandler.TryGet(settings.TilemapName, out TilemapHandler.Tilemap flashes))
@@ -263,6 +267,7 @@ public sealed class ParticleSystem
     /// </summary>
     public void EmitBulletImpact(Vector3 impactPosition)
     {
+        if (!_graphicsEnabled) return;
         Terrain terrain = Globals.World.Terrain;
         int x = Math.Clamp((int)MathF.Floor(impactPosition.X), 0, terrain.Width - 1);
         int z = Math.Clamp((int)MathF.Floor(impactPosition.Z), 0, terrain.Height - 1);
@@ -333,7 +338,7 @@ public sealed class ParticleSystem
         Vector3 direction,
         SmokeEmissionSettings settings)
     {
-        if (!Globals.TilemapHandler.TryGet(settings.TilemapName, out TilemapHandler.Tilemap smoke))
+        if (!_graphicsEnabled || !Globals.TilemapHandler.TryGet(settings.TilemapName, out TilemapHandler.Tilemap smoke))
             return;
 
         direction = direction.LengthSquared() > 0.0001f

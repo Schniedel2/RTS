@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using System;
 using System.Linq;
 
@@ -13,7 +13,7 @@ public sealed class NetworkInput : IDisposable
     private GameWorld World => _world ?? Globals.World;
     private ArmyHandler Armies => _armies ?? Globals.Game.Armies;
     public NetworkInput(NetworkHandler networkHandler, GameWorld? world = null, ArmyHandler? armies = null,
-        SessionStateService? sessionState = null)
+        SessionStateService? sessionState = null, bool subscribe = true)
     {
         _network = networkHandler;
         _world = world;
@@ -21,18 +21,20 @@ public sealed class NetworkInput : IDisposable
         _sessionState = sessionState;
         if (world is { GraphicsEnabled: false } && armies is not null)
             world.ConfigureSimulation(armies, networkHandler);
-        networkHandler.MessageReceived += OnMessageReceived;
+        if (subscribe) networkHandler.MessageReceived += OnMessageReceived;
     }
 
     public void Dispose() => _network.MessageReceived -= OnMessageReceived;
 
+    private void Log(string text) { if (World.GraphicsEnabled) Globals.Console.Print(text); else System.Console.WriteLine(text); }
+
     public event Action<NetworkMessage>? MessageReceived;
 
-    private void OnMessageReceived(NetworkMessage message)
+    internal void OnMessageReceived(NetworkMessage message)
     {
         if (!ComplexCommandPayloads.TryValidate(message, out _)) return;
         if (Globals.Debug_ShowNetworkMessages)
-            Globals.Console.Print(FormatDebugMessage(message));
+            Log(FormatDebugMessage(message));
 
         MessageReceived?.Invoke(message);
         HandleNetworkMessage(message);
@@ -55,7 +57,7 @@ public sealed class NetworkInput : IDisposable
     {
         if (message.Type == NetworkMessageType.JoinRejected)
         {
-            Globals.Console.Print($"Session join rejected: {message.Error ?? "Unknown reason"}");
+            Log($"Session join rejected: {message.Error ?? "Unknown reason"}");
             return;
         }
 
@@ -63,7 +65,7 @@ public sealed class NetworkInput : IDisposable
         {
             if (World.GraphicsEnabled)
             {
-                Globals.Console.Print($"Joined session as {_network.DisplayName}.");
+                Log($"Joined session as {_network.DisplayName}.");
                 _ = Globals.Game.Players[0].RequestUpdateAsync(Globals.Game.NetworkClient);
             }
             return;
@@ -73,7 +75,7 @@ public sealed class NetworkInput : IDisposable
             message.PlayerId is Guid updatedPlayerId &&
             !string.IsNullOrWhiteSpace(message.DisplayName))
         {
-            Globals.Game.UpdatePlayer(
+            if (World.GraphicsEnabled) Globals.Game.UpdatePlayer(
                 updatedPlayerId,
                 message.DisplayName,
                 message.TeamId,
@@ -163,13 +165,16 @@ public sealed class NetworkInput : IDisposable
                 return;
 
             if (!string.IsNullOrWhiteSpace(message.Text))
-                Globals.Console.Print(message.Text);
+                Log(message.Text);
 
             return;
         }
 
         if (message.Type == NetworkMessageType.SpawnCommand)
         {
+            if (message.SpawnSourceBuildingId is Guid producerId && message.ProductionOrderId is Guid completedId &&
+                World.Units.FindById(producerId) is Building producer)
+                producer.ProductionQueue.ApplyCompleted(completedId);
             Guid unitId = message.UnitId ?? Guid.NewGuid();
             if (message.PlayerId is Guid playerId && message.UnitTypeId is not null)
             {
@@ -272,7 +277,7 @@ public sealed class NetworkInput : IDisposable
             if (World.GraphicsEnabled)
             {
                 Globals.Game.ResetMatchPresentation(localStartPosition);
-                Globals.Console.Print($"Multiplayer game started with {message.MatchStartAssignments?.Length ?? 0} player(s).");
+                Log($"Multiplayer game started with {message.MatchStartAssignments?.Length ?? 0} player(s).");
             }
             return;
         }
@@ -358,7 +363,7 @@ public sealed class NetworkInput : IDisposable
             Guid unitId = message.UnitId ?? Guid.NewGuid();
             if (message.PlayerId is Guid playerId && message.UnitTypeId is not null)
                 SpawnBuildingLocally(message.UnitTypeId, playerId, unitId, message.X, message.Y, message.Z,
-                    message.TargetAngleY, message.PurchasePrice);
+                    message.TargetAngleY, message.PurchasePrice, message.ArmyId);
             if (message.ArmyId is Guid armyId && Armies.Find(armyId) is Army army)
                 army.Resources = message.ResourceAmount;
 
@@ -519,7 +524,7 @@ public sealed class NetworkInput : IDisposable
             building.AdvanceConstruction(building.RemainingBuildingPoints);
 
         string playerName = _network.GetPeerDisplayName(playerId);
-        Globals.Console.Print($"Spawned {unitTypeId} for player {playerName}.");
+        Log($"Spawned {unitTypeId} for player {playerName}.");
     }
 
     private void SpawnProducedUnitLocally(
@@ -549,7 +554,7 @@ public sealed class NetworkInput : IDisposable
 
         unit.SetProductionRallyPoint(rallyPoint);
         string playerName = _network.GetPeerDisplayName(playerId);
-        Globals.Console.Print($"Produced {unitTypeId} for player {playerName}.");
+        Log($"Produced {unitTypeId} for player {playerName}.");
     }
 
     private void ExecuteEnterUnit(NetworkMessage message)
@@ -571,18 +576,18 @@ public sealed class NetworkInput : IDisposable
     }
 
     private void SpawnBuildingLocally(string buildingTypeId, Guid playerId, Guid unitId, float x, float y,
-        float z, float targetAngleY, int purchasePrice)
+        float z, float targetAngleY, int purchasePrice, Guid? armyId)
     {
         // Host placement already reserves the site; repeated confirmations are idempotent.
         if (World.Units.FindById(unitId) is not null)
             return;
         Vector3 target = new(x, y, z);
         if (World.Units.SpawnBuilding(buildingTypeId, target, targetAngleY, unitId, playerId,
-            purchasePrice) is null)
+            purchasePrice, armyId) is null)
             return;
 
         string playerName = _network.GetPeerDisplayName(playerId);
-        Globals.Console.Print($"Spawned {buildingTypeId} for player {playerName}.");
+        Log($"Spawned {buildingTypeId} for player {playerName}.");
     }
 
     private void ExecuteGoto(NetworkMessage message)
@@ -624,7 +629,7 @@ public sealed class NetworkInput : IDisposable
         Army? merged = Armies.Merge(firstArmyId, secondArmyId, mergedArmyId);
         if (merged is null)
             return;
-        foreach (Player player in Globals.Game.Players.Where(player => player.ArmyId is var armyId && (armyId == firstArmyId || armyId == secondArmyId)))
+        foreach (Player player in (World.GraphicsEnabled ? Globals.Game.Players : Array.Empty<Player>()).Where(player => player.ArmyId is var armyId && (armyId == firstArmyId || armyId == secondArmyId)))
             player.SetArmy(merged.Id);
         foreach (Unit unit in World.Units.Units.Where(unit => unit.ArmyId == firstArmyId || unit.ArmyId == secondArmyId))
             unit.SetArmy(merged.Id);

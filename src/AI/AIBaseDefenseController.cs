@@ -135,8 +135,8 @@ public sealed class AIBaseDefenseController(
         return world.Units.Units
             .Where(candidate => candidate.CanBeTargeted && candidate.ArmyId != armyId &&
                 buildings.Any(building => HorizontalDistanceSquared(building.Position, candidate.Position) <= radiusSquared) &&
-                world.Visibility.GetDisplayedTerrainVisibility(
-                    armyId, world.GameGrid.ToCell(candidate.Position), forMinimap: false) == VisibilityState.Visible)
+                world.Visibility.GetSimulationVisibility(
+                    armyId, world.GameGrid.ToCell(candidate.Position)) == VisibilityState.Visible)
             .Where(candidate => buildings.Any(building => building.IsEnemy(candidate)))
             .OrderBy(candidate => buildings.Min(building => HorizontalDistanceSquared(building.Position, candidate.Position)))
             .ThenBy(candidate => candidate.UnitId)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using Microsoft.Xna.Framework;
@@ -117,7 +117,11 @@ public enum NetworkMessageType
     SyncDiagnosticsReportRequest,
     ExploredVisibilityCommand,
     SatelliteReconRequest,
-    SatelliteReconCommand
+    SatelliteReconCommand,
+    RequestFeedbackCommand,
+    RequestStatusRequest,
+    AIControllerAssignmentCommand,
+    AIControllerHeartbeat
 }
 
 public sealed record WorldData(
@@ -163,7 +167,7 @@ public sealed record RuntimeUnitSnapshot(string TypeId, Guid UnitId, Guid Creato
     EarthworkOrder? EarthworkOrder = null, int EarthworkSequence = 0, Soldier.Weapon? SoldierWeapon = null);
 public sealed record SessionSnapshot(WorldData World, ArmySnapshot[] Armies,
     RuntimeUnitSnapshot[] Units, VisibilitySnapshot[] Visibility, double HostTime,
-    bool IsMatchStarted = false);
+    bool IsMatchStarted = false, AIControllerAssignment[]? AIControllers = null);
 public sealed record SyncDiagnosticDigest(long Sequence, double HostTime,
     Dictionary<string, string> Categories, Dictionary<string, string> Items,
     Dictionary<Guid, SyncDiagnosticPose>? UnitPoses = null,
@@ -251,4 +255,20 @@ public sealed record NetworkMessage(
     SyncDiagnosticDigest? SyncDiagnosticDigest = null,
     SyncDiagnosticReport? SyncDiagnosticReport = null,
     ExploredVisibilitySnapshot[]? ExploredVisibility = null,
-    SatelliteReconState? SatelliteRecon = null);
+    SatelliteReconState? SatelliteRecon = null)
+{
+    public BotControllerOffer? BotOffer { get; init; }
+    public AIControllerAssignment? AIControllerAssignment { get; init; }
+    public long AIUpdateSequence { get; init; }
+    public Guid? AIControllerArmyId { get; init; }
+    public Guid? AIControllerActorId { get; init; }
+    public long AIControllerGeneration { get; init; }
+    public Guid? ControllerPeerId { get; init; }
+    public Guid? RequestId { get; set; }
+    public long RequestGeneration { get; set; }
+    public RequestFeedback? RequestFeedback { get; init; }
+}
+
+public sealed record RequestFeedback(Guid RequestId, Guid ActorId, long Generation,
+    LocalRequestState State, AIOrderStatus Status, AIOrderFailure Failure, string? Reason,
+    Guid? ProductionOrderId, Guid? ConstructionSiteId);

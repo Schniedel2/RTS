@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -195,6 +195,17 @@ public sealed class VisibilitySystem
             if (army.SatelliteRecon.ActiveSeconds > 0) GetGrid(army.Id).RevealAll();
     }
 
+    /// <summary>Army simulation sight; independent of spectator, editor and client display switches.</summary>
+    public VisibilityState GetSimulationVisibility(Guid armyId, Point cell)
+    {
+        VisibilityState result = GetGrid(armyId)[cell];
+        if (_world.SimulationArmies?.Find(armyId)?.Intelligence.ShareWorldVision == true)
+            foreach (Army ally in _world.SimulationArmies.Armies)
+                if (ally.Id != armyId && _world.AreArmiesAllied(armyId, ally.Id))
+                    result = (VisibilityState)Math.Max((int)result, (int)GetGrid(ally.Id)[cell]);
+        return result;
+    }
+
     public CellVisibility GetVisibility(Guid viewerArmyId, Point cell)
         => GetVisibility(viewerArmyId, cell, GetAlliedArmyIds(viewerArmyId));
 
@@ -223,7 +234,7 @@ public sealed class VisibilitySystem
 
         CellVisibility visibility = GetVisibility(viewerArmyId, _world.GameGrid.ToCell(unit.Position));
         if (((visibility & CellVisibility.Visible) != 0)) return true;
-        Army? viewer = Globals.Game.Armies.Find(viewerArmyId);
+        Army? viewer = _world.SimulationArmies.Find(viewerArmyId);
         return forMinimap
             ? viewer?.Intelligence.ShareVisibleMinimap == true && ((visibility & CellVisibility.VisibleByAlly) != 0)
             : viewer?.Intelligence.ShareWorldVision == true && ((visibility & CellVisibility.VisibleByAlly) != 0);
@@ -244,7 +255,7 @@ public sealed class VisibilitySystem
         if (((visibility & CellVisibility.Visible) != 0)) return VisibilityState.Visible;
         if (((visibility & CellVisibility.Explored) != 0)) return VisibilityState.Explored;
 
-        Army? viewer = Globals.Game.Armies.Find(viewerArmyId);
+        Army? viewer = _world.SimulationArmies.Find(viewerArmyId);
         if (forMinimap && viewer?.Intelligence.ShareVisibleMinimap == true && ((visibility & CellVisibility.VisibleByAlly) != 0))
             return VisibilityState.Visible;
         if (forMinimap && viewer?.Intelligence.ShareExploredMinimap == true && ((visibility & CellVisibility.ExploredByAlly) != 0))
@@ -285,21 +296,21 @@ public sealed class VisibilitySystem
     private void RefreshAlliances()
     {
         _alliedArmyIds.Clear();
-        foreach (Army army in Globals.Game.Armies.Armies)
+        foreach (Army army in _world.SimulationArmies.Armies)
             _alliedArmyIds[army.Id] = GetAlliedArmies(army.Id).Select(ally => ally.Id).ToArray();
     }
 
     private IEnumerable<Army> GetAlliedArmies(Guid armyId)
     {
-        Army? army = Globals.Game.Armies.Find(armyId);
+        Army? army = _world.SimulationArmies.Find(armyId);
         if (army?.TeamId is not Guid teamId) return [];
-        return Globals.Game.Armies.Armies.Where(candidate => candidate.Id != armyId && candidate.TeamId == teamId);
+        return _world.SimulationArmies.Armies.Where(candidate => candidate.Id != armyId && candidate.TeamId == teamId);
     }
 
-    private static bool AreAllies(Guid first, Guid second)
+    private bool AreAllies(Guid first, Guid second)
     {
-        Army? a = Globals.Game.Armies.Find(first);
-        Army? b = Globals.Game.Armies.Find(second);
+        Army? a = _world.SimulationArmies.Find(first);
+        Army? b = _world.SimulationArmies.Find(second);
         return a?.TeamId is Guid team && b?.TeamId == team;
     }
 

@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using RTS.Network;
@@ -11,6 +11,7 @@ namespace RTS;
 
 public class RTSGame
 {
+    public LocalBotProcesses LocalBots { get; }
     public GameWorld World { get; }
     public PlayerHandler LocalPlayer => Globals.LocalPlayer;
     private KeyboardState _previousKeyboardState;
@@ -28,6 +29,7 @@ public class RTSGame
     public IReadOnlyList<Player> Players => _players;
     private readonly Dictionary<Guid, AIPlayer> _aiPlayers = [];
     public IReadOnlyCollection<AIPlayer> AIPlayers => _aiPlayers.Values;
+    public RemoteAIRuntime RemoteAI { get; } = new();
     private readonly Dictionary<Guid, (Player Actor, ArmyGoalController Controller)> _manualArmyGoals = [];
     private readonly Dictionary<Guid, ScoutingController> _manualArmyScouts = [];
     public bool IsMatchStarted { get; private set; }
@@ -70,7 +72,7 @@ public class RTSGame
         Globals._camera = new Camera();
     
         World = new GameWorld(terrainWidth, terrainHeight, 1);
-        Pricing = new PricingService(Armies, id => World.Units.FindById(id));
+
         Globals.World = World;
         Globals.LocalPlayer = new PlayerHandler(World, World.Markers);
         _shadowMap = new ShadowMap(4096);
@@ -84,6 +86,7 @@ public class RTSGame
             Player? secondOwner = second is null ? null : Players.FirstOrDefault(player => second.OwnerPlayerIds.Contains(player.Id));
             return firstOwner is not null && secondOwner is not null && firstOwner.TeamId == secondOwner.TeamId;
         });
+        Pricing = World.SimulationPricing;
         Player localPlayer = new(Network.LocalPeerId, Network.DisplayName);
         _players.Add(localPlayer);
         Teams.UpdateMembership(localPlayer.Id, localPlayer.TeamId, localPlayer.TeamId);
@@ -113,6 +116,7 @@ public class RTSGame
             CaptureSessionSnapshot, message => Globals.Console.Print(message));
         Network.SetHostTimeProvider(() => NetworkHost.HostTime);
         NetworkClient = new NetworkClient(Network);
+        LocalBots = new LocalBotProcesses(Network, message => Globals.Console.Print(message));
         _consoleCommands = new ConsoleCommands(Globals.Console, this);
 
         Globals.CellHighlightEffect = new BasicEffect(Globals.GraphicsDevice)
@@ -142,7 +146,7 @@ public class RTSGame
     internal SessionSnapshot CaptureSessionSnapshot()
     {
         Network.AssertGameThread();
-        return SessionState.Capture(NetworkHost.HostTime, IsMatchStarted);
+        return SessionState.Capture(NetworkHost.HostTime, IsMatchStarted) with { AIControllers = Network.AIControllers.Snapshot() };
     }
 
     internal void ApplySessionSnapshot(SessionSnapshot snapshot)
@@ -150,6 +154,7 @@ public class RTSGame
         Network.AssertGameThread();
         IsMatchStarted = snapshot.IsMatchStarted;
         SessionState.Apply(snapshot);
+        Network.AIControllers.Restore(snapshot.AIControllers ?? []);
         foreach (Player player in _players)
             if (snapshot.Armies.FirstOrDefault(army => army.Owners.Contains(player.Id)) is ArmySnapshot army)
                 player.SetArmy(army.Id);
@@ -179,6 +184,7 @@ public class RTSGame
 
     public void RemovePlayer(Guid playerId)
     {
+        LocalBots?.Stop(playerId);
         Player? player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
         if (player is not null)
             _players.Remove(player);
@@ -208,6 +214,7 @@ public class RTSGame
         Armies.EnsureArmy(player.ArmyId, player.Id, GuidUtility.FromInt(player.TeamId));
         AIPlayer aiPlayer = new(player);
         _aiPlayers.Add(player.Id, aiPlayer);
+        Network.AssignAIController(player.ArmyId, player.Id, Network.LocalPeerId, AIStrategyProfile.Create(0, player.ArmyId));
         return aiPlayer;
     }
 
@@ -247,6 +254,8 @@ public class RTSGame
         if (!Network.IsHost)
             return;
 
+        foreach (var previous in Network.AIControllers.Snapshot())
+            Network.AssignAIController(previous.ArmyId, previous.ActorId, null, previous.Profile);
         int aiStrategyMatchSeed = Random.Shared.Next();
         foreach (MatchStartAssignment assignment in assignments.Where(item => item.IsAI))
         {
@@ -256,6 +265,8 @@ public class RTSGame
             if (_players.All(player => player.Id != aiPlayer.Id))
                 _players.Add(aiPlayer.Player);
             Armies.EnsureArmy(assignment.ArmyId, aiPlayer.Id, GuidUtility.FromInt(aiPlayer.Player.TeamId));
+            var profile = AIStrategyProfile.Create(aiStrategyMatchSeed, assignment.ArmyId);
+            Network.AssignAIController(assignment.ArmyId, aiPlayer.Id, Network.LocalPeerId, profile);
             aiPlayer.BeginMatch(aiStrategyMatchSeed, assignment.ArmyId);
         }
     }
@@ -374,10 +385,11 @@ public class RTSGame
         _previousKeyboardState = keyboard;
     }
 
-    public void Update(GameTime gameTime, Camera camera, Viewport viewport)
+    public void Update(GameTime gameTime, Camera camera, Viewport viewport, bool inputFocused = true)
     {
         Globals.Telemetry.FramesProcessed++;
         Network.Update();
+        LocalBots.Update();
         if (Network.Status is NetworkConnectionStatus.Connecting or NetworkConnectionStatus.Synchronizing)
             return;
 
@@ -389,14 +401,16 @@ public class RTSGame
         Army? localArmy = TryGetLocalPlayer(out Player hudPlayer)
             ? Armies.Find(hudPlayer.ArmyId) : null;
         bool hudConsumed = Hud.Update(gameTime, camera, viewport,
-            LocalPlayer.SelectedUnits, localArmy, World.IsEditorActive, !Globals.Console.IsOpen);
+            LocalPlayer.SelectedUnits, localArmy, World.IsEditorActive, inputFocused && !Globals.Console.IsOpen);
         if (!hudConsumed)
             camera.UpdateMouse(gameTime);
         if (!Globals.Console.IsOpen && !hudConsumed)
             camera.UpdateKeyboard(gameTime);
         camera.UpdateTerrainHeight(gameTime, World.Terrain);
-        if (!hudConsumed)
+        if (!hudConsumed && inputFocused && !Globals.Console.IsOpen)
             LocalPlayer.Update(gameTime, camera, viewport);
+        else
+            LocalPlayer.SuspendPointerInput();
         World.Update(gameTime);
         if (Network.IsHost)
         {
@@ -407,6 +421,7 @@ public class RTSGame
             foreach (ScoutingController scouting in _manualArmyScouts.Values.ToArray())
                 scouting.Update(gameTime);
         }
+        RemoteAI.Update(gameTime, World, Network);
         _fogRefreshElapsed += deltaTime;
         if (TryGetLocalPlayer(out Player viewer))
         {
