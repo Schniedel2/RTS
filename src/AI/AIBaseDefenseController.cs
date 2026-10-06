@@ -9,7 +9,7 @@ namespace RTS;
 
 /// <summary>
 /// Small host-side tactical layer: visible enemies near an AI base are
-/// intercepted by idle combat infantry through the normal player commands.
+/// intercepted by a proportionate group of suitable mobile defenders through the normal player commands.
 /// </summary>
 public sealed class AIBaseDefenseController(
     GameWorld world,
@@ -22,7 +22,7 @@ public sealed class AIBaseDefenseController(
     private const float ThinkIntervalSeconds = 0.75f;
     private const float RefreshOrderSeconds = 2.0f;
 
-    private readonly PlayerCommandService _commands = new(network, playerId);
+    private readonly PlayerCommandService _commands = new(network, playerId, new AIUnitTaskAgent(world, $"{armyId}:defense", AIUnitTask.BaseDefender, 60));
     private readonly float _defenseRadiusInCells = defenseRadiusInCells ?? DefenseRadiusInCells;
     private float _thinkElapsed;
     private float _orderElapsed;
@@ -38,21 +38,27 @@ public sealed class AIBaseDefenseController(
         Guid? AttackTargetId,
         Vector3? AttackGroundTarget);
 
+    public float RequiredDefensePower { get; private set; }
+    public float AssignedDefensePower { get; private set; }
+    public IReadOnlyList<Guid> AssignedDefenders => _assignedDefenders;
     public bool IsEngaging => _targetId is not null;
     public string LastDecision { get; private set; } = "Watching the base perimeter.";
 
     public void Reset()
     {
+        foreach (Guid id in _assignedDefenders) _commands.TaskAgent!.Release(id);
         _thinkElapsed = 0.0f;
         _orderElapsed = 0.0f;
         _targetId = null;
         _assignedDefenders = [];
         _returnOrders.Clear();
+        RequiredDefensePower = AssignedDefensePower = 0;
         LastDecision = "Watching the base perimeter.";
     }
 
     public void Update(GameTime gameTime, Guid? scoutId)
     {
+        _commands.TaskAgent!.Update(gameTime);
         using var measurement = PerformanceMeasurements.Measure("AI.BaseDefense");
         float elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
         _thinkElapsed += elapsed;
@@ -64,10 +70,8 @@ public sealed class AIBaseDefenseController(
         Building[] buildings = world.Units.GetArmyUnits(armyId).OfType<Building>()
             .Where(building => building.ArmyId == armyId && building.IsCompleted && !building.IsDying)
             .ToArray();
-        if (buildings.Length == 0)
-            return;
-
-        Unit? target = SelectVisibleThreat(buildings);
+        Unit[] threats = SelectVisibleThreats(buildings);
+        Unit? target = threats.FirstOrDefault();
         if (target is null)
         {
             if (_targetId is not null)
@@ -75,21 +79,36 @@ public sealed class AIBaseDefenseController(
             _targetId = null;
             _assignedDefenders = [];
             _returnOrders.Clear();
+            RequiredDefensePower = AssignedDefensePower = 0;
             LastDecision = "No visible enemy threatens the base perimeter.";
             return;
         }
 
-        Unit[] defenders = world.Units.GetArmyUnits(armyId)
+        Unit[] available = world.Units.GetArmyUnits(armyId)
             .Where(unit => unit.ArmyId == armyId && unit.UnitId != scoutId &&
                 !unit.IsDying && !unit.IsEmbarked && unit.AttackDamage > 0.0f &&
-                unit is MobileUnit && GameplayCatalog.HasAIRoles(
+                unit is MobileUnit && (unit is not Soldier soldier || soldier.SquadLeaderId is null) && GameplayCatalog.HasAIRoles(
                     unit.GameplayTypeId, AIUnitRole.Defender) &&
                 unit.Occupancy?.IsOperational != false &&
-                unit.CanAttackTarget(target))
-            .OrderBy(unit => HorizontalDistanceSquared(unit.Position, target.Position))
+                unit.CanAttackTarget(target) && _commands.TaskAgent!.CanUse(unit))
             .ToArray();
+        // Only the local incident contributes force demand. Separate simultaneous incidents
+        // remain a later TODO; distant sides of the base are not summed into this target.
+        Unit[] localThreats = threats.Where(enemy => HorizontalDistanceSquared(enemy.Position, target.Position) <=
+            12 * 12 * world.GameGrid.CellSize * world.GameGrid.CellSize).ToArray();
+        AIDefenseForce force = AIDefenseForceSelector.Select(available, localThreats, target,
+            world.GameGrid.CellSize, _assignedDefenders);
+        Unit[] defenders = force.Defenders;
+        RequiredDefensePower = force.RequiredPower; AssignedDefensePower = force.AssignedPower;
+        Guid[] released = _assignedDefenders.Where(id => !defenders.Any(unit => unit.UnitId == id)).ToArray();
+        if (released.Length > 0)
+        {
+            _ = ReturnDefendersAsync(buildings, released);
+            foreach (Guid id in released) _returnOrders.Remove(id);
+        }
         if (defenders.Length == 0)
         {
+            _targetId = null; _assignedDefenders = [];
             LastDecision = $"Visible threat {ShortId(target.UnitId)} detected, but no defender can engage it.";
             return;
         }
@@ -106,10 +125,10 @@ public sealed class AIBaseDefenseController(
             _orderElapsed = 0.0f;
             _ = EngageAsync(defenders, target, targetChanged || defendersChanged);
         }
-        LastDecision = $"{defenderIds.Length} defender(s) intercept visible threat {ShortId(target.UnitId)}.";
+        LastDecision = $"{defenderIds.Length} defender(s) intercept visible threat {ShortId(target.UnitId)}; strength {AssignedDefensePower:0.0}/{RequiredDefensePower:0.0}.";
     }
 
-    private Unit? SelectVisibleThreat(Building[] buildings)
+    private Unit[] SelectVisibleThreats(Building[] buildings)
     {
         float radius = _defenseRadiusInCells * world.GameGrid.CellSize;
         float radiusSquared = radius * radius;
@@ -121,7 +140,7 @@ public sealed class AIBaseDefenseController(
             .Where(candidate => buildings.Any(building => building.IsEnemy(candidate)))
             .OrderBy(candidate => buildings.Min(building => HorizontalDistanceSquared(building.Position, candidate.Position)))
             .ThenBy(candidate => candidate.UnitId)
-            .FirstOrDefault();
+            .ToArray();
     }
 
     private async Task EngageAsync(Unit[] defenders, Unit target, bool assignmentChanged)
@@ -141,18 +160,18 @@ public sealed class AIBaseDefenseController(
         await _commands.AttackTargetAsync(defenderIds, target.UnitId);
     }
 
-    private async Task ReturnDefendersAsync(Building[] buildings)
+    private async Task ReturnDefendersAsync(Building[] buildings, Guid[]? only = null)
     {
         DefenseReturnOrder[] returning = _returnOrders.Values
-            .Where(order => world.Units.FindById(order.UnitId) is Unit unit &&
-                IsAvailableReturningDefender(unit))
+            .Where(order => (only is null || only.Contains(order.UnitId)) && world.Units.FindById(order.UnitId) is Unit unit &&
+                IsAvailableReturningDefender(unit) && _commands.TaskAgent!.Owns(unit))
             .ToArray();
         if (returning.Length == 0)
             return;
 
-        Building anchor = buildings.FirstOrDefault(b => GameplayCatalog.Find(PurchasableType.Building,
-            b.GameplayTypeId) is GameplayDefinition d && AIStrategicCatalog.Matches(d, AIStrategicBuildingNeed.Base)) ?? buildings[0];
-        Vector3 fallback = anchor.RallyPoint ?? anchor.Position;
+        Building? anchor = buildings.FirstOrDefault(b => GameplayCatalog.Find(PurchasableType.Building,
+            b.GameplayTypeId) is GameplayDefinition d && AIStrategicCatalog.Matches(d, AIStrategicBuildingNeed.Base)) ?? buildings.FirstOrDefault();
+        Vector3 fallback = anchor?.RallyPoint ?? anchor?.Position ?? returning[0].Position;
         await _commands.StopAsync(returning.Select(order => order.UnitId));
         foreach (DefenseReturnOrder order in returning)
         {
@@ -172,6 +191,7 @@ public sealed class AIBaseDefenseController(
                     : fallback;
                 await _commands.GotoAsync([order.UnitId], destination);
             }
+            _commands.TaskAgent!.Release(order.UnitId);
         }
     }
 

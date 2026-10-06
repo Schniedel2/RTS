@@ -245,6 +245,7 @@ public sealed class NetworkHost
         _medics.Reset();
         _combat.Reset();
         _hostTime = 0;
+        _reconSyncElapsed = 0;
         _simulationAccumulator = 0;
         _nextExploredVisibilitySync = 0;
         _groundStateCursor = 0;
@@ -282,6 +283,7 @@ public sealed class NetworkHost
             message.Type != NetworkMessageType.BuildRequest &&
             message.Type != NetworkMessageType.BuildConstructionRequest &&
             message.Type != NetworkMessageType.TrainUnitRequest &&
+            message.Type != NetworkMessageType.SatelliteReconRequest &&
             message.Type != NetworkMessageType.ResearchRequest &&
             message.Type != NetworkMessageType.SetRallyPointRequest &&
             message.Type != NetworkMessageType.EarthworkRequest &&
@@ -366,6 +368,7 @@ public sealed class NetworkHost
         try
         {
             UpdateHostSimulation(gameTime);
+            await PublishSatelliteReconAsync(gameTime);
             await PublishEarthworkAsync();
             await PublishHelicoptersAsync();
             await PublishGroundMobileUnitsAsync();
@@ -449,6 +452,7 @@ public sealed class NetworkHost
                     NetworkMessageType.BuildRequest => TryCreateBuildCommand(request),
                     NetworkMessageType.BuildConstructionRequest => TryCreateConstructionCommand(request),
                     NetworkMessageType.TrainUnitRequest => TryCreateTrainUnitCommand(request),
+                    NetworkMessageType.SatelliteReconRequest => TryCreateSatelliteReconCommand(request),
                     NetworkMessageType.ResearchRequest => TryCreateResearchCommand(request),
                     NetworkMessageType.SetRallyPointRequest => TryCreateSetRallyPointCommand(request),
                     NetworkMessageType.EarthworkRequest => _earthworks.Start(request),
@@ -508,6 +512,34 @@ public sealed class NetworkHost
             if (!_requestQueue.TryDequeue(out NetworkMessage? request)) yield break;
             if (request.Type == NetworkMessageType.GotoRequest) gotoRequests++;
             yield return request;
+        }
+    }
+
+    private float _reconSyncElapsed;
+    internal NetworkMessage? TryCreateSatelliteReconCommand(NetworkMessage request)
+    {
+        if (request.ArmyId is not Guid id || !_armies.CanControl(request.SenderId, id) ||
+            _armies.Find(id) is not Army army || !SatelliteRecon.Ready(_world, army)) return null;
+        return new(NetworkMessageType.SatelliteReconCommand, _networkHandler.LocalPeerId,
+            ArmyId: id, SatelliteRecon: new(SatelliteRecon.CooldownSeconds, SatelliteRecon.ScanSeconds));
+    }
+
+    private async Task PublishSatelliteReconAsync(GameTime gameTime)
+    {
+        float seconds = (float)gameTime.ElapsedGameTime.TotalSeconds;
+        _reconSyncElapsed += seconds;
+        bool sync = _reconSyncElapsed >= 1;
+        if (sync) _reconSyncElapsed %= 1;
+        foreach (Army army in _armies.Armies)
+        {
+            SatelliteReconState previous = army.SatelliteRecon;
+            if (previous.Cooldown <= 0 && previous.ActiveSeconds <= 0) continue;
+            army.SatelliteRecon = SatelliteRecon.Advance(_world, army, seconds);
+            bool ended = previous.ActiveSeconds > 0 && army.SatelliteRecon.ActiveSeconds == 0;
+            if (ended) _world.Visibility.Update();
+            if (sync || ended || (previous.Cooldown > 0 && army.SatelliteRecon.Cooldown == 0))
+                await PublishAsync(new(NetworkMessageType.SatelliteReconCommand, _networkHandler.LocalPeerId,
+                    ArmyId: army.Id, SatelliteRecon: army.SatelliteRecon));
         }
     }
 

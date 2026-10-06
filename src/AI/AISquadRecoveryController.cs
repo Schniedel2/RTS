@@ -13,7 +13,7 @@ public sealed class AISquadRecoveryController(
     NetworkHandler network)
 {
     public const float RequiredAverageHealthFraction = 0.80f;
-    private readonly PlayerCommandService _commands = new(network, playerId);
+    private readonly PlayerCommandService _commands = new(network, playerId, new AIUnitTaskAgent(world, $"{armyId}:squad", AIUnitTask.Recovery, 80));
     private Guid[] _soldierIds = [];
     private Guid? _leaderId;
     private readonly AIProgressWatch _progress = new();
@@ -28,7 +28,7 @@ public sealed class AISquadRecoveryController(
     public bool Begin()
     {
         SquadLeader? leader = world.Units.GetArmyUnits(armyId).OfType<SquadLeader>()
-            .Where(unit => unit.ArmyId == armyId && !unit.IsDying && !unit.IsEmbarked)
+            .Where(unit => unit.ArmyId == armyId && !unit.IsDying && !unit.IsEmbarked && _commands.TaskAgent!.CanUse(unit))
             .OrderByDescending(unit => world.Units.Units.OfType<Soldier>()
                 .Count(member => member.SquadLeaderId == unit.UnitId && !member.IsDying))
             .FirstOrDefault();
@@ -39,6 +39,7 @@ public sealed class AISquadRecoveryController(
             .Where(member => member.SquadLeaderId == leader.UnitId && member.ArmyId == armyId &&
                 !member.IsDying && !member.IsEmbarked)
             .ToArray();
+        if (!_commands.TaskAgent!.Authorize(members.Select(member => member.UnitId).Append(leader.UnitId))) return false;
         _soldierIds = [leader.UnitId, .. members.Select(member => member.UnitId)];
         _leaderId = leader.UnitId;
         IsActive = true;
@@ -54,6 +55,7 @@ public sealed class AISquadRecoveryController(
 
     public void Update(GameTime? gameTime = null)
     {
+        _commands.TaskAgent!.Update(gameTime);
         using var measurement = PerformanceMeasurements.Measure("AI.SquadRecovery");
         if (!IsActive || IsFinished)
             return;
@@ -65,15 +67,18 @@ public sealed class AISquadRecoveryController(
             .All(unit => unit.SquadLeaderId is null);
         IsRecovered = disbandConfirmed && hasMedic &&
             AverageHealthFraction >= RequiredAverageHealthFraction;
+        if (survivors.Any(unit => !_commands.TaskAgent!.Owns(unit))) { LastDecision = "Recovery waits for a higher-priority task."; return; }
         if (!IsRecovered && (survivors.Length == 0 || !hasMedic ||
             !_progress.Update("healing", AverageHealthFraction,
                 (float)(gameTime?.ElapsedGameTime.TotalSeconds ?? 1),
                 AIOrderProgressMonitor.ProductionTimeoutSeconds, 0.001f)))
         {
+            foreach (Guid id in _soldierIds) _commands.TaskAgent!.Release(id);
             HasFailed = true;
             LastDecision = "Recovery cannot progress; releasing survivors for reinforcement and regrouping.";
             return;
         }
+        if (IsFinished) foreach (Guid id in _soldierIds) _commands.TaskAgent!.Release(id);
         LastDecision = !disbandConfirmed
             ? "Waiting for host-confirmed squad recovery formation."
             : IsRecovered
@@ -83,6 +88,7 @@ public sealed class AISquadRecoveryController(
 
     public void Reset()
     {
+        foreach (Guid id in _soldierIds) _commands.TaskAgent!.Release(id);
         IsActive = false;
         IsRecovered = false;
         HasFailed = false;

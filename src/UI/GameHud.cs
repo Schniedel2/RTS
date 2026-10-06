@@ -12,6 +12,7 @@ public sealed class GameHud
     private readonly ActionPanel _actionPanel;
     private readonly GameStatusPanel _statusPanel = new();
     private readonly ProductionQueuePanel _productionPanel = new();
+    private readonly SatelliteReconPanel _satellitePanel = new();
     private readonly GameWorld _world;
     private float _minimapRefreshElapsed;
     private bool _showMinimap;
@@ -35,6 +36,7 @@ public sealed class GameHud
         _showMinimap = Layout.ShowMinimap &&
             (Globals.IsSpectator || editorMode || localArmy?.Perks.Has(PerkType.Minimap) == true);
 
+        bool satelliteConsumed = _satellitePanel.Update(Layout.SatellitePanel, localArmy, _world, inputEnabled);
         bool minimapConsumed = _showMinimap &&
             _minimap.Update(camera, Layout.Minimap, inputEnabled);
         bool actionPanelConsumed = Layout.ShowActionPanel &&
@@ -81,7 +83,7 @@ public sealed class GameHud
             _minimapRefreshElapsed %= 0.2f;
             _minimap.Refresh(localArmy?.Id ?? Guid.Empty);
         }
-        return minimapConsumed || actionPanelConsumed || homeConsumed;
+        return satelliteConsumed || minimapConsumed || actionPanelConsumed || homeConsumed;
     }
 
     public void Draw(SpriteBatch spriteBatch, Camera camera, Army? localArmy, GameWorld world)
@@ -94,6 +96,8 @@ public sealed class GameHud
             _productionPanel.Draw(spriteBatch, Layout.ProductionPanel, localArmy, world);
         if (Layout.ShowActionPanel)
             _actionPanel.Draw(spriteBatch);
+        if (Layout.Mode == HudLayoutMode.Game && localArmy is not null)
+            _satellitePanel.Draw(spriteBatch, Layout.SatellitePanel, localArmy, world);
     }
 
     public void Reset()

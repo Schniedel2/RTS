@@ -32,7 +32,7 @@ public sealed class AISquadAssaultController(
     private const float StagingRadiusInCells = 8.0f;
     private const float ImmediateThreatRadiusInCells = 14.0f;
 
-    private readonly PlayerCommandService _commands = new(network, playerId);
+    private readonly PlayerCommandService _commands = new(network, playerId, new AIUnitTaskAgent(world, $"{armyId}:squad", AIUnitTask.SquadMember, 40));
     private readonly AIStrategyProfile _profile = strategyProfile ??
         AIStrategyProfile.Create(0, armyId);
     private float _thinkElapsed;
@@ -58,6 +58,8 @@ public sealed class AISquadAssaultController(
     public string LastDecision { get; private set; } = "Waiting for the first squad.";
     public Guid? ReservedScoutId { get; set; }
 
+    public void ReleaseAssignments() => _commands.TaskAgent!.ReleaseAll();
+
     public void BeginNextMission()
     {
         State = AISquadAssaultState.WaitingForSquad;
@@ -75,6 +77,7 @@ public sealed class AISquadAssaultController(
 
     public void Update(GameTime gameTime)
     {
+        _commands.TaskAgent!.Update(gameTime);
         using var measurement = PerformanceMeasurements.Measure("AI.SquadAssault");
         if (State == AISquadAssaultState.MissionComplete)
             return;
@@ -92,6 +95,8 @@ public sealed class AISquadAssaultController(
             ? world.Units.FindById(missionLeaderId) as SquadLeader
             : FindPreparedLeader();
         Soldier[] members = leader is null ? [] : FindLivingMembers(leader).ToArray();
+        if (leader is not null && (!_commands.TaskAgent!.CanUse(leader) || members.Any(member => !_commands.TaskAgent.CanUse(member))))
+        { LastDecision = "Squad is assigned to a higher-priority task; mission waits."; return; }
         if (_targetBuildingId is not null && MustRetreat(leader, members, out string reason))
         {
             BeginRetreat(leader, members, reason, needsReinforcements: true);
@@ -203,7 +208,7 @@ public sealed class AISquadAssaultController(
     }
 
     private SquadLeader? FindPreparedLeader() => world.Units.GetArmyUnits(armyId).OfType<SquadLeader>()
-        .Where(leader => leader.ArmyId == armyId && !leader.IsDying && !leader.IsEmbarked)
+        .Where(leader => leader.ArmyId == armyId && !leader.IsDying && !leader.IsEmbarked && _commands.TaskAgent!.CanUse(leader))
         .OrderByDescending(leader => FindLivingMembers(leader).Count())
         .ThenBy(leader => leader.UnitId)
         .FirstOrDefault(leader =>
@@ -304,6 +309,7 @@ public sealed class AISquadAssaultController(
         Building? home = FindHomeBuilding();
         if (home is null)
         {
+            _commands.TaskAgent!.ReleaseAll();
             State = AISquadAssaultState.MissionComplete;
             LastDecision = "Squad mission ended; no home building remains for retreat.";
             return;
@@ -317,6 +323,7 @@ public sealed class AISquadAssaultController(
         float radius = StagingRadiusInCells * world.GameGrid.CellSize;
         if (survivors.Length == 0 || AllWithin(survivors, destination, radius))
         {
+            _commands.TaskAgent!.ReleaseAll();
             State = AISquadAssaultState.MissionComplete;
             LastDecision = _needsReinforcements
                 ? "Surviving squad members returned to base and await reinforcements."
@@ -328,6 +335,7 @@ public sealed class AISquadAssaultController(
                 _profile.AssaultStallTimeoutSeconds, 0.5f))
         {
             _ = _commands.StopAsync(survivors.Select(unit => unit.UnitId));
+            _commands.TaskAgent!.ReleaseAll();
             State = AISquadAssaultState.MissionComplete;
             LastDecision = "Retreat is unreachable; stopped survivors and released the mission for regrouping.";
             _progressElapsed = 0;
@@ -396,7 +404,7 @@ public sealed class AISquadAssaultController(
 
     private MobileUnit[] FindAvailableCombatEscorts() => world.Units.GetArmyUnits(armyId).OfType<MobileUnit>()
         .Where(vehicle => vehicle.ArmyId == armyId && !vehicle.IsDying && !vehicle.IsEmbarked &&
-            vehicle.UnitId != ReservedScoutId && !vehicle.IsLeavingBuilding &&
+            _commands.TaskAgent!.CanUse(vehicle) && vehicle.UnitId != ReservedScoutId && !vehicle.IsLeavingBuilding &&
             vehicle.Occupancy?.IsOperational != false && IsCombatEscort(vehicle) &&
             (vehicle is not Helicopter helicopter || helicopter.IsReadyForCombatMission))
         .OrderBy(vehicle => vehicle.UnitId)
@@ -408,7 +416,7 @@ public sealed class AISquadAssaultController(
         return world.Units.GetArmyUnits(armyId).OfType<MobileUnit>()
             .Where(vehicle => ids.Contains(vehicle.UnitId) && vehicle.ArmyId == armyId &&
                 !vehicle.IsDying && !vehicle.IsEmbarked && vehicle.Occupancy?.IsOperational != false &&
-                IsCombatEscort(vehicle) && vehicle.UnitId != ReservedScoutId &&
+                IsCombatEscort(vehicle) && _commands.TaskAgent!.CanUse(vehicle) && vehicle.UnitId != ReservedScoutId &&
                 (vehicle is not Helicopter helicopter || helicopter.IsReadyForCombatMission))
             .OrderBy(vehicle => vehicle.UnitId)
             .ToArray();

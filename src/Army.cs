@@ -29,6 +29,7 @@ public sealed class Army
     public HashSet<Guid> OwnerPlayerIds { get; } = [];
     public Dictionary<Guid, ArmyPermission> GrantedPermissions { get; } = [];
     public IntelligenceCapabilities Intelligence { get; } = new();
+    public SatelliteReconState SatelliteRecon { get; set; } = new();
     public ArmyPerkState Perks { get; } = new();
     public ArmyPowerStatus PowerStatus { get; set; } = new();
 
@@ -79,7 +80,7 @@ public sealed class ArmyHandler
             ShareExploredMinimap = army.Intelligence.ShareExploredMinimap,
             ShareVisibleMinimap = army.Intelligence.ShareVisibleMinimap,
             ShareWorldVision = army.Intelligence.ShareWorldVision
-        }, army.Perks.GetSnapshot())).ToArray();
+        }, army.Perks.GetSnapshot(), army.SatelliteRecon)).ToArray();
 
     public void ApplySnapshot(IEnumerable<ArmySnapshot>? states)
     {
@@ -96,6 +97,7 @@ public sealed class ArmyHandler
             army.Intelligence.ShareVisibleMinimap = state.Intelligence.ShareVisibleMinimap;
             army.Intelligence.ShareWorldVision = state.Intelligence.ShareWorldVision;
             army.Perks.ApplySnapshot(state.Perks);
+            army.SatelliteRecon = state.SatelliteRecon is SatelliteReconState recon && RTS.SatelliteRecon.Valid(recon) ? recon : new();
             _armies[state.Id] = army;
         }
     }

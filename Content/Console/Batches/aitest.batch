@@ -7,6 +7,6 @@ ai-create AI3 3
 enable fogofwar
 disable gamegrid
 
-spectator-on
+# spectator-on
 game-start
-set-game-speed-2x
+# set-game-speed-2x

@@ -82,32 +82,40 @@ Die Modellangaben beziehen sich auf Codex-Aufgaben. `gpt-6-luna` eignet sich fü
   - **Ergebnis (05.10.2026):** Vor Goto wird die Verbindung mit dem normalen inkrementellen Pathfinder geprüft, einschließlich Bewegungsprofil, Footprint und Diagonalsperren. Fehlgeschlagene Sektoren werden pro Scout 30 Sekunden gemieden. Ablehnung und ausbleibende Bewegung führen zur Neuplanung. Stop, Entfernung, Sessionwechsel und verschobene Startposition verwerfen laufende Prüfungen. Helis verwenden weiterhin Flugnavigation. Details: [KI-Scouting-Erreichbarkeit.md](KI-Scouting-Erreichbarkeit.md).
   - **Prüfung:** Build ohne Warnungen/Fehler; alle 1.299 Checks bestanden, darunter acht neue grafikfreie Regressionen für verzögerte Befehlsausgabe, unerreichbare Ziele, Sektorsperren, Bewegungsprofil-Barrieren, Ablauf/Wiederaufnahme und Stop während der Suche.
 
-- [ ] **Scouting-Suche ohne große Kandidatenlisten ausführen**
+- [x] **Scouting-Suche ohne große Kandidatenlisten ausführen**
   - **Empfohlenes Modell:** `gpt-6-astra` mit `high` Reasoning.
   - Keine vollständige neue `List<Point>` pro Scout und Entscheidung.
   - Frontier-Zellen oder Sektoren werden inkrementell verwaltet.
   - Fertig, wenn viele Scouts keine auffälligen CPU- oder Allokationsspitzen erzeugen.
+  - **Ergebnis (06.10.2026):** Kandidatenauswahl und Pfadprüfung laufen als ein inkrementeller Planungsauftrag. Pro Scout bleiben nur wiederverwendbare Sektor-Zusammenfassungen mit Anzahl und Reservoir-Kandidat erhalten; Zelllisten, GroupBy, Sortierung und Gruppenarrays entfallen. Konkurrierende Reservierungen nutzen die vorhandenen Zusammenfassungen für Ersatzziele. Sichtabfragen vermeiden Enum-Boxing und Interface-Enumerator-Allokationen. Details: [KI-Scouting-Inkrementelle-Suche.md](KI-Scouting-Inkrementelle-Suche.md).
+  - **Prüfung:** Build ohne Warnungen/Fehler; alle 1.318 Checks bestanden, davon zwölf neue für kurze Suchscheiben, Sektorspeicher, Reservierungskonflikte ohne erneuten Zellscan, wiederverwendete Daten, Allokationsgrenze, 16 gleichzeitige Scouts und Stop. Die Tests belegen Budget und Speicherverhalten; keine grafische FPS-/Soak-Abnahme behauptet.
 
-- [ ] **Gegnerwissen mit Verfallszeit speichern**
+- [x] **Gegnerwissen mit Verfallszeit speichern**
   - **Empfohlenes Modell:** `gpt-6-sol` mit `high` Reasoning.
   - Gesehene Unit-Rollen, ungefähre Mengen und letzte Positionen bleiben zeitlich begrenzt bekannt.
   - Das Vertrauen sinkt mit der Zeit.
   - Produktion reagiert nicht sofort auf das Verschwinden eines Gegners aus der aktuellen Sicht.
   - Fertig, wenn ein kurz verschwundener Heli nicht unmittelbar aus der Luftbedrohungsbewertung verschwindet.
+  - **Ergebnis (06.10.2026):** Army-lokale Sichtungseinträge speichern Unit-ID, Typ/Rollen, Domain, Panzerung, Bewaffnung, letzte Position, Zeitpunkt und Kontext. Unbestätigtes Wissen hat 30 Sekunden Vertrauens-Halbwertszeit und verfällt nach 90 Sekunden. Die vorhandenen Produktionsbedarfe verwenden gewichtete Erinnerungen statt nur aktuell sichtbarer Gegner. Verdeckte Bewegung/Entfernung verändert keine Sichtung; erneute Sicht aktualisiert sie ohne Doppelzählung. Sichtbare Verluste, Bündnisse und Match-/Zeitreset räumen Einträge auf. Spectator-Anzeige beeinflusst das KI-Kartenwissen nicht. Details: [KI-Gegnerwissen-und-Verfall.md](KI-Gegnerwissen-und-Verfall.md).
+  - **Prüfung:** Build ohne Warnungen/Fehler; alle 1.333 Checks bestanden, darunter 15 neue für unbekannte Gegner, Spectator, gespeicherte Rollen/Position/Kontext, verdeckte Luftbedrohung, Vertrauensabnahme, erneute Sicht, verdeckte Entfernung, Verfall, sichtbaren Verlust und Zeitreset.
 
 ## Phase 4: Verteidigung und Gefechtssteuerung
 
-- [ ] **Benötigte Verteidigungsstärke berechnen**
+- [x] **Benötigte Verteidigungsstärke berechnen**
   - **Empfohlenes Modell:** `gpt-6-astra` mit `high` Reasoning.
   - Die KI wählt nur so viele passende Verteidiger wie für die erkannte Bedrohung nötig.
   - Entfernung, Gesundheit, Zieltypen und Gegenwirkung fließen in die Auswahl ein.
   - Fertig, wenn ein einzelner Angreifer nicht mehr die komplette Armee von ihrer Aufgabe abzieht.
+  - **Ergebnis (06.10.2026):** Ein katalogunabhängiger Kampfkraft-Selektor schätzt den Bedarf des lokalen Vorfalls aus gegnerischen Trefferpunkten und Feuerleistung. Verteidiger werden nach wirksamem Schaden gegen Zielpanzerung, eigener Gesundheit, Entfernung/Reichweite und Gegenschaden priorisiert; unpassende Ziel-Domains bleiben ausgeschlossen. Die Auswahl endet bei ausreichender Stärke, bestehende Zuweisungen erhalten einen kleinen Stabilitätsbonus. Wachsende Bedrohung ruft Verstärkung, sinkende Bedrohung gibt überschüssige Units mit ihrer vorherigen Aufgabe frei. Normale Player-/Host-Requests bleiben der Ausführungsweg. Diagnose zeigt zugewiesene/benötigte Stärke. Details: [KI-Verteidigungsstaerke.md](KI-Verteidigungsstaerke.md).
+  - **Prüfung:** Build ohne Warnungen/Fehler; alle 1.350 Checks bestanden, darunter 17 neue für proportionale Auswahl, Verstärkung, Gesundheit, Entfernung, stabile Sortierung, Panzer-/Luftgegenwirkung, fehlende Kräfte, echte Host-Anwendung und Rückgabe überschüssiger Verteidiger. Bestehende Wiederaufbauchecks prüfen jetzt die kleinere statt der vollständigen Verteidigergruppe.
 
-- [ ] **Unit-Aufgaben und Verfügbarkeit zentral kennzeichnen**
+- [x] **Unit-Aufgaben und Verfügbarkeit zentral kennzeichnen**
   - **Empfohlenes Modell:** `gpt-6-astra` mit `high` Reasoning.
   - Mindestens: Scout, Basisverteidiger, Squad-Mitglied, Eskorte, Reserve, Reparatur/Heilung und ungebunden.
   - Controller dürfen fremd gebundene Units nicht ohne Prioritätsentscheidung übernehmen.
   - Fertig, wenn Verteidigung und Angriff keine widersprüchlichen Befehle mehr an dieselbe Unit senden.
+  - **Ergebnis (06.10.2026):** `GameWorld.UnitTasks` führt Zuständigkeit, Rolle, Priorität und Ablauf pro Unit zentral. Scout, Basisverteidigung, Squad/Eskorte und Erholung verwenden explizite Task-Agents zur Auswahl und zur Befehlsfreigabe in `PlayerCommandService`; normale Spielerbefehle bleiben unverändert. Höhere Priorität darf übernehmen, gleiche/niedrigere Priorität wird abgewiesen. Squad-Gruppen werden atomar beansprucht, verdrängte Zuordnungen bei Freigabe wiederhergestellt. Bau-/Produktionsreservierungen bleiben führend als Wirtschaftsaufgaben. Stop, Missionsende, Reset, Tod/Entfernen, Army-Wechsel und Ablauf räumen Zuständigkeiten auf. Details: [KI-Unit-Aufgaben-und-Verfuegbarkeit.md](KI-Unit-Aufgaben-und-Verfuegbarkeit.md).
+  - **Prüfung:** Build ohne Warnungen/Fehler; alle 1.371 Checks bestanden, davon 21 neue für Prioritäten, Request-Ablehnung, Rückgabe, atomare Gruppen, Scout-Lebenszyklus, Erholungsschutz, Ablauf, Army-/Zeitreset und Entfernung. Bestehende Scouting-, Wiederaufbau-, Verteidigungs- und Squad-Regressionsprüfungen bestehen weiterhin.
 
 - [ ] **Mehrere Bedrohungen getrennt behandeln**
   - **Empfohlenes Modell:** `gpt-6-sol` mit `high` Reasoning.

@@ -9,7 +9,8 @@ public sealed class ScoutingController(GameWorld world, Guid? commandPlayerId = 
     private sealed class State
     {
         public Point Target;
-        public bool HasTarget, Planning;
+        public bool HasTarget, Planning, Selecting;
+        public readonly ScoutingCandidateSearch Candidates = new();
         public float ReconsiderIn;
         public int Version;
         public readonly Dictionary<Point, double> FailedSectors = [];
@@ -24,7 +25,7 @@ public sealed class ScoutingController(GameWorld world, Guid? commandPlayerId = 
     public int ActiveScoutCount => _scouts.Count;
     public bool IsScouting(Guid unitId) => _scouts.ContainsKey(unitId);
     public void Start(IEnumerable<Unit> units) { foreach (MobileUnit unit in units.OfType<MobileUnit>()) if (!unit.IsDying && !unit.IsEmbarked) _scouts.TryAdd(unit.UnitId, new() { LastPosition = unit.Position }); }
-    public void Stop(IEnumerable<Unit> units) { foreach (Unit unit in units) { _scouts.Remove(unit.UnitId); world.ScoutingTargets.Release(unit.UnitId, _controller); } }
+    public void Stop(IEnumerable<Unit> units) { foreach (Unit unit in units) { _scouts.Remove(unit.UnitId); if (commandPlayerId is not null && unit.ArmyId is Guid army) world.UnitTasks.Release(unit.UnitId, $"{army}:scout:{_controller}"); world.ScoutingTargets.Release(unit.UnitId, _controller); } }
     public void Update(GameTime gameTime)
     {
         using var measurement = PerformanceMeasurements.Measure("AI.Scouting");
@@ -33,14 +34,18 @@ public sealed class ScoutingController(GameWorld world, Guid? commandPlayerId = 
             foreach (State previous in _scouts.Values) { previous.FailedSectors.Clear(); previous.HasTarget = false; previous.Planning = false; previous.Version++; }
         _now = now;
         world.ScoutingTargets.Clean(now);
+        if (commandPlayerId is not null) world.UnitTasks.Update(now);
         foreach ((Guid id, State state) in _scouts.ToArray())
         {
             if (world.Units.FindById(id) is not MobileUnit unit || unit.IsDying || unit.IsEmbarked || unit.ArmyId is not Guid army) { _scouts.Remove(id); world.ScoutingTargets.Release(id, _controller); continue; }
+            AIUnitTaskAgent? task = commandPlayerId is null ? null : new(world, $"{army}:scout:{_controller}", AIUnitTask.Scout, 30);
+            if (task is not null && !task.CanUse(unit)) continue;
+            task?.Authorize([id]);
             state.ReconsiderIn -= (float)gameTime.ElapsedGameTime.TotalSeconds;
             Point current = world.GameGrid.ToCell(unit.Position);
             foreach (Point sector in state.FailedSectors.Where(pair => pair.Value <= now).Select(pair => pair.Key).ToArray())
                 state.FailedSectors.Remove(sector);
-            if (state.Planning) { world.ScoutingTargets.Claim(id, army, state.Target, _controller, now); continue; }
+            if (state.Planning) { if (!state.Selecting) world.ScoutingTargets.Claim(id, army, state.Target, _controller, now); continue; }
             if (state.HasTarget)
             {
                 if (Vector3.DistanceSquared(unit.Position, state.LastPosition) > 0.01f) { state.LastPosition = unit.Position; state.StalledFor = 0; }
@@ -54,19 +59,19 @@ public sealed class ScoutingController(GameWorld world, Guid? commandPlayerId = 
                 world.Visibility.GetDisplayedTerrainVisibility(army, state.Target, false) == VisibilityState.Unexplored)
             { world.ScoutingTargets.Claim(id, army, state.Target, _controller, now); continue; }
             world.ScoutingTargets.Release(id, _controller);
-            if (!TryFindTarget(unit, army, current, state, out Point target) ||
-                !world.ScoutingTargets.Claim(id, army, target, _controller, now))
-            { state.HasTarget = false; state.ReconsiderIn = 2; continue; }
-            state.HasTarget = false; state.Target = target; state.Planning = true;
+            state.HasTarget = false; state.Planning = true; state.Selecting = true;
+            Point target = default;
+            bool found = false, reachable = false;
             int version = ++state.Version;
             long generation = (world.SimulationNetwork ?? Globals.Game?.Network)?.SessionGeneration ?? -1;
             bool Valid() => !_disposed && generation == ((world.SimulationNetwork ?? Globals.Game?.Network)?.SessionGeneration ?? -1) && _scouts.TryGetValue(id, out State? active) && ReferenceEquals(active, state) &&
-                state.Version == version && state.Planning && state.Target == target && world.Units.FindById(id) == unit && !unit.IsDying &&
+                (task is null || task.CanUse(unit)) && state.Version == version && state.Planning && world.Units.FindById(id) == unit && !unit.IsDying &&
                 !unit.IsEmbarked && unit.ArmyId == army && world.GameGrid.ToCell(unit.Position) == current;
             void Cancelled() { if (state.Version != version || !_scouts.TryGetValue(id, out State? active) || !ReferenceEquals(active, state)) return; state.Planning = false; state.ReconsiderIn = 0; world.ScoutingTargets.Release(id, _controller); }
-            void Complete(bool reachable)
+            void Complete()
             {
-                state.Planning = false;
+                state.Planning = false; state.Selecting = false;
+                if (!found) { state.ReconsiderIn = 2; return; }
                 if (!reachable)
                 {
                     state.FailedSectors[ScoutingTargets.Sector(target)] = _now + 30;
@@ -80,40 +85,32 @@ public sealed class ScoutingController(GameWorld world, Guid? commandPlayerId = 
                 Vector3 position = world.GameGrid.ToWorldPosition(target, 0);
                 if (commandPlayerId is Guid playerId)
                 {
-                    var commands = new Network.PlayerCommandService(commandNetwork ?? Globals.Game.Network, playerId);
+                    var commands = new Network.PlayerCommandService(commandNetwork ?? Globals.Game.Network, playerId, task);
                     _ = commands.GotoAsync([unit.UnitId], position);
                     state.Receipt = commands.LastRequest;
                 }
                 else _ = Globals.Game.NetworkClient.RequestGotoAsync([unit.UnitId], position.X, position.Y, position.Z);
             }
-            // Helicopter Goto uses flight navigation, independent of ground occupancy and slopes.
-            if (unit is Helicopter) Complete(true);
-            else
+            IEnumerable<int> Work()
             {
+                foreach (int step in state.Candidates.Work(world, unit, army, current,
+                    sector => state.FailedSectors.ContainsKey(sector),
+                    (sector, count) => ScoreSector(sector, count, army, current, id),
+                    reserve: cell => world.ScoutingTargets.Claim(id, army, cell, _controller, _now))) yield return step;
+                if (state.Candidates.Target is not Point candidate) yield break;
+                target = candidate; state.Target = target; state.Selecting = false; found = true;
+                // Expose the lease before the reachability search starts on the next slice.
+                yield return 0;
+                if (unit is Helicopter) { reachable = true; yield break; }
                 Vector3 destination = world.GameGrid.ToWorldPosition(target, 0);
                 Pathfinder.Search search = world.PathfindingManager.CreateSearch(unit, current, new(destination.X, destination.Z));
-                (world.IsMovementAuthority ? world.PathfindingManager.Scheduler : world.ScoutingTargets.ClientPlanning).Enqueue(search.Work(), Valid, () => Complete(search.Succeeded), Cancelled,
-                    "AI.ScoutReachability");
+                foreach (int step in search.Work()) yield return step;
+                reachable = search.Succeeded;
             }
+            (world.IsMovementAuthority ? world.PathfindingManager.Scheduler : world.ScoutingTargets.ClientPlanning)
+                .Enqueue(Work(), Valid, Complete, Cancelled, "AI.ScoutSearch");
         }
         world.ScoutingTargets.UpdateClientPlanning(now);
-    }
-    private bool TryFindTarget(MobileUnit unit, Guid army, Point current, State state, out Point target)
-    {
-        List<Point> candidates = []; int min = Math.Max(4, unit.GetSightRange() / 2), max = Math.Max(12, unit.GetSightRange() * 3);
-        for (int z = Math.Max(0, current.Y - max); z <= Math.Min(world.GameGrid.Height - 1, current.Y + max); z++)
-        for (int x = Math.Max(0, current.X - max); x <= Math.Min(world.GameGrid.Width - 1, current.X + max); x++)
-        { Point cell = new(x, z); int d = Math.Max(Math.Abs(x-current.X), Math.Abs(z-current.Y));
-          if (d >= min && d <= max && world.Visibility.GetDisplayedTerrainVisibility(army, cell, false) == VisibilityState.Unexplored && !state.FailedSectors.ContainsKey(ScoutingTargets.Sector(cell)) &&
-              (unit is Helicopter || unit.MovementProfile.CanUseTerrain(world.GameGrid.GetCell(cell)))) candidates.Add(cell); }
-        if (candidates.Count == 0) { target = default; return false; }
-        var groups = candidates.GroupBy(ScoutingTargets.Sector)
-            .Where(group => !world.ScoutingTargets.Reserved(army, group.Key, unit.UnitId))
-            .Select(group => new { Cells = group.ToArray(), Score = ScoreSector(group.Key, group.Count(), army, current, unit.UnitId) })
-            .OrderByDescending(group => group.Score).ToArray();
-        if (groups.Length == 0) { target = default; return false; }
-        Point[] cells = groups[0].Cells;
-        target = cells[Random.Shared.Next(cells.Length)]; return true;
     }
     private float ScoreSector(Point sector, int unknownCells, Guid army, Point current, Guid scoutId)
     {
@@ -132,6 +129,9 @@ public sealed class ScoutingController(GameWorld world, Guid? commandPlayerId = 
 
     public void Dispose()
     {
+        foreach (Guid id in _scouts.Keys)
+            if (commandPlayerId is not null && world.Units.FindById(id)?.ArmyId is Guid army)
+                world.UnitTasks.Release(id, $"{army}:scout:{_controller}");
         _disposed = true;
         world.ScoutingTargets.ReleaseController(_controller);
         _scouts.Clear();

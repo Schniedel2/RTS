@@ -98,6 +98,19 @@ public sealed class NetworkInput : IDisposable
         if (message.Type == NetworkMessageType.SessionReady)
             return;
 
+        if (message.Type == NetworkMessageType.SatelliteReconCommand)
+        {
+            if (_network.IsHost && message.SenderId != _network.LocalPeerId) return;
+            if (message.ArmyId is Guid id && Armies.Find(id) is Army army &&
+                message.SatelliteRecon is SatelliteReconState state && SatelliteRecon.Valid(state))
+            {
+                bool wasActive = army.SatelliteRecon.ActiveSeconds > 0;
+                army.SatelliteRecon = state;
+                if (wasActive != (state.ActiveSeconds > 0)) World.Visibility.Update();
+            }
+            return;
+        }
+
         if (message.Type == NetworkMessageType.ExploredVisibilityCommand)
         {
             if (!_network.IsHost)

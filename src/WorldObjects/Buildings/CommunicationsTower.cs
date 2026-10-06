@@ -29,7 +29,16 @@ public class CommunicationsTower : Building, IPerkProvider
         base.Update(gameTime);
     }
 
-    public IReadOnlyList<PerkGrant> GetProvidedPerks() =>
+    public IReadOnlyList<PerkGrant> GetProvidedPerks()
+    {
+        List<PerkGrant> perks = new(GetHealthPerks());
+        if (IsOperational && Occupancy?.IsOperational != false && ArmyId is Guid id &&
+            Globals.Game.Armies.Find(id)?.PowerStatus.HasEnoughPower == true)
+            perks.Add(new(PerkType.SatelliteUplink, PerkLifetime.WhileProviderOperational));
+        return perks;
+    }
+
+    private IReadOnlyList<PerkGrant> GetHealthPerks() =>
         IsCompleted && !IsDying && Occupancy?.IsOperational != false
             ? [new PerkGrant(PerkType.DetailedHealth,
                 PerkLifetime.WhileProviderOperational,

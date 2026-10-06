@@ -45,6 +45,8 @@ public sealed class VisibilityGrid
 {
     private readonly VisibilityState[] _cells;
     private readonly HashSet<int> _visibleCells = [];
+    private bool _allVisible;
+    private bool _fullyExplored;
     public int Width { get; }
     public int Height { get; }
 
@@ -56,10 +58,11 @@ public sealed class VisibilityGrid
         _cells = new VisibilityState[width * height];
     }
 
-    public VisibilityState this[Point cell] => Contains(cell) ? _cells[cell.Y * Width + cell.X] : VisibilityState.Unexplored;
+    public VisibilityState this[Point cell] => Contains(cell) ? (_allVisible ? VisibilityState.Visible : _cells[cell.Y * Width + cell.X]) : VisibilityState.Unexplored;
 
     public void BeginUpdate()
     {
+        _allVisible = false;
         foreach (int index in _visibleCells)
             _cells[index] = VisibilityState.Explored;
         _visibleCells.Clear();
@@ -78,21 +81,36 @@ public sealed class VisibilityGrid
                 }
     }
 
+    public void RevealAll()
+    {
+        if (!_fullyExplored)
+        {
+            for (int i = 0; i < _cells.Length; i++)
+                if (_cells[i] == VisibilityState.Unexplored) _cells[i] = VisibilityState.Explored;
+            _fullyExplored = true;
+        }
+        _allVisible = true;
+    }
+
     public void Reset()
     {
+        _allVisible = _fullyExplored = false;
         Array.Clear(_cells);
         _visibleCells.Clear();
     }
 
-    internal byte[] GetSnapshot() => _cells.Select(value => (byte)value).ToArray();
+    internal byte[] GetSnapshot() => _cells.Select(value => (byte)(_allVisible ? VisibilityState.Visible : value)).ToArray();
 
     internal void ApplySnapshot(byte[]? states)
     {
         Reset();
         if (states is null || states.Length != _cells.Length) return;
         for (int index = 0; index < states.Length; index++)
+        {
             _cells[index] = Enum.IsDefined((VisibilityState)states[index])
                 ? (VisibilityState)states[index] : VisibilityState.Unexplored;
+            if (_cells[index] == VisibilityState.Visible) _visibleCells.Add(index);
+        }
     }
 
     internal ExploredVisibilitySnapshot GetExploredSnapshot(Guid armyId)
@@ -108,6 +126,7 @@ public sealed class VisibilityGrid
     {
         if (snapshot.CellCount != _cells.Length || snapshot.Bits.Length != (_cells.Length + 7) / 8)
             return;
+        _fullyExplored = false;
         for (int index = 0; index < _cells.Length; index++)
         {
             bool explored = (snapshot.Bits[index >> 3] & (1 << (index & 7))) != 0;
@@ -172,6 +191,8 @@ public sealed class VisibilitySystem
             if (unit.ArmyId is not Guid armyId || unit.IsEmbarked || unit.IsDying || unit.GetSightRange() <= 0) continue;
             GetGrid(armyId).Reveal(_world.GameGrid.ToCell(unit.Position), unit.GetSightRange());
         }
+        foreach (Army army in _world.SimulationArmies?.Armies ?? Array.Empty<Army>())
+            if (army.SatelliteRecon.ActiveSeconds > 0) GetGrid(army.Id).RevealAll();
     }
 
     public CellVisibility GetVisibility(Guid viewerArmyId, Point cell)
@@ -180,8 +201,9 @@ public sealed class VisibilitySystem
     private CellVisibility GetVisibility(Guid viewerArmyId, Point cell, IReadOnlyList<Guid> alliedArmyIds)
     {
         CellVisibility result = ToOwnFlags(GetGrid(viewerArmyId)[cell]);
-        foreach (Guid allyArmyId in alliedArmyIds)
+        for (int index = 0; index < alliedArmyIds.Count; index++)
         {
+            Guid allyArmyId = alliedArmyIds[index];
             VisibilityState state = GetGrid(allyArmyId)[cell];
             if (state >= VisibilityState.Explored) result |= CellVisibility.ExploredByAlly;
             if (state == VisibilityState.Visible) result |= CellVisibility.VisibleByAlly;
@@ -200,11 +222,11 @@ public sealed class VisibilitySystem
             return true;
 
         CellVisibility visibility = GetVisibility(viewerArmyId, _world.GameGrid.ToCell(unit.Position));
-        if (visibility.HasFlag(CellVisibility.Visible)) return true;
+        if (((visibility & CellVisibility.Visible) != 0)) return true;
         Army? viewer = Globals.Game.Armies.Find(viewerArmyId);
         return forMinimap
-            ? viewer?.Intelligence.ShareVisibleMinimap == true && visibility.HasFlag(CellVisibility.VisibleByAlly)
-            : viewer?.Intelligence.ShareWorldVision == true && visibility.HasFlag(CellVisibility.VisibleByAlly);
+            ? viewer?.Intelligence.ShareVisibleMinimap == true && ((visibility & CellVisibility.VisibleByAlly) != 0)
+            : viewer?.Intelligence.ShareWorldVision == true && ((visibility & CellVisibility.VisibleByAlly) != 0);
     }
 
     public VisibilityState GetDisplayedTerrainVisibility(Guid viewerArmyId, Point cell, bool forMinimap)
@@ -219,15 +241,15 @@ public sealed class VisibilitySystem
         if (Globals.IsSpectator || !Globals.FogOfWarEnabled)
             return VisibilityState.Visible;
         CellVisibility visibility = GetVisibility(viewerArmyId, cell, alliedArmyIds);
-        if (visibility.HasFlag(CellVisibility.Visible)) return VisibilityState.Visible;
-        if (visibility.HasFlag(CellVisibility.Explored)) return VisibilityState.Explored;
+        if (((visibility & CellVisibility.Visible) != 0)) return VisibilityState.Visible;
+        if (((visibility & CellVisibility.Explored) != 0)) return VisibilityState.Explored;
 
         Army? viewer = Globals.Game.Armies.Find(viewerArmyId);
-        if (forMinimap && viewer?.Intelligence.ShareVisibleMinimap == true && visibility.HasFlag(CellVisibility.VisibleByAlly))
+        if (forMinimap && viewer?.Intelligence.ShareVisibleMinimap == true && ((visibility & CellVisibility.VisibleByAlly) != 0))
             return VisibilityState.Visible;
-        if (forMinimap && viewer?.Intelligence.ShareExploredMinimap == true && visibility.HasFlag(CellVisibility.ExploredByAlly))
+        if (forMinimap && viewer?.Intelligence.ShareExploredMinimap == true && ((visibility & CellVisibility.ExploredByAlly) != 0))
             return VisibilityState.Explored;
-        if (!forMinimap && viewer?.Intelligence.ShareWorldVision == true && visibility.HasFlag(CellVisibility.VisibleByAlly))
+        if (!forMinimap && viewer?.Intelligence.ShareWorldVision == true && ((visibility & CellVisibility.VisibleByAlly) != 0))
             return VisibilityState.Visible;
         return VisibilityState.Unexplored;
     }

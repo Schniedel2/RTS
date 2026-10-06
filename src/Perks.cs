@@ -12,7 +12,10 @@ public enum PerkType
     Home,
     Minimap,
     BaseEstablished,
-    AirTechnology
+    AirTechnology,
+    SatelliteRecon,
+    SatelliteUplink,
+    SatelliteOperator
 }
 
 public enum PerkLifetime

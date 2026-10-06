@@ -22,6 +22,9 @@ public readonly record struct HudLayout(
     bool ShowProductionPanel,
     bool ShowActionPanel)
 {
+    public Rectangle SatellitePanel => Mode == HudLayoutMode.Game
+        ? new(ProductionPanel.X, StatusPanel.Bottom + 8, ProductionPanel.Width, 64) : Rectangle.Empty;
+
     private const int Margin = 12;
     private const int MinimapSize = 220;
     private const int StatusHeight = 66;
@@ -41,7 +44,7 @@ public readonly record struct HudLayout(
             Margin,
             MinimapSize,
             StatusHeight);
-        int productionTop = status.Bottom + 8;
+        int productionTop = status.Bottom + 80;
         int productionBottom = minimap.Top - 8;
         Rectangle production = new(
             viewport.Width - ProductionWidth - Margin,

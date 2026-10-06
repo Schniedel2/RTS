@@ -3165,6 +3165,7 @@ PerformanceMeasurements.Enabled = false;
 checks += IncrementalPlanningChecks.Run();
 checks += HarvestSystemChecks.Run();
 checks += MedicSystemChecks.Run();
+checks += SoldierMovementChecks.Run();
 checks += CombatSystemChecks.Run();
 checks += CatalogChecks.Run();
 checks += AIStrategicCatalogChecks.Run();
@@ -3173,6 +3174,7 @@ checks += SimulationIsolationChecks.Run();
 checks += ComplexCommandChecks.Run();
 checks += SessionLifecycleChecks.Run();
 checks += AIReconstructionChecks.Run();
+checks += AIReconstructionChecks.RunSatelliteReconChecks();
 if (args.Contains("--unit-query-report"))
     System.IO.File.WriteAllText(System.IO.Path.Combine("AI", "Unit-Abfragen-Messung.md"), UnitQueryChecks.MeasurementReport);
 Console.WriteLine($"Passed {checks} gameplay, UV, earthwork and helicopter checks.");

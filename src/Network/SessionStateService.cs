@@ -98,6 +98,7 @@ public sealed class SessionStateService
         _world.PathfindingManager.Reset();
         _world.Units.ClearForMatchStart();
         _armies.ClearPerks();
+        foreach (Army army in _armies.Armies) army.SatelliteRecon = new();
         _world.Visibility.Reset();
         _world.ClearTransientEffects();
         Vector3? localPosition = null;

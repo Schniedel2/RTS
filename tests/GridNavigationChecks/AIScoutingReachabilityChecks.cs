@@ -16,11 +16,13 @@ internal static partial class AIReconstructionChecks
         void Tick(double seconds)
         {
             controller.Update(new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1)));
-            scenario.World.PathfindingManager.Scheduler.Update(100000, double.PositiveInfinity);
+            for (int slice = 0; slice < 30; slice++) scenario.World.PathfindingManager.Scheduler.Update(4096, double.PositiveInfinity);
             scenario.Network.Update();
         }
         controller.Start([scout]);
         controller.Update(new GameTime(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1)));
+        for (int step = 0; step < 20000 && scenario.World.ScoutingTargets.TargetOf(scout.UnitId) is null; step++)
+            scenario.World.PathfindingManager.Scheduler.Update(1, double.PositiveInfinity);
         Point failed = scenario.World.ScoutingTargets.TargetOf(scout.UnitId)!.Value;
         Check(!scenario.Messages.Any(m => m.Type == NetworkMessageType.GotoRequest), "Scouting waits for incremental reachability before issuing Goto");
         scenario.World.GameGrid.GetCell(failed).IsBlocked = true;

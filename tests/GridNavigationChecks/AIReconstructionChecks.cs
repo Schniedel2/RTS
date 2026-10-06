@@ -209,7 +209,7 @@ internal static partial class AIReconstructionChecks
             scenario.Tick();
             NetworkMessage? attack = scenario.Messages.FirstOrDefault(message =>
                 message.Type == NetworkMessageType.AttackTargetRequest && message.TargetId == enemy.UnitId);
-            Check(attack is { UnitIds.Length: 3 } && attack.SenderId == scenario.AI.Id,
+            Check(attack is { UnitIds.Length: > 0 and < 3 } && attack.SenderId == scenario.AI.Id,
                 $"{lostType} loss does not suspend defender requests through the player network gateway");
             Check(scenario.AI.Controller.Threats.AntiInfantryNeed > AIThreatSnapshot.Baseline.AntiInfantryNeed,
                 $"Threat observation remains active after {lostType} loss");
@@ -487,6 +487,6 @@ internal static partial class AIReconstructionChecks
                 m.TargetId == enemyAir.UnitId && m.UnitIds!.SequenceEqual([gepard.UnitId])),
                 "A single suitable air-defense escort engages nearby aircraft without incompatible infantry orders");
         }
-        return checks + RunOrderProgressChecks() + RunOrderQueueChecks() + RunResourcePlanningChecks() + RunReservationChecks() + RunOrderResultChecks() + RunScoutingReservationChecks() + RunScoutingReachabilityChecks();
+        return checks + RunOrderProgressChecks() + RunOrderQueueChecks() + RunResourcePlanningChecks() + RunReservationChecks() + RunOrderResultChecks() + RunScoutingReservationChecks() + RunScoutingReachabilityChecks() + RunStreamingScoutingChecks() + RunEnemyKnowledgeChecks() + RunDefenseStrengthChecks() + RunUnitTaskChecks();
     }
 }

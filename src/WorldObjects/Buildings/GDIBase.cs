@@ -46,6 +46,8 @@ public class GDIBase : Building, IPerkProvider
         if (ArmyId is Guid armyId &&
             Globals.Game.Armies.Find(armyId)?.PowerStatus.HasEnoughPower == true)
         {
+            if (SatelliteRecon.HasOperator(Globals.World, this))
+                perks.Add(new PerkGrant(PerkType.SatelliteOperator, PerkLifetime.WhileProviderOperational));
             perks.Add(new PerkGrant(PerkType.Minimap,
                 PerkLifetime.WhileProviderOperational));
         }

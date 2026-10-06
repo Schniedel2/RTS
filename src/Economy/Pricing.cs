@@ -35,6 +35,7 @@ public static class EconomyCatalog
 
 public static class ResearchProjects
 {
+    public const string SatelliteReconId = "satellite-recon";
     public const string AirTechnologyId = "air-technology";
 
     public static bool TryGetGrantedPerk(string projectId, out PerkType perk)

@@ -115,7 +115,9 @@ public enum NetworkMessageType
     SyncDiagnosticsControlCommand,
     SyncDiagnosticsProbeCommand,
     SyncDiagnosticsReportRequest,
-    ExploredVisibilityCommand
+    ExploredVisibilityCommand,
+    SatelliteReconRequest,
+    SatelliteReconCommand
 }
 
 public sealed record WorldData(
@@ -149,7 +151,7 @@ public sealed record MatchStartAssignment(
 public sealed record PerkSourceSnapshot(Guid SourceId, PerkGrant[] Grants);
 public sealed record ArmySnapshot(Guid Id, Guid? TeamId, int Resources, Guid[] Owners,
     Dictionary<Guid, ArmyPermission> Permissions, IntelligenceCapabilities Intelligence,
-    PerkSourceSnapshot[] Perks);
+    PerkSourceSnapshot[] Perks, SatelliteReconState? SatelliteRecon = null);
 public sealed record VisibilitySnapshot(Guid ArmyId, byte[] Cells);
 public sealed record ExploredVisibilitySnapshot(Guid ArmyId, int CellCount, byte[] Bits);
 public sealed record OccupantSnapshot(Guid UnitId, OccupantRole Role);
@@ -248,4 +250,5 @@ public sealed record NetworkMessage(
     float SyncDiagnosticsIntervalSeconds = 0.0f,
     SyncDiagnosticDigest? SyncDiagnosticDigest = null,
     SyncDiagnosticReport? SyncDiagnosticReport = null,
-    ExploredVisibilitySnapshot[]? ExploredVisibility = null);
+    ExploredVisibilitySnapshot[]? ExploredVisibility = null,
+    SatelliteReconState? SatelliteRecon = null);

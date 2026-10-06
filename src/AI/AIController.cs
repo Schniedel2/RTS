@@ -729,6 +729,7 @@ public sealed class AIController
     }
     public AIOrderQueue? OrderQueue => _orderQueue;
     public AIStrategyProfile? StrategyProfile => _strategyProfile;
+    public IReadOnlyDictionary<Guid, AIEnemyObservation>? EnemyKnowledge => _threatAssessment?.EnemyKnowledge;
     public AIThreatSnapshot Threats => _threatAssessment?.Current ?? AIThreatSnapshot.Baseline;
 
     public void RecordCombatLoss(Unit lostUnit, Unit? attacker)
@@ -754,9 +755,12 @@ public sealed class AIController
         _tacticsActivated = false;
         _scouting?.Dispose();
         _scouting = null;
+        _baseDefense?.Reset();
         _baseDefense = null;
         _squadPreparation = null;
+        _squadAssault?.ReleaseAssignments();
         _squadAssault = null;
+        _squadRecovery?.Reset();
         _squadRecovery = null;
         _armoredSupport = null;
         _infrastructure = null;
@@ -828,7 +832,8 @@ public sealed class AIController
 
             scout = world.Units.GetArmyUnits(ai.Player.ArmyId).OfType<MobileUnit>()
                 .Where(unit => unit.ArmyId == ai.Player.ArmyId && !unit.IsDying && !unit.IsEmbarked &&
-                    GameplayCatalog.HasAIRoles(unit.GameplayTypeId, AIUnitRole.Scout))
+                    GameplayCatalog.HasAIRoles(unit.GameplayTypeId, AIUnitRole.Scout) &&
+                    world.UnitTasks.CanUse(unit, $"{ai.Player.ArmyId}:scout", 30))
                 .OrderBy(unit => unit.UnitId)
                 .FirstOrDefault();
             _scoutId = scout?.UnitId;

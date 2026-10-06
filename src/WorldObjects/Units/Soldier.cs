@@ -63,6 +63,8 @@ public class Soldier : MobileUnit
     protected float _minigunRotationMaxSpeed = 256.0f;
     protected float _minigunRotationAcceleration = 64.0f;
     private float _nextIdlePoseTimer = 0.0f;
+    private float _runAnimationGraceRemaining;
+    private const float RunAnimationGraceSeconds = 0.15f;
 
     public override void OnHostAction(UnitActionType actionType, UnitActionContext? context = null)
     {
@@ -200,13 +202,15 @@ public class Soldier : MobileUnit
 
         Vector3 travelled = Position - positionBeforeMovement;
         travelled.Y = 0.0f;
-        // Turning, waiting for the next path step, and short network/grid
-        // stalls are still part of the same movement. Using displacement
-        // alone caused Moving -> Idle -> Moving transitions which restarted
-        // the looping run clip.
+        // Retain the run loop across brief waypoint/network pauses, but an
+        // outstanding order alone is not movement (planning or blocked routes).
+        if (travelled.LengthSquared() > 0.000001f)
+            _runAnimationGraceRemaining = RunAnimationGraceSeconds;
+        else
+            _runAnimationGraceRemaining = Math.Max(0.0f,
+                _runAnimationGraceRemaining - (float)gameTime.ElapsedGameTime.TotalSeconds);
         bool isMoving = travelled.LengthSquared() > 0.000001f ||
-            CurrentCommand is not null ||
-            IsLeavingBuilding;
+            (CurrentCommand is not null && _runAnimationGraceRemaining > 0.0f);
 
         bool isAiming = HasCombatTarget && !isMoving;
 

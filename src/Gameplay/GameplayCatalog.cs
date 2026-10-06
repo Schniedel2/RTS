@@ -143,7 +143,9 @@ public static class GameplayCatalog
 
         new(PurchasableType.Research, ResearchProjects.AirTechnologyId, "Air Technology", 1000,
             BaseRequired, [Producer("gdi-base", 15)], 4, 4,
-            GrantedPerk: PerkType.AirTechnology)
+            GrantedPerk: PerkType.AirTechnology),
+        new(PurchasableType.Research, ResearchProjects.SatelliteReconId, "Satellite Recon", 1500,
+            BaseRequired, [Producer("gdi-base", 20)], 4, 4, GrantedPerk: PerkType.SatelliteRecon)
     ];
 
     private static readonly IReadOnlyList<GameplayDefinition> PublicDefinitions = Definitions.AsReadOnly();

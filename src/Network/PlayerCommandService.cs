@@ -18,10 +18,11 @@ public sealed class PlayerCommandService
     public Guid PlayerId { get; }
     public LocalRequestReceipt? LastRequest { get; private set; }
 
-    public PlayerCommandService(NetworkHandler network, Guid playerId)
+    public AIUnitTaskAgent? TaskAgent { get; }
+    public PlayerCommandService(NetworkHandler network, Guid playerId, AIUnitTaskAgent? taskAgent = null)
     {
         _network = network ?? throw new ArgumentNullException(nameof(network));
-        PlayerId = playerId;
+        PlayerId = playerId; TaskAgent = taskAgent;
     }
 
     public Task GotoAsync(IEnumerable<Guid> unitIds, Vector3 target, bool appendToQueue = false,
@@ -36,6 +37,9 @@ public sealed class PlayerCommandService
         return SendAsync(NetworkCommands.CreateGotoRequest(PlayerId, recipients,
             target.X, target.Y, target.Z, appendToQueue, routes, formationFacingDegrees), cancellationToken);
     }
+
+    public Task SatelliteReconAsync(Guid armyId, CancellationToken cancellationToken = default) =>
+        SendAsync(new NetworkMessage(NetworkMessageType.SatelliteReconRequest, PlayerId, ArmyId: armyId), cancellationToken);
 
     public Task StopAsync(IEnumerable<Guid> unitIds, CancellationToken cancellationToken = default) =>
         SendAsync(NetworkCommands.CreateStopRequest(PlayerId, unitIds.ToArray()), cancellationToken);
@@ -138,6 +142,19 @@ public sealed class PlayerCommandService
 
     private Task SendAsync(NetworkMessage request, CancellationToken cancellationToken)
     {
+        if (TaskAgent is not null && request.Type is NetworkMessageType.GotoRequest or
+            NetworkMessageType.AttackTargetRequest or NetworkMessageType.StopRequest or
+            NetworkMessageType.FollowRequest or NetworkMessageType.AttackGroundRequest or NetworkMessageType.EnterUnitRequest or
+            NetworkMessageType.MoveAwayRequest or NetworkMessageType.UnitActionRequest)
+        {
+            Guid[] ids = request.UnitIds ?? (request.UnitId is Guid id ? [id] : []);
+            if (!TaskAgent.Authorize(ids))
+            {
+                LastRequest = _network.TrackLocalRequest(request);
+                _network.ResolveLocalRequest(request, false, "Unit is assigned to a higher-priority AI task.", AIOrderFailure.Validation);
+                return Task.CompletedTask;
+            }
+        }
         LastRequest = _network.TrackLocalRequest(request);
         if (LastRequest is not null && !ReferenceEquals(LastRequest.Request, request))
             return Task.CompletedTask;

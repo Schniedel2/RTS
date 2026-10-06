@@ -35,7 +35,7 @@ public sealed class AISquadPreparationController(
     private const float ThinkIntervalSeconds = 1.0f;
     private const float OrderRetrySeconds = 3.0f;
 
-    private readonly PlayerCommandService _commands = new(network, playerId);
+    private readonly PlayerCommandService _commands = new(network, playerId, new AIUnitTaskAgent(world, $"{armyId}:squad", AIUnitTask.SquadMember, 40));
     private readonly AIStrategyProfile _profile = strategyProfile ??
         AIStrategyProfile.Create(0, armyId);
     private readonly AIThreatAssessment _threat = threatAssessment ?? new(armyId);
@@ -61,6 +61,7 @@ public sealed class AISquadPreparationController(
 
     public void Update(GameTime gameTime, Guid? reservedScoutId)
     {
+        _commands.TaskAgent!.Update(gameTime);
         using var measurement = PerformanceMeasurements.Measure("AI.SquadPreparation");
         float elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
         _time += elapsed;
@@ -174,6 +175,7 @@ public sealed class AISquadPreparationController(
     }
 
     private bool IsAvailable(Soldier unit) =>
+        _commands.TaskAgent!.CanUse(unit) &&
         unit.ArmyId == armyId && !unit.IsDying && !unit.IsEmbarked &&
         _unavailableUntil.GetValueOrDefault(unit.UnitId) <= _time;
 
